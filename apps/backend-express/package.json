@@ -1,0 +1,29 @@
+{
+  "name": "backend-express",
+  "version": "1.0.0",
+  "description": "website for urmin",
+  "type": "module",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "verify:crypto": "node verify/crypto-parity.js",
+    "harness:capture": "node harness/index.js capture",
+    "harness:compare": "node harness/index.js compare",
+    "harness:list": "node harness/index.js list",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "verify:gojson": "node verify/go-json-parity.js",
+    "verify": "npm run verify:crypto && npm run verify:gojson"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@node-rs/argon2": "^2.2.2",
+    "busboy": "^1.6.0",
+    "express": "^5.3.0",
+    "nodemailer": "^10.3.1",
+    "pg": "^8.13.1",
+    "sharp": "^0.35.5"
+  }
+}

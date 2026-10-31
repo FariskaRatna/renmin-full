@@ -1,0 +1,5 @@
+node_modules
+harness/golden
+docs
+README.md
+.gitignore
