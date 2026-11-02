@@ -2,6 +2,7 @@ import { Router } from 'express'
 
 import { authorizeOperational, authorizeRoleEditor } from '../../auth/guards.js'
 import { writeJson } from '../../http/respond.js'
+import { goTime } from '../../time.js'
 
 /**
  * Ringkasan keputusan eksekutif, port dari
@@ -285,7 +286,7 @@ export function createExecutiveRouter({ pool, config }) {
 
     writeJson(res, 200, {
       kind: access.kind,
-      generatedAt: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
+      generatedAt: goTime(),
       period,
       metrics: collector.metrics,
       attention: collector.attention,
