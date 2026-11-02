@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import pg from 'pg'
 
 import { sealEvidence } from '../src/crypto/evidence.js'
+import { PDF_BYTES } from './files.js'
 
 /**
  * Seed dokumen deterministik untuk harness.
@@ -47,8 +48,10 @@ import { sealEvidence } from '../src/crypto/evidence.js'
  * pernah mengisi assignedUserIds, jadi ia tetap tidak melihat apa pun. Itu
  * perilaku Go yang sah dan harus direplikasi Express, bukan dibetulkan di sini.
  *
- * Selain tabel `sdl_role_permissions`, tabel identitas lain (user, grant, unit,
- * sesi) tidak disentuh.
+ * Selain `sdl_role_permissions`, identitas (user, grant, unit, sesi) tidak
+ * disentuh sama sekali. Satu-satunya sentuhan lain adalah penghapusan baris
+ * usang di `dropObsoleteDirectRole` — pembersihan sisa tambalan B9, bukan
+ * tambalan baru.
  */
 
 /**
@@ -67,6 +70,49 @@ const ID = {
   workFile: 'a1000000-0000-4000-8000-000000000001',
   workTask: 'a2000000-0000-4000-8000-000000000001',
 
+  // ---- sasaran varian jalur tulis unit-work (Engine B) ----
+  //
+  // Satu berkas per varian. Tidak ada indeks unik yang memaksanya di sini —
+  // alasannya murni aturan 2 harness: `version` di body hanya bisa dipastikan
+  // `1` kalau tidak ada varian lain yang menyentuh record yang sama lebih dulu.
+  //
+  // Seluruhnya di unit `urmin` klasifikasi `biasa`, dimiliki op-urmin
+  // (scope `own`). Pemiliknya sengaja BUKAN pelaku varian: ka-urmin lolos lewat
+  // scope `unit`, dan itu justru cabang Engine B yang ingin dibuktikan.
+  workWriteUpdate: 'a0000000-0000-4000-8000-000000000011',
+  workWriteDelete: 'a0000000-0000-4000-8000-000000000012',
+  workWriteAssign: 'a0000000-0000-4000-8000-000000000013',
+  workWriteReceive: 'a0000000-0000-4000-8000-000000000014',
+  workWriteComplete: 'a0000000-0000-4000-8000-000000000015',
+  workWriteCancel: 'a0000000-0000-4000-8000-000000000016',
+
+  taskWriteReceive: 'a2000000-0000-4000-8000-000000000011',
+  taskWriteComplete: 'a2000000-0000-4000-8000-000000000012',
+  taskWriteCancel: 'a2000000-0000-4000-8000-000000000013',
+
+  // ---- sasaran varian jalur tulis urmin-registry (surat keluar) ----
+  //
+  // Di sini satu berkas kerja per register BUKAN pilihan gaya:
+  // `sdl_urmin_registry.work_record_id` ber-UNIQUE, jadi satu berkas kerja
+  // hanya boleh menopang satu register.
+  workRegistryUpdate: 'a0000000-0000-4000-8000-000000000021',
+  workRegistryDelete: 'a0000000-0000-4000-8000-000000000022',
+  workRegistrySubmit: 'a0000000-0000-4000-8000-000000000023',
+  workRegistryApprove: 'a0000000-0000-4000-8000-000000000024',
+  workRegistryReject: 'a0000000-0000-4000-8000-000000000025',
+
+  registryWriteUpdate: 'b0000000-0000-4000-8000-000000000011',
+  registryWriteDelete: 'b0000000-0000-4000-8000-000000000012',
+  registryWriteSubmit: 'b0000000-0000-4000-8000-000000000013',
+  registryWriteApprove: 'b0000000-0000-4000-8000-000000000014',
+  registryWriteReject: 'b0000000-0000-4000-8000-000000000015',
+
+  // Pengajuan surat keluar menolak 409 `pdf_required_before_submit` kalau
+  // berkas kerjanya tidak punya satu pun lampiran PDF yang belum dihapus.
+  fileRegistrySubmit: 'a1000000-0000-4000-8000-000000000011',
+  fileRegistryApprove: 'a1000000-0000-4000-8000-000000000012',
+  fileRegistryReject: 'a1000000-0000-4000-8000-000000000013',
+
   registrySurat: 'b0000000-0000-4000-8000-000000000001',
   registryAgenda: 'b0000000-0000-4000-8000-000000000002',
   sumda: 'b1000000-0000-4000-8000-000000000001',
@@ -74,9 +120,55 @@ const ID = {
 
   incomingRegistered: 'c0000000-0000-4000-8000-000000000001',
   incomingDraft: 'c0000000-0000-4000-8000-000000000002',
+  // Sasaran varian jalur sukses surat masuk. Semuanya klasifikasi 'biasa' dan
+  // dibuat op-urmin: grant op-urmin ber-scope 'own' dengan batas 'biasa', jadi
+  // ia hanya lolos Engine A untuk surat miliknya sendiri yang tidak 'penting'.
+  incomingWriteEdit: 'c0000000-0000-4000-8000-000000000011',
+  incomingWriteRegister: 'c0000000-0000-4000-8000-000000000012',
+  incomingWriteDistribute: 'c0000000-0000-4000-8000-000000000013',
+  incomingWriteInbox: 'c0000000-0000-4000-8000-000000000014',
+  // Sasaran varian unggah lampiran (endpoint 103). Berdiri sendiri, bukan
+  // menumpang surat 013: lampiran yang bertambah ikut terbaca endpoint 102 dan
+  // 110, jadi berbagi record akan membuat golden varian lain bergantung pada
+  // urutan eksekusi. Statusnya 'registered' karena r3b.go:241 menolak 409
+  // not_registered untuk apa pun selain itu.
+  incomingWriteAttach: 'c0000000-0000-4000-8000-000000000016',
+  distributionWriteInbox: 'c2000000-0000-4000-8000-000000000002',
   attachment: 'c1000000-0000-4000-8000-000000000001',
   distribution: 'c2000000-0000-4000-8000-000000000001',
   dispositionTask: 'c3000000-0000-4000-8000-000000000001',
+
+  // ---- rantai disposisi untuk varian jalur tulis (116–126) ----
+  //
+  // Satu surat terdaftar sendiri, lalu LIMA distribusi berstatus 'received'
+  // kepada kasubbagren. Kelimanya perlu karena
+  // `sdl_disposition_open_one_idx` UNIQUE(distribution_id,assigned_to) hanya
+  // mengizinkan SATU tugas terbuka per penerima per distribusi: empat varian
+  // yang menuntut tugas 'pending'/'in_progress' milik op-subbagren karena itu
+  // tidak bisa berbagi distribusi. Tugas yang sudah 'completed' tidak kena
+  // indeks itu, jadi kelimanya menumpang satu distribusi yang sama.
+  //
+  // Penerbitnya WAJIB kasubbagren: `currentIssuer()` menuntut penerbit adalah
+  // penerima distribusinya sendiri, dan distribusinya sudah 'received'.
+  // Pelaksananya op-subbagren — orang yang berbeda, karena
+  // `sdl_disposition_not_self` menolak penerbit == pelaksana dan karena justru
+  // pemisahan itu yang sedang diuji.
+  incomingDisposition: 'c0000000-0000-4000-8000-000000000015',
+  distributionDispositionDone: 'c2000000-0000-4000-8000-000000000011',
+  distributionDispositionAccept: 'c2000000-0000-4000-8000-000000000012',
+  distributionDispositionComplete: 'c2000000-0000-4000-8000-000000000013',
+  distributionDispositionCandidates: 'c2000000-0000-4000-8000-000000000014',
+  distributionDispositionForward: 'c2000000-0000-4000-8000-000000000015',
+
+  taskWriteHistory: 'c3000000-0000-4000-8000-000000000011',
+  taskWriteAccept: 'c3000000-0000-4000-8000-000000000012',
+  taskWriteComplete: 'c3000000-0000-4000-8000-000000000013',
+  taskWriteReview: 'c3000000-0000-4000-8000-000000000014',
+  taskWriteCandidates: 'c3000000-0000-4000-8000-000000000015',
+  taskWriteForward: 'c3000000-0000-4000-8000-000000000016',
+  taskWriteFinalStatus: 'c3000000-0000-4000-8000-000000000017',
+  taskWriteSubmitFinal: 'c3000000-0000-4000-8000-000000000018',
+  taskWriteDecideFinal: 'c3000000-0000-4000-8000-000000000019',
 
   proposalApproved: 'd0000000-0000-4000-8000-000000000001',
   proposalDraft: 'd0000000-0000-4000-8000-000000000002',
@@ -91,6 +183,26 @@ const ID = {
   proposalWriteReview: 'd0000000-0000-4000-8000-000000000013',
   proposalWriteRevision: 'd0000000-0000-4000-8000-000000000014',
   proposalWriteResubmit: 'd0000000-0000-4000-8000-000000000015',
+  // Rantai anggaran. Tiap tahap butuh usulan sendiri karena
+  // sdl_subbagren_pagu UNIQUE(proposal_id): satu usulan hanya boleh punya satu
+  // pagu, jadi varian pendaftaran pagu mustahil berbagi usulan dengan varian
+  // lain yang pagunya sudah ditanam.
+  proposalWritePaguRegister: 'd0000000-0000-4000-8000-000000000021',
+  proposalWritePaguVerify: 'd0000000-0000-4000-8000-000000000022',
+  proposalWriteRealisasiRecord: 'd0000000-0000-4000-8000-000000000023',
+  proposalWriteChain: 'd0000000-0000-4000-8000-000000000024',
+  // Rantai tersendiri untuk varian unggah bukti (endpoint 69). Tidak bisa
+  // menumpang rantai di atasnya: evidence.go:189 menolak 409
+  // active_evidence_exists kalau realisasinya sudah punya bukti berstatus
+  // 'pending' atau 'approved', dan realisasiWriteChain memang punya.
+  proposalWriteEvidence: 'd0000000-0000-4000-8000-000000000025',
+  paguWriteVerify: 'd1000000-0000-4000-8000-000000000002',
+  paguWriteRecord: 'd1000000-0000-4000-8000-000000000003',
+  paguWriteChain: 'd1000000-0000-4000-8000-000000000004',
+  paguWriteEvidence: 'd1000000-0000-4000-8000-000000000005',
+  realisasiWriteChain: 'd2000000-0000-4000-8000-000000000002',
+  realisasiWriteEvidence: 'd2000000-0000-4000-8000-000000000003',
+  evidenceWriteChain: 'd3000000-0000-4000-8000-000000000002',
   pagu: 'd1000000-0000-4000-8000-000000000001',
   realisasi: 'd2000000-0000-4000-8000-000000000001',
   evidence: 'd3000000-0000-4000-8000-000000000001',
@@ -150,12 +262,6 @@ const DOCUMENT_TABLES = [
   'sdl_portal_posts',
 ]
 
-/** PDF minimal yang sah: cukup untuk disegel, di-hash, dan diunduh kembali. */
-const PDF_BYTES = Buffer.from(
-  '%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n',
-  'latin1',
-)
-
 /**
  * Permission tambahan khusus harness. Lihat catatan modul: ini BUKAN
  * konfigurasi produksi.
@@ -171,10 +277,17 @@ const HARNESS_ROLE_PERMISSIONS = {
     'subbagren.anggaran.read', 'subbagren.anggaran.pagu.register',
     'subbagren.anggaran.realisasi.record',
     'subbagren.anggaran.bukti.read', 'subbagren.anggaran.bukti.upload',
+    // Pelaksana disposisi, sekaligus yang meneruskan. Lihat catatan DISPOSISI
+    // di bawah daftar ini.
+    'urmin.disposisi.execute', 'urmin.disposisi.forward',
   ],
   br_staf_subbagren: [
     'subbagren.usulan.read', 'subbagren.usulan.create', 'subbagren.usulan.update',
     'subbagren.usulan.submit',
+    // SASARAN penerusan, bukan pelakunya: ia butuh `execute` supaya lolos
+    // `dispositionEligible`, tapi sengaja TIDAK diberi `forward` — rantai
+    // berhenti padanya, dan itu bagian dari yang diuji.
+    'urmin.disposisi.execute',
   ],
   br_kasubbagren: [
     'subbagren.usulan.read', 'subbagren.usulan.create', 'subbagren.usulan.update',
@@ -182,13 +295,59 @@ const HARNESS_ROLE_PERMISSIONS = {
     'subbagren.anggaran.pagu.verify', 'subbagren.anggaran.realisasi.verify',
     'subbagren.anggaran.bukti.read', 'subbagren.anggaran.bukti.verify',
     'subbagren.anggaran.reconcile',
+    // Penerbit disposisi: ia pula yang menelaah hasilnya dan mengajukannya ke
+    // pimpinan. Ketiganya memang satu peran — yang dipisahkan adalah penerbit
+    // lawan pelaksana, dan penerbit lawan PEMUTUS akhir (kabagrenmin).
+    'urmin.disposisi.issue', 'urmin.disposisi.review', 'urmin.disposisi.final.submit',
   ],
+  // Kabagrenmin dipakai sebagai PENCATAT anggaran di harness, bukan karena
+  // begitu seharusnya di lapangan, melainkan karena ia satu-satunya jalan
+  // menjalankan kode pendaftaran pagu dan pencatatan realisasi sama sekali.
+  //
+  // Konfigurasi produksi memberi 'pagu.register' dan 'realisasi.record' HANYA
+  // kepada br_op_subbagren, dan grant op-subbagren ber-scope 'assigned'
+  // (sdl_access_grants). Engine A meloloskan scope 'assigned' hanya kalau
+  // doc.AssignedUserIDs memuat pemanggil (access/policy.go), sementara seluruh
+  // handler subbagren tidak pernah mengisi field itu. Akibatnya kedua operasi
+  // itu TIDAK TERJANGKAU oleh siapa pun — lihat MIGRATION-PLAN.md.
+  //
+  // Kabagrenmin ber-scope 'unit' di subbagren dan merupakan orang yang BERBEDA
+  // dari kasubbagren, sehingga aturan maker-checker ('self_verification_denied')
+  // tetap bisa diuji sebagai jalur sukses, bukan sebagai penolakan.
   br_kabagrenmin: [
     'subbagren.usulan.read', 'subbagren.usulan.consolidate',
     'subbagren.anggaran.reconcile', 'subbagren.anggaran.bukti.read',
+    'subbagren.anggaran.pagu.register', 'subbagren.anggaran.realisasi.record',
+    // `bukti.upload` ada di sini karena alasan yang sama persis dengan dua
+    // kunci di atasnya, bukan sebagai pelonggaran baru: katalog memberikannya
+    // HANYA kepada br_op_subbagren, yang grant-nya ber-scope 'assigned' dan
+    // karena itu tidak pernah lolos Engine A. Tanpa ini endpoint 69 mustahil
+    // dijalankan jalur suksesnya oleh siapa pun, dan dukungan multipart di
+    // harness tidak akan membuktikan apa-apa selain 404.
+    'subbagren.anggaran.bukti.upload',
+    // Pimpinan: memantau dan memutuskan, tidak pernah menerbitkan maupun
+    // mengerjakan. Endpoint 126 menolak pemutus yang pernah menyentuh satu
+    // tugas mana pun di rantainya, jadi pemisahan ini bukan kerapian belaka —
+    // tanpa itu seluruh varian persetujuan final akan 403 self_approval_denied.
+    'urmin.disposisi.final.monitor', 'urmin.disposisi.final.approve',
   ],
 }
 
+/**
+ * DISPOSISI — temuan 2026-10-31, lebih luas daripada kasus anggaran.
+ *
+ * Dari 12 permission `urmin.disposisi.*` di katalog `sdl_permissions`,
+ * **sebelas tidak dimiliki role mana pun**; hanya `urmin.disposisi.read` yang
+ * diberikan, dan hanya kepada `br_ka_urmin`. Akibatnya endpoint 115
+ * (menerbitkan disposisi) dan SELURUH mount `dispositions` (11 endpoint)
+ * tidak terjangkau siapa pun pada konfigurasi seed apa adanya.
+ *
+ * `issue` diberikan ke kasubbagren dan `execute` ke op-subbagren supaya
+ * penerbit dan pelaksana tetap orang yang berbeda — aturan rantai disposisi
+ * bersandar pada pemisahan itu dan akan hilang kalau keduanya satu akun.
+ *
+ * Seperti biasa: **ini tambalan uji, bukan usulan konfigurasi produksi.**
+ */
 async function grantHarnessPermissions(client) {
   let added = 0
   for (const [role, permissions] of Object.entries(HARNESS_ROLE_PERMISSIONS)) {
@@ -199,11 +358,72 @@ async function grantHarnessPermissions(client) {
     )
     added += result.rowCount ?? 0
   }
+  await dropObsoleteDirectRole(client)
   return added
+}
+
+/**
+ * Pembersihan, bukan tambalan.
+ *
+ * Antara dua sesi 2026-11-01 harness sempat menyisipkan satu baris
+ * `sdl_user_roles` untuk kabagrenmin, karena `outgoingManager()` waktu itu
+ * menuntut peran LANGSUNG dan bukan grant berskop seperti pemeriksaan lain —
+ * temuan B9. Query-nya kini sudah diperbaiki di kedua backend, jadi tambalan
+ * itu tidak diperlukan lagi.
+ *
+ * Barisnya dihapus aktif, bukan sekadar berhenti disisipkan: `sdl_user_roles`
+ * TIDAK ikut `TRUNCATE` (ia tabel identitas), jadi di database mana pun yang
+ * sempat menjalankan harness versi itu barisnya masih tertinggal — dan selama
+ * ia ada, endpoint 50/51 lolos lewat jalur LAMA dan perbaikan B9 tidak
+ * terbukti apa-apa. Hijau karena alasan yang salah.
+ *
+ * Aman: satu-satunya penulis `sdl_user_roles` di seluruh codebase adalah
+ * bootstrap Superadmin (`auth/bootstrap.go:64`), dan baris itu ber-role_key
+ * 'superadmin' sehingga tidak tersentuh predikat di bawah.
+ */
+async function dropObsoleteDirectRole(client) {
+  await client.query("DELETE FROM sdl_user_roles WHERE role_key='br_kabagrenmin'")
 }
 
 function sha256Hex(buffer) {
   return createHash('sha256').update(buffer).digest('hex')
+}
+
+/** Tujuh field surat keluar yang dikenal `urminregisterFields` (urmin_register.go:18). */
+function outgoingFields(nomorSurat, perihal) {
+  return {
+    nomorSurat,
+    tujuan: 'Kepala Bagian Perencanaan Polda',
+    tanggalSurat: '2026-10-01',
+    perihal,
+    sifatSurat: 'Biasa',
+    // Wajib '' atau 'Draft': urmin_register.go:184 menolak nilai lain supaya
+    // status administrasi tidak bisa dipalsukan lewat CRUD biasa.
+    statusAdministrasi: 'Draft',
+    keterangan: 'Data uji harness untuk jalur tulis surat keluar.',
+  }
+}
+
+/**
+ * Padanan outgoingContentHash (outgoing_review.go:291) — implementasi KETIGA,
+ * di luar Go dan Express.
+ *
+ * Tiga detail serialisasi Go yang harus ditiru persis, dan ketiganya diam-diam
+ * mengubah digest kalau salah:
+ *
+ *   1. Urutan field struct: code, title, fields, files. `JSON.stringify`
+ *      mempertahankan urutan penyisipan, jadi objeknya dirakit berurutan.
+ *   2. `fields` bertipe map[string]any, dan `json.Marshal` SELALU mengurutkan
+ *      kunci map. Kunci di sini semuanya ASCII, jadi urutan bytewise Go dan
+ *      urutan UTF-16 JavaScript kebetulan sama.
+ *   3. Go meng-escape `<`, `>`, dan `&` menjadi </>/& secara
+ *      default. Nilai fixture sengaja menghindari ketiganya supaya perbedaan
+ *      itu tidak pernah terpicu.
+ */
+function outgoingContentHash(code, title, fields, files) {
+  const sorted = {}
+  for (const key of Object.keys(fields).sort()) sorted[key] = fields[key]
+  return sha256Hex(Buffer.from(JSON.stringify({ code, title, fields: sorted, files }), 'utf8'))
 }
 
 async function userIds(client) {
@@ -212,7 +432,7 @@ async function userIds(client) {
 
   const required = [
     'ka-urmin', 'staf-urmin', 'op-urmin',
-    'kasubbagren', 'op-subbagren',
+    'kasubbagren', 'op-subbagren', 'staf-subbagren',
     'kasubbagsumda', 'op-subbagsumda',
     'kasubbagbinfung', 'op-subbagbinfung',
     'kabagrenmin',
@@ -299,6 +519,122 @@ export async function seedDocuments(databaseUrl, evidenceKey) {
       [ID.binfung, ID.workBinfung, u['op-subbagbinfung'], at(10)],
     )
 
+    // ---- Engine B: sasaran varian jalur tulis unit-work ----
+    //
+    // Stempel waktu sengaja di menit 200+ supaya SELURUH fixture lama
+    // (`unitWorkRecordId`, `unitWorkFileId`, `unitWorkTaskId`,
+    // `urminRegistryId`) yang dicari dengan `ORDER BY created_at LIMIT 1`
+    // tetap menunjuk baris yang sama. Menambah fixture di sini tidak boleh
+    // menggeser satu pun kasus dasar.
+    for (const [id, title, minute] of [
+      [ID.workWriteUpdate, 'Berkas uji penyuntingan unit-work', 200],
+      [ID.workWriteDelete, 'Berkas uji penghapusan unit-work', 201],
+      [ID.workWriteAssign, 'Berkas uji penugasan unit-work', 202],
+      [ID.workWriteReceive, 'Berkas uji penerimaan tugas unit-work', 203],
+      [ID.workWriteComplete, 'Berkas uji penyelesaian tugas unit-work', 204],
+      [ID.workWriteCancel, 'Berkas uji pembatalan tugas unit-work', 205],
+    ]) {
+      await client.query(
+        `INSERT INTO sdl_unit_work_records(id,unit_key,category,title,description,classification,created_by,updated_by,created_at,updated_at)
+         VALUES($1,'urmin','Persuratan',$2,'Data uji harness untuk jalur tulis unit-work.','biasa',$3,$3,$4,$4)`,
+        [id, title, u['op-urmin'], at(minute)],
+      )
+    }
+
+    // Tiga tugas internal, satu per transisi. Pemberinya ka-urmin dan
+    // penerimanya staf-urmin — pemisahan itu yang membuat varian 29/30
+    // (dijalankan penerima) dan 31 (dijalankan pemberi) benar-benar menguji
+    // cabang `who == to` lawan `who == from` di taskAction, bukan sekadar
+    // lewat karena kebetulan satu orang.
+    for (const [id, record, status, instruction, minute] of [
+      [ID.taskWriteReceive, ID.workWriteReceive, 'pending',
+        'Mohon terima tugas ini sebagai uji transisi pending ke received.', 206],
+      [ID.taskWriteComplete, ID.workWriteComplete, 'received',
+        'Mohon selesaikan tugas ini sebagai uji transisi received ke completed.', 207],
+      [ID.taskWriteCancel, ID.workWriteCancel, 'pending',
+        'Tugas ini akan dibatalkan pemberinya sebagai uji transisi cancelled.', 208],
+    ]) {
+      await client.query(
+        `INSERT INTO sdl_unit_work_tasks(id,record_id,from_user,to_user,instruction,status,response,created_at,updated_at)
+         VALUES($1,$2,$3,$4,$5,$6,'',$7,$7)`,
+        [id, record, u['ka-urmin'], u['staf-urmin'], instruction, status, at(minute)],
+      )
+    }
+
+    // ---- Engine B: sasaran varian jalur tulis urmin-registry ----
+    //
+    // Lima berkas kerja + lima register surat keluar. Tiga di antaranya
+    // dilengkapi lampiran PDF karena `outgoingSubmit` menolak 409
+    // `pdf_required_before_submit` tanpa satu pun PDF yang belum dihapus.
+    for (const [work, register, code, title, nomor, perihal, file, minute] of [
+      [ID.workRegistryUpdate, ID.registryWriteUpdate, 'SK-2026-911',
+        'Surat keluar uji penyuntingan', 'SK/911/XI/2026', 'Permintaan data dukung perencanaan', null, 210],
+      [ID.workRegistryDelete, ID.registryWriteDelete, 'SK-2026-912',
+        'Surat keluar uji penghapusan', 'SK/912/XI/2026', 'Pemberitahuan pembatalan kegiatan', null, 212],
+      [ID.workRegistrySubmit, ID.registryWriteSubmit, 'SK-2026-913',
+        'Surat keluar uji pengajuan', 'SK/913/XI/2026', 'Permohonan persetujuan pelaksanaan', ID.fileRegistrySubmit, 214],
+      [ID.workRegistryApprove, ID.registryWriteApprove, 'SK-2026-914',
+        'Surat keluar uji persetujuan', 'SK/914/XI/2026', 'Permohonan persetujuan anggaran', ID.fileRegistryApprove, 216],
+      [ID.workRegistryReject, ID.registryWriteReject, 'SK-2026-915',
+        'Surat keluar uji penolakan', 'SK/915/XI/2026', 'Permohonan persetujuan perjalanan', ID.fileRegistryReject, 218],
+    ]) {
+      const fields = outgoingFields(nomor, perihal)
+      await client.query(
+        `INSERT INTO sdl_unit_work_records(id,unit_key,category,title,description,classification,created_by,updated_by,created_at,updated_at)
+         VALUES($1,'urmin','Register Urmin surat_keluar',$2,'','biasa',$3,$3,$4,$4)`,
+        [work, title, u['op-urmin'], at(minute)],
+      )
+      if (file !== null) {
+        await client.query(
+          `INSERT INTO sdl_unit_work_files(id,record_id,file_name,media_type,byte_size,sha256,file_data,uploaded_by,created_at)
+           VALUES($1,$2,'konsep-surat.pdf','application/pdf',$3,$4,$5,$6,$7)`,
+          [file, work, PDF_BYTES.length, sha256Hex(PDF_BYTES), PDF_BYTES, u['op-urmin'], at(minute)],
+        )
+      }
+      await client.query(
+        `INSERT INTO sdl_urmin_registry(id,kind,ref_code,title,fields,work_record_id,created_by,updated_by,created_at,updated_at)
+         VALUES($1,'surat_keluar',$2,$3,$4::jsonb,$5,$6,$6,$7,$7)`,
+        [register, code, title, JSON.stringify(fields), work, u['op-urmin'], at(minute)],
+      )
+    }
+
+    // Empat workflow tahap 'draft'; yang kelima sengaja ditanam sudah
+    // 'submitted' beserta `content_sha256`-nya.
+    //
+    // Hash itu DIHITUNG DI JAVASCRIPT mengikuti serialisasi `outgoingContentHash`
+    // milik Go. Kalau varian 50 menjawab 200, artinya Go DAN Express sama-sama
+    // menghasilkan digest yang sama dengan implementasi ketiga di sini —
+    // pembuktian tiga arah, bukan dua. Kalau rumusnya meleset, KEDUA backend
+    // menjawab 409 document_integrity_changed dan perbandingannya tetap hijau;
+    // jadi angka 200 pada capture wajib diperiksa dengan mata, bukan diasumsikan.
+    for (const [register, minute] of [
+      [ID.registryWriteUpdate, 211],
+      [ID.registryWriteDelete, 213],
+      [ID.registryWriteSubmit, 215],
+      [ID.registryWriteReject, 219],
+    ]) {
+      await client.query(
+        `INSERT INTO sdl_outgoing_workflows(register_id,stage,version,last_note,updated_at)
+         VALUES($1,'draft',1,'',$2)`,
+        [register, at(minute)],
+      )
+    }
+
+    await client.query(
+      `INSERT INTO sdl_outgoing_workflows(register_id,stage,version,content_sha256,submitted_at,last_actor,last_note,updated_at)
+       VALUES($1,'submitted',2,$2,$3,$4,$5,$3)`,
+      [
+        ID.registryWriteApprove,
+        outgoingContentHash(
+          'SK-2026-914',
+          'Surat keluar uji persetujuan',
+          outgoingFields('SK/914/XI/2026', 'Permohonan persetujuan anggaran'),
+          [{ id: ID.fileRegistryApprove, sha256: sha256Hex(PDF_BYTES) }],
+        ),
+        at(217), u['ka-urmin'], 'Diajukan untuk persetujuan Kabagrenmin.',
+      ],
+    )
+
     // ---- surat masuk, lampiran, distribusi, disposisi ----
     for (const [id, number, sender, subject, classification, status, minute] of [
       [ID.incomingRegistered, '001/UJI/2026', 'Bagian Perencanaan Polda', 'Permintaan data uji harness', 'biasa', 'registered', 11],
@@ -308,6 +644,26 @@ export async function seedDocuments(databaseUrl, evidenceKey) {
         `INSERT INTO sdl_urmin_incoming(id,letter_number,sender,letter_date,received_date,subject,classification,status,created_by,updated_by,created_at,updated_at)
          VALUES($1,$2,$3,'2026-09-20','2026-09-22',$4,$5,$6,$7,$7,$8,$8)`,
         [id, number, sender, subject, classification, status, u['op-urmin'], at(minute)],
+      )
+    }
+
+    // Sasaran varian jalur sukses. Ditanam SESUDAH dua surat di atas supaya
+    // fixture `incomingId` (ORDER BY created_at LIMIT 1) tetap menunjuk
+    // incomingRegistered dan seluruh kasus dasar tidak bergeser.
+    //
+    // Ketiganya sengaja TIDAK punya baris di sdl_urmin_incoming_intake:
+    // endpoint register menolak 409 use_intake_submission untuk surat
+    // ber-intake, dan distribusi hanya bebas untuk surat warisan R3B.
+    for (const [id, number, subject, status, minute] of [
+      [ID.incomingWriteEdit, '011/UJI/2026', 'Sasaran uji penyuntingan surat masuk', 'draft', 30],
+      [ID.incomingWriteRegister, '012/UJI/2026', 'Sasaran uji pendaftaran surat masuk', 'draft', 31],
+      [ID.incomingWriteDistribute, '013/UJI/2026', 'Sasaran uji distribusi surat masuk', 'registered', 32],
+      [ID.incomingWriteInbox, '014/UJI/2026', 'Sasaran uji kotak masuk distribusi', 'registered', 33],
+    ]) {
+      await client.query(
+        `INSERT INTO sdl_urmin_incoming(id,letter_number,sender,letter_date,received_date,subject,classification,status,created_by,updated_by,created_at,updated_at)
+         VALUES($1,$2,'Bagian Perencanaan Polda','2026-09-20','2026-09-22',$3,'biasa',$4,$5,$5,$6,$6)`,
+        [id, number, subject, status, u['op-urmin'], at(minute)],
       )
     }
 
@@ -325,12 +681,159 @@ export async function seedDocuments(databaseUrl, evidenceKey) {
         'Diteruskan ke Subbagren untuk penyiapan bahan.', at(14)],
     )
 
+    // Sasaran rantai kotak masuk: varian 112 menerimanya, lalu varian 115
+    // menerbitkan disposisi di atasnya. Ditujukan ke kasubbagren karena
+    // penerbit disposisi wajib punya `urmin.distribusi.receive` DAN
+    // `urmin.disposisi.issue`; pelaksananya op-subbagren, orang yang berbeda.
+    await client.query(
+      `INSERT INTO sdl_urmin_distributions(id,incoming_id,sent_by,recipient_unit,recipient_user,status,reason,sent_at)
+       VALUES($1,$2,$3,'subbagren',$4,'sent',$5,$6)`,
+      [ID.distributionWriteInbox, ID.incomingWriteInbox, u['ka-urmin'], u['kasubbagren'],
+        'Diteruskan ke Kasubbagren untuk uji rantai kotak masuk.', at(34)],
+    )
+
     await client.query(
       `INSERT INTO sdl_urmin_disposition_tasks(id,distribution_id,incoming_id,unit_key,issued_by,assigned_to,instruction,due_date,status,depth,version,created_at,updated_at)
        VALUES($1,$2,$3,'subbagren',$4,$5,$6,'2026-11-30','pending',0,1,$7,$7)`,
       [ID.dispositionTask, ID.distribution, ID.incomingRegistered,
         u['kasubbagren'], u['op-subbagren'],
         'Siapkan bahan jawaban dan laporkan hasilnya.', at(15)],
+    )
+
+    // ---- rantai disposisi: sasaran varian jalur tulis 117–126 ----
+    //
+    // Catatan: tugas di atas (ID.dispositionTask) SENGAJA dibiarkan rantainya
+    // tidak sah — distribusinya masih 'sent' dan penerimanya bukan penerbit
+    // tugasnya, sehingga `currentIssuer()` menolaknya. Ia merekam bentuk
+    // penolakan 403/404 untuk kasus dasar, dan tidak boleh "diperbaiki".
+    // Varian di bawah memakai rantai terpisah yang benar-benar sah.
+    await client.query(
+      `INSERT INTO sdl_urmin_incoming(id,letter_number,sender,letter_date,received_date,subject,classification,status,created_by,updated_by,created_at,updated_at)
+       VALUES($1,'015/UJI/2026','Bagian Perencanaan Polda','2026-09-20','2026-09-22',$2,'biasa','registered',$3,$3,$4,$4)`,
+      [ID.incomingDisposition, 'Sasaran uji rantai disposisi', u['op-urmin'], at(35)],
+    )
+
+    // Sasaran varian unggah lampiran (endpoint 103). Ditanam PALING AKHIR di
+    // antara surat masuk, dan itu disengaja: `agenda_no` kolom identity yang
+    // dialokasikan menurut urutan INSERT dan ikut terserialisasi apa adanya ke
+    // JSON. Menyisipkannya di tengah akan menggeser nomor agenda setiap surat
+    // sesudahnya dan membuat seluruh golden surat masuk berubah tanpa ada
+    // perilaku backend yang berbeda.
+    //
+    // Milik op-urmin dan berklasifikasi 'biasa' karena grant op-urmin
+    // ber-scope 'own' berbatas 'biasa'; 'registered' karena r3b.go:241
+    // menolak 409 not_registered untuk status lain.
+    await client.query(
+      `INSERT INTO sdl_urmin_incoming(id,letter_number,sender,letter_date,received_date,subject,classification,status,created_by,updated_by,created_at,updated_at)
+       VALUES($1,'016/UJI/2026','Bagian Perencanaan Polda','2026-09-20','2026-09-22',$2,'biasa','registered',$3,$3,$4,$4)`,
+      [ID.incomingWriteAttach, 'Sasaran uji unggah lampiran surat masuk', u['op-urmin'], at(50)],
+    )
+
+    // Lima distribusi 'received' kepada kasubbagren. Status 'received' bukan
+    // kenyamanan: `currentIssuer()` menolak distribusi yang belum diambil, dan
+    // tanpanya SELURUH rantai di bawahnya tidak sah.
+    for (const [id, reason, minute] of [
+      [ID.distributionDispositionDone, 'Diteruskan untuk uji disposisi yang sudah selesai.', 36],
+      [ID.distributionDispositionAccept, 'Diteruskan untuk uji penerimaan tugas disposisi.', 37],
+      [ID.distributionDispositionComplete, 'Diteruskan untuk uji penyelesaian tugas disposisi.', 38],
+      [ID.distributionDispositionCandidates, 'Diteruskan untuk uji daftar calon penerusan.', 39],
+      [ID.distributionDispositionForward, 'Diteruskan untuk uji penerusan disposisi berjenjang.', 40],
+    ]) {
+      await client.query(
+        `INSERT INTO sdl_urmin_distributions(id,incoming_id,sent_by,recipient_unit,recipient_user,status,reason,sent_at,received_at)
+         VALUES($1,$2,$3,'subbagren',$4,'received',$5,$6,$6)`,
+        [id, ID.incomingDisposition, u['ka-urmin'], u['kasubbagren'], reason, at(minute)],
+      )
+    }
+
+    // Tugas TERBUKA: satu distribusi masing-masing, karena
+    // `sdl_disposition_open_one_idx` hanya mengizinkan satu tugas pending atau
+    // in_progress per (distribusi, pelaksana) dan pelaksananya sama semua.
+    //
+    // Tenggat dua tugas penerusan dibuat jauh lebih panjang: endpoint 122
+    // menolak 409 `child_due_after_parent` kalau tenggat anak melewati induk.
+    for (const [id, distribution, instruction, due, status, accepted, minute] of [
+      [ID.taskWriteAccept, ID.distributionDispositionAccept,
+        'Uji penerimaan disposisi: terima tugas ini lalu kerjakan.',
+        '2027-03-31', 'pending', null, 41],
+      [ID.taskWriteComplete, ID.distributionDispositionComplete,
+        'Uji penyelesaian disposisi: selesaikan dan laporkan hasilnya.',
+        '2027-03-31', 'in_progress', at(42), 42],
+      [ID.taskWriteCandidates, ID.distributionDispositionCandidates,
+        'Uji daftar calon penerusan disposisi berjenjang.',
+        '2027-12-31', 'in_progress', at(43), 43],
+      [ID.taskWriteForward, ID.distributionDispositionForward,
+        'Uji penerusan disposisi berjenjang kepada staf pelaksana.',
+        '2027-12-31', 'in_progress', at(44), 44],
+    ]) {
+      await client.query(
+        `INSERT INTO sdl_urmin_disposition_tasks(id,distribution_id,incoming_id,unit_key,issued_by,assigned_to,instruction,due_date,status,accepted_at,depth,version,created_at,updated_at)
+         VALUES($1,$2,$3,'subbagren',$4,$5,$6,$7::date,$8,$9,0,1,$10,$10)`,
+        [id, distribution, ID.incomingDisposition, u['kasubbagren'], u['op-subbagren'],
+          instruction, due, status, accepted, at(minute)],
+      )
+    }
+
+    // Tugas SELESAI: tidak kena indeks tugas-terbuka, jadi kelimanya boleh
+    // menumpang satu distribusi yang sama. `completed_at` jauh sebelum tenggat
+    // supaya `dispositionSLA` tetap 'completed_on_time' dan tidak berubah
+    // seiring berjalannya waktu nyata.
+    for (const [id, instruction, minute] of [
+      [ID.taskWriteHistory, 'Uji riwayat disposisi: laporkan hasil telaah berkas.', 45],
+      [ID.taskWriteReview, 'Uji telaah disposisi: hasil pekerjaan menunggu penilaian penerbit.', 46],
+      [ID.taskWriteFinalStatus, 'Uji pembacaan status persetujuan final disposisi.', 47],
+      [ID.taskWriteSubmitFinal, 'Uji pengajuan persetujuan final disposisi kepada pimpinan.', 48],
+      [ID.taskWriteDecideFinal, 'Uji keputusan akhir pimpinan atas disposisi yang diajukan.', 49],
+    ]) {
+      await client.query(
+        `INSERT INTO sdl_urmin_disposition_tasks(id,distribution_id,incoming_id,unit_key,issued_by,assigned_to,instruction,due_date,status,accepted_at,completed_at,completion_note,depth,version,created_at,updated_at)
+         VALUES($1,$2,$3,'subbagren',$4,$5,$6,'2027-03-31','completed',$7,$8,$9,0,1,$7,$8)`,
+        [id, ID.distributionDispositionDone, ID.incomingDisposition,
+          u['kasubbagren'], u['op-subbagren'], instruction,
+          at(minute), at(minute + 100),
+          'Pekerjaan telah diselesaikan dan hasilnya dilaporkan.'],
+      )
+    }
+
+    // Riwayat hanya untuk sasaran endpoint 117. Telaah TIDAK disimpan sebagai
+    // event — ia baris tersendiri yang disusulkan handler di ekor daftar.
+    for (const [event, reason, minute] of [
+      ['issued', 'Tugas diterbitkan kepada pelaksana yang ditunjuk.', 45],
+      ['accepted', 'Tugas diterima dan mulai dikerjakan pelaksana.', 60],
+      ['completed', 'Pekerjaan telah diselesaikan dan hasilnya dilaporkan.', 145],
+    ]) {
+      await client.query(
+        `INSERT INTO sdl_urmin_disposition_events(disposition_id,actor_id,event_key,reason,created_at)
+         VALUES($1,$2,$3,$4,$5)`,
+        [ID.taskWriteHistory, event === 'issued' ? u['kasubbagren'] : u['op-subbagren'],
+          event, reason, at(minute)],
+      )
+    }
+
+    // Telaah 'approved' adalah prasyarat `readyForSubmission`. Sasaran
+    // endpoint 120 sengaja TIDAK punya baris di sini: ia harus berstatus
+    // 'awaiting_review', kalau tidak varian telaahnya 409 review_state_conflict.
+    for (const [task, minute] of [
+      [ID.taskWriteHistory, 160],
+      [ID.taskWriteFinalStatus, 161],
+      [ID.taskWriteSubmitFinal, 162],
+      [ID.taskWriteDecideFinal, 163],
+    ]) {
+      await client.query(
+        `INSERT INTO sdl_urmin_disposition_reviews(disposition_id,reviewed_by,decision,reason,created_at)
+         VALUES($1,$2,'approved',$3,$4)`,
+        [task, u['kasubbagren'], 'Hasil pekerjaan sudah sesuai instruksi dan dapat diterima.', at(minute)],
+      )
+    }
+
+    // Satu pengajuan final berstatus 'pending' — sasaran endpoint 126.
+    // Pengajunya kasubbagren; pemutusnya kabagrenmin, orang yang berbeda,
+    // karena `sdl_final_approval_state` menolak decided_by == submitted_by.
+    await client.query(
+      `INSERT INTO sdl_urmin_final_approvals(root_task_id,submitted_by,submission_reason,submitted_at,status,version)
+       VALUES($1,$2,$3,$4,'pending',1)`,
+      [ID.taskWriteDecideFinal, u['kasubbagren'],
+        'Seluruh tugas pada kasus ini telah selesai dan ditelaah.', at(170)],
     )
 
     // ---- usulan Subbagren ----
@@ -420,6 +923,97 @@ export async function seedDocuments(databaseUrl, evidenceKey) {
        VALUES($1,$2,$3,'bukti-bayar.pdf','application/pdf',$4,$5,$6,'pending',1,$7)`,
       [ID.evidence, ID.realisasi, u['op-subbagren'],
         PDF_BYTES.length, sha256Hex(PDF_BYTES), sealed, at(23)],
+    )
+
+    // ---- rantai anggaran: sasaran varian jalur sukses ----
+    //
+    // Berbeda dari usulan, varian anggaran BERANTAI, bukan berdiri sendiri:
+    // verifikasi realisasi (67) menuntut buktinya sudah 'approved' (71), yang
+    // menuntut pagu induknya 'verified'. Urutan eksekusinya ditentukan urutan
+    // deklarasi di VARIANTS, bukan nomor endpoint.
+    //
+    // Pembuat baris selalu op-subbagren atau kabagrenmin, tidak pernah
+    // kasubbagren: ketiga handler verifikasi menolak 403
+    // 'self_verification_denied' kalau pemeriksa == pembuat.
+    for (const [id, title, minute] of [
+      [ID.proposalWritePaguRegister, 'Sasaran uji pendaftaran pagu', 40],
+      [ID.proposalWritePaguVerify, 'Sasaran uji verifikasi pagu', 41],
+      [ID.proposalWriteRealisasiRecord, 'Sasaran uji pencatatan realisasi', 42],
+      [ID.proposalWriteChain, 'Sasaran uji rantai bukti dan realisasi', 43],
+      [ID.proposalWriteEvidence, 'Sasaran uji unggah bukti', 52],
+    ]) {
+      await client.query(
+        `INSERT INTO sdl_subbagren_proposals(id,fiscal_year,source_unit,title,output_target,proposed_budget,classification,status,created_by,updated_by,version,created_at,updated_at)
+         VALUES($1,2026,'Subbagren',$2,'Tersedianya bahan perencanaan yang terverifikasi',300000000,'biasa','submitted',$3,$3,1,$4,$4)`,
+        [id, title, u['op-subbagren'], at(minute)],
+      )
+      // Pendaftaran pagu menuntut telaah internal 'approved' lebih dulu
+      // (budget.go: 409 internal_review_required). Keempatnya dibuat approved
+      // supaya prasyarat itu tidak menjadi variabel tersembunyi.
+      await client.query(
+        `INSERT INTO sdl_subbagren_review_cases(proposal_id,review_status,revision_count,has_revision,updated_by,updated_at)
+         VALUES($1,'approved',0,false,$2,$3)`,
+        [id, u['kasubbagren'], at(minute)],
+      )
+    }
+
+    // Pagu: satu 'pending' untuk diverifikasi varian 65, dua 'verified' sebagai
+    // induk realisasi. Nomor otorisasi dipakai harness sebagai penanda fixture —
+    // tidak pernah diubah transisi mana pun, berbeda dari status.
+    //
+    // Dua constraint skema mengatur bentuk baris ini, dan keduanya sudah
+    // menggagalkan seed sekali:
+    //   pagu_review_consistent  status != 'pending' WAJIB punya reviewed_by
+    //                           dan reviewed_at; status 'pending' wajib kosong.
+    //   pagu_separation         reviewed_by tidak boleh sama dengan created_by.
+    // Maker-checker di sini bukan cuma aturan handler — database ikut menegakkan.
+    for (const [id, proposal, authNumber, status, minute] of [
+      [ID.paguWriteVerify, ID.proposalWritePaguVerify, 'DIPA-2026-9002', 'pending', 44],
+      [ID.paguWriteRecord, ID.proposalWriteRealisasiRecord, 'DIPA-2026-9003', 'verified', 45],
+      [ID.paguWriteChain, ID.proposalWriteChain, 'DIPA-2026-9004', 'verified', 46],
+      [ID.paguWriteEvidence, ID.proposalWriteEvidence, 'DIPA-2026-9005', 'verified', 53],
+    ]) {
+      const reviewed = status !== 'pending'
+      await client.query(
+        `INSERT INTO sdl_subbagren_pagu(id,proposal_id,amount,authorization_number,authorization_issuer,authorization_date,status,created_by,reviewed_by,review_reason,reviewed_at,version,created_at)
+         VALUES($1,$2,200000000,$3,'Biro Perencanaan Polda','2026-01-15',$4,$5,$6,$7,$8,$9,$10)`,
+        [id, proposal, authNumber, status, u['op-subbagren'],
+          reviewed ? u['kasubbagren'] : null,
+          reviewed ? 'Dokumen otorisasi sudah dicocokkan dengan arsip.' : '',
+          reviewed ? at(minute) : null,
+          reviewed ? 2 : 1,
+          at(minute)],
+      )
+    }
+
+    // Realisasi rantai: 50 juta dari pagu 200 juta, belum ada realisasi
+    // terverifikasi lain di bawahnya, jadi uji plafon di budget.go
+    // (amount > paguAmount-used) lolos dengan sisa yang jelas.
+    await client.query(
+      `INSERT INTO sdl_subbagren_realisasi(id,pagu_id,amount,transaction_date,evidence_reference,description,status,created_by,version,created_at)
+       VALUES($1,$2,50000000,'2026-05-20','SP2D-2026-900001','Pembayaran rantai uji bukti dan realisasi','pending',$3,1,$4)`,
+      [ID.realisasiWriteChain, ID.paguWriteChain, u['op-subbagren'], at(47)],
+    )
+
+    // Bukti rantai disegel dengan kunci yang sama. Verifikasi realisasi membuka
+    // amplop ini dan mencocokkan sha256 plaintext-nya; kalau segelnya tidak
+    // sah, yang muncul 409 evidence_integrity_failure, bukan kegagalan seed.
+    await client.query(
+      `INSERT INTO sdl_subbagren_evidence(id,realisasi_id,uploaded_by,filename,mime_type,size_bytes,sha256,body,status,version,created_at)
+       VALUES($1,$2,$3,'bukti-rantai-uji.pdf','application/pdf',$4,$5,$6,'pending',1,$7)`,
+      [ID.evidenceWriteChain, ID.realisasiWriteChain, u['op-subbagren'],
+        PDF_BYTES.length, sha256Hex(PDF_BYTES), sealEvidence(evidenceKey, PDF_BYTES), at(48)],
+    )
+
+    // Realisasi untuk varian unggah bukti (endpoint 69). SENGAJA tanpa baris
+    // bukti apa pun: evidence.go:189 menolak 409 active_evidence_exists kalau
+    // sudah ada bukti 'pending' atau 'approved', jadi satu-satunya realisasi
+    // yang jalur unggahnya bisa diuji adalah yang masih kosong. Statusnya
+    // wajib 'pending' (evidence.go:127).
+    await client.query(
+      `INSERT INTO sdl_subbagren_realisasi(id,pagu_id,amount,transaction_date,evidence_reference,description,status,created_by,version,created_at)
+       VALUES($1,$2,30000000,'2026-05-25','SP2D-2026-900002','Pembayaran sasaran uji unggah bukti','pending',$3,1,$4)`,
+      [ID.realisasiWriteEvidence, ID.paguWriteEvidence, u['op-subbagren'], at(54)],
     )
 
     // ---- arahan pimpinan ----

@@ -139,10 +139,156 @@ export class HarnessDb {
         ['proposalReviewId', 'Sasaran uji telaah maker-checker'],
         ['proposalRevisionId', 'Sasaran uji perbaikan revisi'],
         ['proposalResubmitId', 'Sasaran uji pengajuan ulang'],
+        ['proposalPaguRegisterId', 'Sasaran uji pendaftaran pagu'],
       ].map(([key, title]) => [
         key,
         'SELECT id::text AS v FROM sdl_subbagren_proposals WHERE title=$1 LIMIT 1',
         [title],
+      ]),
+
+      // Pagu ditandai nomor otorisasi, realisasi oleh referensi buktinya,
+      // bukti oleh nama berkasnya. Ketiganya kolom yang tidak pernah disentuh
+      // transisi status, jadi tetap menunjuk baris yang sama sesudah varian
+      // sebelumnya dalam rantai berhasil mengubahnya.
+      ['paguVerifyId',
+        'SELECT id::text AS v FROM sdl_subbagren_pagu WHERE authorization_number=$1 LIMIT 1',
+        ['DIPA-2026-9002']],
+      ['paguRecordId',
+        'SELECT id::text AS v FROM sdl_subbagren_pagu WHERE authorization_number=$1 LIMIT 1',
+        ['DIPA-2026-9003']],
+      ['realisasiChainId',
+        'SELECT id::text AS v FROM sdl_subbagren_realisasi WHERE evidence_reference=$1 LIMIT 1',
+        ['SP2D-2026-900001']],
+      // Sasaran varian unggah bukti: realisasi 'pending' yang belum punya satu
+      // baris bukti pun. Penandanya referensi bukti, bukan status — status
+      // realisasi ini tidak berubah oleh unggahan, tapi memakai predikat
+      // "pending tanpa bukti" akan menunjuk baris lain begitu rantai 67
+      // bergerak.
+      ['realisasiEvidenceUploadId',
+        'SELECT id::text AS v FROM sdl_subbagren_realisasi WHERE evidence_reference=$1 LIMIT 1',
+        ['SP2D-2026-900002']],
+      ['evidenceChainId',
+        'SELECT id::text AS v FROM sdl_subbagren_evidence WHERE filename=$1 LIMIT 1',
+        ['bukti-rantai-uji.pdf']],
+
+      // Penerima arahan yang sah menurut api.go: aktif, ber-unit aktif, punya
+      // grant berlaku, bukan Superadmin, dan bukan sesama Kabagrenmin.
+      // ka-urmin memenuhi keempatnya; kabagrenmin sendiri tidak boleh dipakai.
+      ['directiveRecipientId',
+        "SELECT id::text AS v FROM sdl_users WHERE lower(username)='ka-urmin'"],
+
+      // Surat masuk: ditandai nomor surat, unik saat seed.
+      ...[
+        ['incomingEditId', '011/UJI/2026'],
+        ['incomingRegisterId', '012/UJI/2026'],
+        ['incomingDistributeId', '013/UJI/2026'],
+        ['incomingInboxId', '014/UJI/2026'],
+        ['incomingAttachId', '016/UJI/2026'],
+      ].map(([key, number]) => [
+        key,
+        'SELECT id::text AS v FROM sdl_urmin_incoming WHERE letter_number=$1 LIMIT 1',
+        [number],
+      ]),
+
+      // Penerima distribusi yang sah: butuh permission 'urmin.distribusi.receive'
+      // DAN grant ber-scope 'unit' atau 'assigned' di unit tujuan. op-subbagren
+      // tidak punya permission-nya; kabagrenmin punya keduanya di keempat unit.
+      ['distributionRecipientId',
+        "SELECT id::text AS v FROM sdl_users WHERE lower(username)='kabagrenmin'"],
+
+      // Distribusi sasaran rantai kotak masuk, ditandai alasan pengirimannya —
+      // kolom yang tidak diubah oleh `receive` maupun penerbitan disposisi.
+      ['inboxDistributionId',
+        'SELECT id::text AS v FROM sdl_urmin_distributions WHERE reason=$1 LIMIT 1',
+        ['Diteruskan ke Kasubbagren untuk uji rantai kotak masuk.']],
+
+      // Pelaksana disposisi: butuh `urmin.disposisi.execute` dan grant di unit
+      // yang sama dengan distribusinya. Harus BUKAN penerbitnya.
+      ['dispositionAssigneeId',
+        "SELECT id::text AS v FROM sdl_users WHERE lower(username)='op-subbagren'"],
+
+      // ---- rantai disposisi (117–126) ----
+      //
+      // Dicari lewat `instruction`, satu-satunya kolom tugas yang tidak pernah
+      // disentuh transisi mana pun. Status, versi, tenggat, dan catatan
+      // penyelesaian semuanya berubah begitu varian berhasil; memakai salah
+      // satunya sebagai penanda membuat fixture menunjuk baris lain di run
+      // berikutnya — persis jebakan yang dicatat MIGRATION-PLAN.md.
+      ...[
+        ['dispositionHistoryId', 'Uji riwayat disposisi: laporkan hasil telaah berkas.'],
+        ['dispositionAcceptId', 'Uji penerimaan disposisi: terima tugas ini lalu kerjakan.'],
+        ['dispositionCompleteId', 'Uji penyelesaian disposisi: selesaikan dan laporkan hasilnya.'],
+        ['dispositionReviewId', 'Uji telaah disposisi: hasil pekerjaan menunggu penilaian penerbit.'],
+        ['dispositionCandidatesId', 'Uji daftar calon penerusan disposisi berjenjang.'],
+        ['dispositionForwardId', 'Uji penerusan disposisi berjenjang kepada staf pelaksana.'],
+        ['dispositionFinalStatusId', 'Uji pembacaan status persetujuan final disposisi.'],
+        ['dispositionSubmitFinalId', 'Uji pengajuan persetujuan final disposisi kepada pimpinan.'],
+        ['dispositionDecideFinalId', 'Uji keputusan akhir pimpinan atas disposisi yang diajukan.'],
+      ].map(([key, instruction]) => [
+        key,
+        'SELECT id::text AS v FROM sdl_urmin_disposition_tasks WHERE instruction=$1 LIMIT 1',
+        [instruction],
+      ]),
+
+      // Sasaran penerusan: anggota unit subbagren yang punya `execute` tapi
+      // BUKAN penerbit maupun pelaksana tugas induknya. Keduanya diblokir
+      // `dispositionPathUsers` sebagai pencegahan siklus, jadi orang ketiga
+      // inilah satu-satunya tujuan yang sah.
+      ['dispositionForwardTargetId',
+        "SELECT id::text AS v FROM sdl_users WHERE lower(username)='staf-subbagren'"],
+
+      // ---- Engine B: berkas kerja unit-work (21–31) ----
+      //
+      // Ditandai `title`, dan varian penyuntingan (23) sengaja mengirim judul
+      // yang SAMA supaya penanda ini tidak ikut berubah. Yang disunting hanya
+      // `description`; bahwa perubahan itu benar-benar mendarat dibuktikan
+      // varian baca-ulang 22, bukan oleh respons mutasinya yang cuma {ok:true}.
+      ...[
+        ['workUpdateId', 'Berkas uji penyuntingan unit-work'],
+        ['workDeleteId', 'Berkas uji penghapusan unit-work'],
+        ['workAssignId', 'Berkas uji penugasan unit-work'],
+        ['workReceiveId', 'Berkas uji penerimaan tugas unit-work'],
+        ['workCompleteId', 'Berkas uji penyelesaian tugas unit-work'],
+        ['workCancelId', 'Berkas uji pembatalan tugas unit-work'],
+      ].map(([key, title]) => [
+        key,
+        'SELECT id::text AS v FROM sdl_unit_work_records WHERE title=$1 LIMIT 1',
+        [title],
+      ]),
+
+      // Tugas internal ditandai `instruction` — satu-satunya kolom yang tidak
+      // disentuh `taskAction`, yang hanya mengubah status dan response.
+      ...[
+        ['taskReceiveId', 'Mohon terima tugas ini sebagai uji transisi pending ke received.'],
+        ['taskCompleteId', 'Mohon selesaikan tugas ini sebagai uji transisi received ke completed.'],
+        ['taskCancelId', 'Tugas ini akan dibatalkan pemberinya sebagai uji transisi cancelled.'],
+      ].map(([key, instruction]) => [
+        key,
+        'SELECT id::text AS v FROM sdl_unit_work_tasks WHERE instruction=$1 LIMIT 1',
+        [instruction],
+      ]),
+
+      // Penerima penugasan: anggota unit urmin dengan grant aktif, dan BUKAN
+      // pemberinya — `assign` menolak 400 invalid_assignment kalau `to`
+      // sama dengan pemanggil.
+      ['workAssigneeId',
+        "SELECT id::text AS v FROM sdl_users WHERE lower(username)='staf-urmin'"],
+
+      // ---- Engine B: register surat keluar (44–51) ----
+      //
+      // Ditandai `ref_code`, yang ber-UNIQUE per (kind, lower(ref_code)) selama
+      // belum dihapus. Varian penyuntingan 46 mengirim kode yang sama persis —
+      // mengubahnya akan membuat penanda ini menunjuk entah ke mana.
+      ...[
+        ['registryUpdateId', 'SK-2026-911'],
+        ['registryDeleteId', 'SK-2026-912'],
+        ['registrySubmitId', 'SK-2026-913'],
+        ['registryApproveId', 'SK-2026-914'],
+        ['registryRejectId', 'SK-2026-915'],
+      ].map(([key, code]) => [
+        key,
+        "SELECT id::text AS v FROM sdl_urmin_registry WHERE kind='surat_keluar' AND ref_code=$1 LIMIT 1",
+        [code],
       ]),
     ]
 

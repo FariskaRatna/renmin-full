@@ -206,6 +206,44 @@ berlaku, dan CSRF diselesaikan sebelum header `Cookie` dibangun.
   mendapatkannya — itu tugas suite `internal/securitytest` yang diporting
   terpisah. Endpoint bisa cocok byte-per-byte sambil tetap membocorkan data ke
   role yang salah.
+- **Format timestamp tidak pernah dibanding di sini.** `normalize.js` mengganti
+  setiap timestamp dengan `<timestamp>` — perlu, karena capture dan compare
+  jatuh di detik yang berbeda, tapi akibatnya `...05.780192Z` dan `...05.780Z`
+  menjadi tidak terbedakan selamanya. Yang menjaga kelas itu
+  `verify/timestamp-parity.js`, yang membandingkan byte mentah. Jalankan ia
+  setelah menyentuh serialisasi apa pun; berapa kali pun harness dijalankan,
+  ia tidak akan menolong.
+
+## Multipart
+
+Tiga endpoint memakai `multipart/form-data`: 69 (unggah bukti), 103 (unggah
+lampiran), dan 109 (intake). Varian-nya menulis bagian form langsung di
+registry, dan `run.js` menukar kunci berkas dengan byte dari `files.js`:
+
+```js
+multipart: [
+  { name: 'reason', value: 'Alasan minimal 8 karakter.' },
+  { name: 'file', file: 'pdf', filename: 'bukti-unggah-uji.pdf' },
+]
+```
+
+Tiga hal yang menentukan dan mudah terlewat:
+
+- **Urutan bagian ikut diuji.** Go membaca `FormFile` sebelum `FormValue`
+  (r3b.go:250 lalu :265), jadi kiriman yang salah di dua tempat sekaligus
+  menghasilkan kode error dari pemeriksaan yang lebih dulu.
+- **Nama field berbeda antar endpoint**: `file` tunggal pada 69 dan 103,
+  `files` jamak (boleh berulang sampai 10) pada 109. Intake juga menuntut
+  tepat SATU field teks `payload` berisi JSON.
+- **Content-Type per bagian tidak menentukan apa pun.** Ketiga handler
+  menyimpulkan tipe dari magic byte isi berkas dan mengabaikan deklarasi
+  klien; nama berkasnya justru diperiksa ketat lewat
+  `^[a-zA-Z0-9 _().-]{1,160}$`.
+
+Boundary-nya **tetap**, bukan acak seperti `FormData` bawaan Node: ketiga
+endpoint menimbang seluruh body lewat `http.MaxBytesReader`, jadi panjang body
+yang berubah antar-run akan membuat kasus di dekat batas berperilaku berbeda
+antara capture dan compare.
 
 Setiap kasus yang dilewati tercatat beserta alasannya di `golden/_summary.json`
 dan diringkas di akhir setiap run. Cakupan yang hilang tidak boleh diam-diam.
@@ -214,12 +252,14 @@ dan diringkas di akhir setiap run. Cakupan yang hilang tidak boleh diam-diam.
 
 | Berkas | Isi |
 |---|---|
-| `registry.js` | 142 endpoint, bernomor sesuai `docs/API-CONTRACT.md` §5 |
+| `registry.js` | 142 endpoint, bernomor sesuai `docs/API-CONTRACT.md` §5, plus varian jalur sukses |
 | `actors.js` | persona dan pembangunan sesi |
-| `client.js` | klien HTTP, cookie jar, CSRF, pemecah CAPTCHA |
+| `client.js` | klien HTTP, cookie jar, CSRF, pemecah CAPTCHA, perakit multipart |
+| `files.js` | byte berkas uji; satu sumber untuk seed maupun unggahan |
 | `db.js` | suntikan sesi, pembersihan `must_change_password`, fixture ID |
 | `normalize.js` | penggantian nilai volatil |
 | `run.js` | perluasan kasus, eksekusi, perbandingan |
+| `seed-documents.js` | reset + tanam dokumen deterministik (`seed-docs`) |
 | `index.js` | CLI |
 | `golden/` | hasil rekaman (per mount) + `_summary.json` |
 

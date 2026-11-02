@@ -44,7 +44,11 @@ export function readSingleFile(req, { fieldName, maxBodyBytes, maxFileBytes, max
         },
       })
     } catch {
-      finish({ error: 'missing' })
+      // Body yang sama sekali bukan multipart (tanpa boundary) setara dengan
+      // ParseMultipartForm yang gagal di Go — berbeda dari multipart yang sah
+      // tapi tidak memuat berkas, dan kode responsnya pun berbeda
+      // (413 invalid_attachment lawan 400 file_required, r3b.go:243).
+      finish({ error: 'missing', unparsable: true })
       return
     }
 
@@ -103,6 +107,83 @@ export function readSingleFile(req, { fieldName, maxBodyBytes, maxFileBytes, max
     })
 
     parser.on('error', () => finish({ error: 'missing' }))
+
+    req.pipe(parser)
+  })
+}
+
+/**
+ * Pembacaan form multipart BERBERKAS BANYAK, padanan r.ParseMultipartForm()
+ * yang diikuti pembacaan r.MultipartForm.File[...] di Go.
+ *
+ * Dibutuhkan endpoint intake (urmin/r5f7.go), yang menerima satu field teks
+ * `payload` plus sampai 10 berkas sekaligus dalam satu transaksi.
+ * readSingleFile() tidak bisa dipakai: ia hanya membaca berkas pertama dan
+ * membuang sisanya, sedangkan di sini SEMUA berkas ikut disimpan.
+ *
+ * `fieldValues` menyimpan SELURUH nilai per nama field, bukan hanya yang
+ * pertama. Go membedakan `len(MultipartForm.Value["payload"]) != 1` dari
+ * "payload ada" (r5f7.go:174), jadi kiriman dengan dua payload harus bisa
+ * dikenali, bukan diam-diam memakai yang pertama.
+ *
+ * Batas `maxFiles` sengaja dilewati satu: Go menolak >10 berkas dengan 400
+ * too_many_files, dan tanpa slot ke-11 kelebihannya tidak akan pernah terlihat.
+ *
+ * @returns {Promise<{files: Array<{filename: string, buffer: Buffer, truncated: boolean}>,
+ *                    fields: object, fieldValues: object, error?: string, unparsable?: boolean}>}
+ */
+export function readMultipartForm(req, { maxBodyBytes, maxFileBytes, maxFiles }) {
+  return new Promise((resolve) => {
+    let settled = false
+    const finish = (result) => {
+      if (settled) return
+      settled = true
+      resolve(result)
+    }
+
+    let parser
+    try {
+      parser = busboy({
+        headers: req.headers,
+        limits: { files: maxFiles + 1, fileSize: maxFileBytes + 1, fields: 20 },
+      })
+    } catch {
+      finish({ error: 'unparsable', unparsable: true, files: [], fields: {}, fieldValues: {} })
+      return
+    }
+
+    let bodySize = 0
+    req.on('data', (chunk) => {
+      bodySize += chunk.length
+      if (bodySize > maxBodyBytes) {
+        finish({ error: 'too_large', files: [], fields: {}, fieldValues: {} })
+      }
+    })
+
+    const fields = {}
+    const fieldValues = {}
+    const files = []
+
+    parser.on('field', (name, value) => {
+      if (!(name in fields)) fields[name] = value
+      if (!(name in fieldValues)) fieldValues[name] = []
+      fieldValues[name].push(value)
+    })
+
+    parser.on('file', (name, stream, info) => {
+      const chunks = []
+      let truncated = false
+      stream.on('data', (chunk) => chunks.push(chunk))
+      stream.on('limit', () => {
+        truncated = true
+      })
+      stream.on('end', () => {
+        files.push({ field: name, filename: info.filename ?? '', buffer: Buffer.concat(chunks), truncated })
+      })
+    })
+
+    parser.on('close', () => finish({ files, fields, fieldValues }))
+    parser.on('error', () => finish({ error: 'unparsable', unparsable: true, files, fields, fieldValues }))
 
     req.pipe(parser)
   })

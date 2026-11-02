@@ -14,6 +14,10 @@ import { createPortalRouter } from './modules/portal/index.js'
 import { createBudgetRouter } from './modules/subbagren/budget.js'
 import { createUsulanRouter } from './modules/subbagren/usulan.js'
 import { createExecutiveRouter } from './modules/executive/index.js'
+import { createDirectivesRouter } from './modules/directives/index.js'
+import { createDispositionsRouter } from './modules/urmin/dispositions.js'
+import { createDistributionInboxRouter } from './modules/urmin/distribution-inbox.js'
+import { createSuratMasukRouter } from './modules/urmin/surat-masuk.js'
 
 /**
  * Perakitan router, padanan NewRouterWithAuth (internal/httpapi/router.go:32).
@@ -25,7 +29,7 @@ import { createExecutiveRouter } from './modules/executive/index.js'
  *
  * Tahap 2 baru memasang /api/v1/auth. Mount lain menyusul di Tahap 4.
  */
-export function createApp({ pool, config }) {
+export function createApp({ pool, config, mailer: injectedMailer }) {
   const app = express()
 
   // Go membaca RemoteAddr langsung dan SENGAJA tidak mempercayai header
@@ -38,7 +42,9 @@ export function createApp({ pool, config }) {
   app.use(requestId)
   app.use(securityHeaders)
 
-  const mailer = new Mailer(config.smtp)
+  // Satu Mailer dipakai bersama lapisan auth dan worker outbox, meniru
+  // main.go yang membuat `smtpMailer` sekali lalu menyerahkannya ke keduanya.
+  const mailer = injectedMailer ?? new Mailer(config.smtp)
 
   // ---- Di luar /api/v1 ----
   app.get('/healthz', (req, res) => {
@@ -69,6 +75,10 @@ export function createApp({ pool, config }) {
   v1.use('/unit-work', operational, createUnitWorkRouter({ pool, config }))
   v1.use('/subbagren/usulan', operational, createUsulanRouter({ pool, config }))
   v1.use('/subbagren/budget', operational, createBudgetRouter({ pool, config }))
+  v1.use('/leadership/directives', operational, createDirectivesRouter({ pool, config }))
+  v1.use('/urmin/surat-masuk', operational, createSuratMasukRouter({ pool, config }))
+  v1.use('/urmin/distribution-inbox', operational, createDistributionInboxRouter({ pool, config }))
+  v1.use('/urmin/dispositions', operational, createDispositionsRouter({ pool, config }))
 
   // Guard ad-hoc, bukan salah satu dari dua engine. Keduanya memasang
   // pemeriksanya sendiri di dalam router.

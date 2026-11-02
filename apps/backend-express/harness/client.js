@@ -1,6 +1,48 @@
 import { solveCaptcha } from './captcha.js'
 
 /**
+ * Boundary TETAP, bukan acak. `FormData` bawaan Node juga bisa dipakai, tapi ia
+ * mengarang boundary baru di setiap panggilan sehingga panjang body berubah
+ * antar-run — dan tiga endpoint multipart di SDL menimbang seluruh body
+ * (`http.MaxBytesReader`), bukan hanya isi berkasnya. Boundary tetap membuat
+ * ukuran body deterministik, jadi kasus yang berada dekat batas berperilaku
+ * sama di capture dan di compare.
+ */
+const MULTIPART_BOUNDARY = 'sdlHarnessBoundary7d41e0c9a2b64f18'
+
+/**
+ * Merakit body multipart/form-data sendiri.
+ *
+ * Dirakit tangan dengan alasan yang sama seperti cookie jar di bawah: Go
+ * membedakan hal-hal yang diabaikan pustaka tingkat tinggi — berapa KALI satu
+ * nama field muncul (`len(MultipartForm.Value["payload"]) != 1`, r5f7.go:174),
+ * berapa berkas dikirim pada satu nama (`len(files) != 1`, evidence.go:144),
+ * dan urutan kemunculannya. Semua itu harus bisa ditulis apa adanya oleh kasus
+ * uji, bukan dinormalkan diam-diam oleh pustaka.
+ *
+ * Content-Type per bagian ikut ditulis supaya kiriman menyerupai browser, tapi
+ * ia TIDAK menentukan apa pun: ketiga handler menyimpulkan tipe dari magic byte
+ * isi berkas dan mengabaikan deklarasi klien sepenuhnya.
+ *
+ * @param {Array<{name: string, value?: string, bytes?: Buffer,
+ *                filename?: string, contentType?: string}>} parts
+ */
+function buildMultipartBody(parts) {
+  const chunks = []
+  for (const part of parts) {
+    let head = `--${MULTIPART_BOUNDARY}\r\nContent-Disposition: form-data; name="${part.name}"`
+    if (part.filename !== undefined) head += `; filename="${part.filename}"`
+    head += '\r\n'
+    if (part.contentType) head += `Content-Type: ${part.contentType}\r\n`
+    chunks.push(Buffer.from(`${head}\r\n`, 'utf8'))
+    chunks.push(part.bytes ?? Buffer.from(String(part.value ?? ''), 'utf8'))
+    chunks.push(Buffer.from('\r\n', 'utf8'))
+  }
+  chunks.push(Buffer.from(`--${MULTIPART_BOUNDARY}--\r\n`, 'utf8'))
+  return Buffer.concat(chunks)
+}
+
+/**
  * Klien HTTP dengan cookie jar sendiri. Tidak memakai pustaka pihak ketiga
  * supaya perilaku cookie dan header persis terkendali — terutama Origin dan
  * X-CSRF-Token, dua hal yang menentukan lolos/tidaknya setiap mutation.
@@ -36,8 +78,9 @@ export class HttpClient {
   }
 
   /**
-   * options.body     payload JSON; undefined berarti tanpa body
-   * options.withCsrf sertakan header X-CSRF-Token (wajib untuk semua non-GET)
+   * options.body      payload JSON; undefined berarti tanpa body
+   * options.multipart daftar bagian form-data; MENGGANTIKAN options.body
+   * options.withCsrf  sertakan header X-CSRF-Token (wajib untuk semua non-GET)
    */
   async request(method, path, options = {}) {
     const headers = { Origin: this.#config.origin }
@@ -54,7 +97,10 @@ export class HttpClient {
     if (cookie) headers['Cookie'] = cookie
 
     let payload
-    if (options.body !== undefined) {
+    if (options.multipart !== undefined) {
+      payload = buildMultipartBody(options.multipart)
+      headers['Content-Type'] = `multipart/form-data; boundary=${MULTIPART_BOUNDARY}`
+    } else if (options.body !== undefined) {
       payload = JSON.stringify(options.body)
       headers['Content-Type'] = 'application/json'
     }

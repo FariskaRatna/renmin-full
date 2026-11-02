@@ -9,7 +9,24 @@ import { createHash } from 'node:crypto'
  */
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-const TIMESTAMP_RE = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})?$/
+/**
+ * Dua bentuk, dan pemisahnya bermakna.
+ *
+ * Bentuk ber-`T` menuntut DETIK. Itu disengaja: `validDateTimeLocal`
+ * (urmin/shared.js) menyimpan `2026-10-01T09:00` sebagai DATA, bukan stempel
+ * waktu. Kalau detik dibuat opsional di sini, nilai itu ikut tergantikan
+ * `<timestamp>` dan perbedaan isinya tidak akan pernah terdeteksi lagi.
+ *
+ * Bentuk berspasi boleh tanpa detik. Satu-satunya sumbernya
+ * `to_char(created_at AT TIME ZONE 'Asia/Jakarta','YYYY-MM-DD HH24:MI')`
+ * di unitwork/work.go:523 — jam dinding yang sudah dirender, presisi menit.
+ * Ditemukan 2026-11-01 lewat varian 22: capture dan compare kebetulan jatuh di
+ * menit yang berbeda, dan satu-satunya beda dari 379 kasus adalah `08:14`
+ * lawan `08:22`. Kasus dasarnya tidak pernah menampakkannya karena daftar
+ * event-nya masih kosong.
+ */
+const TIMESTAMP_RE =
+  /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})?| \d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:?\d{2})?)$/
 const HEX64_RE = /^[0-9a-f]{64}$/i
 
 /**
@@ -96,6 +113,54 @@ export class Normalizer {
         .join(' || ')
     }
     return out
+  }
+
+  /**
+   * Menomori ulang placeholder UUID mengikuti urutan dokumen AKHIR.
+   *
+   * Dibutuhkan karena `value()` membagikan nomor saat menelusuri, sementara
+   * transformasi `unordered` di run.js mengurutkan ulang array SESUDAH itu.
+   * Akibatnya nomor placeholder ikut terbawa urutan baris mentah dari
+   * Postgres — dan untuk `GET /admin/users`, urutan itu memang sembarang
+   * karena `ORDER BY created_at DESC` tidak punya tiebreaker (B6 di
+   * DEVIATIONS.md).
+   *
+   * Gejalanya menyesatkan: isi daftar identik baris per baris, urutannya pun
+   * sudah sama, tapi perbandingan tetap merah hanya karena `<uuid:1>` dan
+   * `<uuid:3>` tertukar. Itu terbaca seolah Express mengembalikan data orang
+   * lain, padahal tidak ada yang berbeda.
+   *
+   * Penomoran ulang dijalankan terakhir, atas seluruh bagian record sekaligus,
+   * supaya UUID yang sama di path dan di body tetap berbagi nomor.
+   *
+   * @param {unknown[]} parts bagian record, urutannya menentukan penomoran
+   * @returns {unknown[]} bagian yang sama dengan nomor yang sudah dirapikan
+   */
+  static renumber(parts) {
+    const seen = new Map()
+    const token = (match) => {
+      let replacement = seen.get(match)
+      if (!replacement) {
+        replacement = `<uuid:${seen.size + 1}>`
+        seen.set(match, replacement)
+      }
+      return replacement
+    }
+    const walk = (input) => {
+      // Placeholder bisa berdiri sendiri sebagai nilai, atau menyatu di dalam
+      // path yang sudah dirangkai ulang — keduanya ditangani satu pola.
+      if (typeof input === 'string') return input.replace(/<uuid:\d+>/g, token)
+      if (Array.isArray(input)) return input.map(walk)
+      if (input && typeof input === 'object') {
+        const out = {}
+        // Kunci sudah diurutkan value(); dipertahankan apa adanya supaya
+        // urutan penelusuran tetap sama persis di kedua backend.
+        for (const key of Object.keys(input)) out[key] = walk(input[key])
+        return out
+      }
+      return input
+    }
+    return parts.map(walk)
   }
 
   /** Body non-JSON (unduhan berkas) direkam sebagai sidik jari, bukan isi. */

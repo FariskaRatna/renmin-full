@@ -158,21 +158,25 @@ export const REGISTRY = [
 
   // ---- 5.5 /api/v1/subbagsumda/registry (6) ----
   { n: 32, mount: 'sumda', method: 'GET', path: '/api/v1/subbagsumda/registry/ranks', actors: ['kasubbagsumda'] },
-  { n: 33, mount: 'sumda', method: 'GET', path: '/api/v1/subbagsumda/registry/', actors: ['kasubbagsumda'] },
+  // `?kind=` wajib: tanpanya handler berhenti di 400 invalid_kind dan seluruh
+  // daftar — pemetaan kolom, decode JSONB `fields`, penyaringan Engine B per
+  // baris — tidak pernah dijalankan. Keluarga yang sama dengan `?year=` pada
+  // endpoint 61/62/72.
+  { n: 33, mount: 'sumda', method: 'GET', path: '/api/v1/subbagsumda/registry/?kind=personel', actors: ['kasubbagsumda'] },
   { n: 34, mount: 'sumda', method: 'POST', path: '/api/v1/subbagsumda/registry/', actors: ['kasubbagsumda'], safety: 'probe' },
   { n: 35, mount: 'sumda', method: 'GET', path: '/api/v1/subbagsumda/registry/{id}', params: { id: 'sumdaId' }, actors: ['kasubbagsumda'] },
   { n: 36, mount: 'sumda', method: 'PATCH', path: '/api/v1/subbagsumda/registry/{id}', params: { id: 'sumdaId' }, actors: ['kasubbagsumda'] },
   { n: 37, mount: 'sumda', method: 'DELETE', path: '/api/v1/subbagsumda/registry/{id}', params: { id: 'sumdaId' }, actors: ['kasubbagsumda'] },
 
   // ---- 5.6 /api/v1/subbagbinfung/registry (5) ----
-  { n: 38, mount: 'binfung', method: 'GET', path: '/api/v1/subbagbinfung/registry/', actors: ['kasubbagbinfung'] },
+  { n: 38, mount: 'binfung', method: 'GET', path: '/api/v1/subbagbinfung/registry/?kind=sop', actors: ['kasubbagbinfung'] },
   { n: 39, mount: 'binfung', method: 'POST', path: '/api/v1/subbagbinfung/registry/', actors: ['kasubbagbinfung'], safety: 'probe' },
   { n: 40, mount: 'binfung', method: 'GET', path: '/api/v1/subbagbinfung/registry/{id}', params: { id: 'binfungId' }, actors: ['kasubbagbinfung'] },
   { n: 41, mount: 'binfung', method: 'PATCH', path: '/api/v1/subbagbinfung/registry/{id}', params: { id: 'binfungId' }, actors: ['kasubbagbinfung'] },
   { n: 42, mount: 'binfung', method: 'DELETE', path: '/api/v1/subbagbinfung/registry/{id}', params: { id: 'binfungId' }, actors: ['kasubbagbinfung'] },
 
   // ---- 5.7 /api/v1/urmin/registry (9) — surat keluar ----
-  { n: 43, mount: 'urmin-registry', method: 'GET', path: '/api/v1/urmin/registry/', actors: ['kaUrmin'] },
+  { n: 43, mount: 'urmin-registry', method: 'GET', path: '/api/v1/urmin/registry/?kind=surat_keluar', actors: ['kaUrmin'] },
   { n: 44, mount: 'urmin-registry', method: 'POST', path: '/api/v1/urmin/registry/', actors: ['kaUrmin'], safety: 'probe' },
   { n: 45, mount: 'urmin-registry', method: 'GET', path: '/api/v1/urmin/registry/{id}', params: { id: 'urminRegistryId' }, actors: ['kaUrmin'] },
   { n: 46, mount: 'urmin-registry', method: 'PATCH', path: '/api/v1/urmin/registry/{id}', params: { id: 'urminRegistryId' }, actors: ['kaUrmin'] },
@@ -439,6 +443,612 @@ export const VARIANTS = [
     actors: ['kasubbagren'],
     body: { reason: 'Perbaikan sudah dituntaskan, mohon ditelaah kembali.', version: 1 },
     note: 'menuntut has_revision=true; revisionCount 0 -> 1 dan reviewStatus kembali pending',
+  },
+
+  // ---- 5.9 budget · maker-checker + plafon + integritas bukti ----
+  //
+  // URUTAN DEKLARASI DI BAWAH ADALAH URUTAN EKSEKUSI, dan di sini ia berarti.
+  // Berbeda dari usulan yang varian-variannya berdiri sendiri, anggaran
+  // BERANTAI: verifikasi realisasi (67) menolak 409 approved_evidence_required
+  // kalau buktinya belum disetujui (71). Karena itu 71 dideklarasikan SEBELUM
+  // 67, melanggar urutan nomor endpoint dengan sengaja.
+  //
+  // Pembagian aktor mengikuti maker-checker: kabagrenmin mencatat, kasubbagren
+  // memverifikasi. Ketiga handler verifikasi menolak 403
+  // 'self_verification_denied' kalau keduanya orang yang sama.
+  {
+    n: 64, variant: 'daftarkan-pagu', mount: 'budget', method: 'POST',
+    path: '/api/v1/subbagren/budget/pagu',
+    actors: ['kabagrenmin'],
+    bodyFixtures: { proposalId: 'proposalPaguRegisterId' },
+    body: {
+      amount: 180000000,
+      authorizationNumber: 'DIPA-2026-9101',
+      authorizationIssuer: 'Biro Perencanaan Polda',
+      authorizationDate: '2026-02-10',
+      reason: 'Pendaftaran pagu sesuai dokumen otorisasi yang diterima.',
+    },
+    note: 'menuntut usulan submitted + telaah approved; UNIQUE(proposal_id) menjadikan panggilan kedua 409 pagu_already_registered',
+  },
+  {
+    n: 65, variant: 'verifikasi-pagu', mount: 'budget', method: 'POST',
+    path: '/api/v1/subbagren/budget/pagu/{id}/review', params: { id: 'paguVerifyId' },
+    actors: ['kasubbagren'],
+    body: {
+      version: 1,
+      decision: 'verified',
+      reason: 'Dokumen otorisasi sudah dicocokkan dengan arsip DIPA.',
+    },
+    note: 'pagu didaftarkan op-subbagren, diverifikasi kasubbagren; status pending -> verified, version 1 -> 2',
+  },
+  {
+    n: 66, variant: 'catat-realisasi', mount: 'budget', method: 'POST',
+    path: '/api/v1/subbagren/budget/realisasi',
+    actors: ['kabagrenmin'],
+    bodyFixtures: { paguId: 'paguRecordId' },
+    body: {
+      amount: 40000000,
+      transactionDate: '2026-04-15',
+      evidenceReference: 'SP2D-2026-900101',
+      description: 'Pembayaran tahap pertama kegiatan uji pencatatan realisasi.',
+      reason: 'Pencatatan realisasi sesuai SP2D yang sudah terbit.',
+    },
+    note: 'menuntut pagu verified dan tahun transaksi == fiscalYear pagu (409/400 kalau tidak)',
+  },
+  {
+    n: 71, variant: 'setujui-bukti', mount: 'budget', method: 'POST',
+    path: '/api/v1/subbagren/budget/realisasi/{id}/evidence/{proofId}/review',
+    params: { id: 'realisasiChainId', proofId: 'evidenceChainId' },
+    actors: ['kasubbagren'],
+    body: {
+      version: 1,
+      decision: 'approved',
+      reason: 'Bukti bayar sudah dicocokkan dengan dokumen sumber.',
+    },
+    note: 'WAJIB sebelum varian 67: tanpa bukti approved, verifikasi realisasi berhenti di 409 approved_evidence_required',
+  },
+  {
+    n: 67, variant: 'verifikasi-realisasi', mount: 'budget', method: 'POST',
+    path: '/api/v1/subbagren/budget/realisasi/{id}/review', params: { id: 'realisasiChainId' },
+    actors: ['kasubbagren'],
+    body: {
+      version: 1,
+      decision: 'verified',
+      reason: 'Realisasi sudah sesuai bukti bayar yang telah disetujui.',
+    },
+    note: 'puncak rantai: membuka amplop AES-GCM, mencocokkan sha256 plaintext, lalu menguji plafon 50jt terhadap sisa pagu 200jt',
+  },
+  {
+    n: 69, variant: 'unggah-bukti', mount: 'budget', method: 'POST',
+    path: '/api/v1/subbagren/budget/realisasi/{id}/evidence',
+    params: { id: 'realisasiEvidenceUploadId' },
+    actors: ['kabagrenmin'],
+    multipart: [
+      { name: 'reason', value: 'Unggah bukti bayar sesuai SP2D yang sudah terbit.' },
+      { name: 'file', file: 'pdf', filename: 'bukti-unggah-uji.pdf' },
+    ],
+    note: 'satu-satunya jalur multipart di mount budget; realisasi sasaran sengaja belum punya bukti sama sekali, karena bukti pending/approved yang sudah ada akan menghentikannya di 409 active_evidence_exists',
+  },
+  {
+    n: 62, variant: 'ringkasan-setelah-rantai', mount: 'budget', method: 'GET',
+    path: '/api/v1/subbagren/budget/?year=2026',
+    actors: ['kasubbagren'],
+    note: 'baca ulang sesudah seluruh rantai: membuktikan verifiedRealization dan remaining benar-benar dihitung ulang, bukan sekadar dibaca dari kolom',
+  },
+
+  // ---- 5.12 directives · draf ber-revisi + penerbitan ----
+  //
+  // Hanya tiga endpoint yang jalur suksesnya belum tersentuh. Endpoint 93, 94,
+  // dan 95 (read / acknowledge / ack-seen) sudah menjawab 200 SUNGGUHAN di
+  // kasus dasar, karena ketiganya tidak membaca body sama sekali — body `{}`
+  // lewat begitu saja ke handler. Menambah varian untuk ketiganya hanya akan
+  // menduplikasi kasus yang sudah ada.
+  //
+  // Berantai, dan terpaksa: draf UNIK per penerbit (UNIQUE issuer_id) dan
+  // hanya kabagrenmin yang punya grant Kabagrenmin, jadi keempatnya memakai
+  // satu draf yang sama secara bergiliran. Urutannya:
+  //   simpan (rev 0->1) -> terbitkan (menghabiskan draf) -> simpan lagi -> hapus
+  {
+    n: 81, variant: 'simpan-draf', mount: 'directives', method: 'PUT',
+    path: '/api/v1/leadership/directives/draft',
+    actors: ['kabagrenmin'],
+    bodyFixtures: { recipients: ['directiveRecipientId'] },
+    body: {
+      title: 'Draf arahan uji harness',
+      body: 'Seluruh unit agar menyiapkan bahan evaluasi sesuai format yang berlaku.',
+      kind: 'umum',
+      priority: 'biasa',
+      // Format lokal tanpa zona waktu, pola sendiri di draft.go — berbeda dari
+      // dueAt pada endpoint 90 yang menuntut RFC3339 penuh.
+      dueAt: '2030-01-15T09:00',
+      revision: 0,
+    },
+    note: 'revision 0 menyisipkan draf pertama; respons mengembalikan revision 1',
+  },
+  {
+    n: 90, variant: 'terbitkan', mount: 'directives', method: 'POST',
+    path: '/api/v1/leadership/directives/',
+    actors: ['kabagrenmin'],
+    bodyFixtures: { recipients: ['directiveRecipientId'] },
+    body: {
+      title: 'Arahan terbit uji harness',
+      body: 'Seluruh unit agar melaporkan hasil evaluasi triwulan paling lambat akhir bulan.',
+      kind: 'umum',
+      priority: 'penting',
+      // RFC3339 penuh, dan WAJIB di masa depan (api.go:116). Tahun 2030 dipilih
+      // supaya kasus ini tidak membusuk diam-diam saat kalender bergerak.
+      dueAt: '2030-02-01T09:00:00Z',
+      draftRevision: 1,
+    },
+    note: 'draftRevision mengunci draf, memindahkan lampiran privat, lalu menghapus draf — semuanya satu transaksi',
+  },
+  {
+    n: 81, variant: 'simpan-draf-ulang', mount: 'directives', method: 'PUT',
+    path: '/api/v1/leadership/directives/draft',
+    actors: ['kabagrenmin'],
+    bodyFixtures: { recipients: ['directiveRecipientId'] },
+    body: {
+      title: 'Draf arahan uji harness kedua',
+      body: 'Draf kedua dibuat ulang sesudah draf pertama habis terpakai saat penerbitan.',
+      kind: 'persuratan',
+      priority: 'kilat',
+      dueAt: '',
+      revision: 0,
+    },
+    note: 'membuktikan draf benar-benar hilang sesudah terbit: revision 0 berhasil lagi, bukan 409',
+  },
+  {
+    n: 82, variant: 'hapus-draf', mount: 'directives', method: 'DELETE',
+    path: '/api/v1/leadership/directives/draft',
+    actors: ['kabagrenmin'],
+    body: { revision: 1 },
+    note: 'revisi harus cocok; lampiran privat ikut terhapus di transaksi yang sama',
+  },
+
+  // ---- 5.13 surat-masuk · Engine A, scope 'own' lawan 'unit' ----
+  //
+  // Tiga varian pertama dijalankan op-urmin, yang grant-nya ber-scope 'own'
+  // dan berbatas 'biasa'. Ia karena itu hanya lolos untuk surat MILIKNYA
+  // SENDIRI yang tidak berklasifikasi 'penting' — berbeda dari kasus usulan
+  // yang semuanya dijalankan pemegang scope 'unit'. Justru selisih itu yang
+  // ingin diuji di sini.
+  //
+  // Varian 108 dijalankan ka-urmin karena distribusi menuntut scope 'unit'
+  // atas surat milik orang lain.
+  //
+  // Varian 103 dan 109 adalah dua dari tiga jalur multipart di seluruh API
+  // (yang ketiga endpoint 69). Keduanya tetap dijalankan op-urmin: Engine A
+  // memeriksa `.attach` terhadap surat dengan status DIPAKSA 'registered'
+  // (r5f7.go:243), bukan terhadap status sebenarnya, dan grant 'own' op-urmin
+  // tetap menentukan karena surat sasarannya miliknya sendiri.
+  {
+    n: 98, variant: 'catat-surat', mount: 'surat-masuk', method: 'POST',
+    path: '/api/v1/urmin/surat-masuk/',
+    actors: ['opUrmin'],
+    body: {
+      letterNumber: '099/UJI-TULIS/2026',
+      sender: 'Biro Perencanaan Polda',
+      letterDate: '2026-09-25',
+      receivedDate: '2026-09-26',
+      subject: 'Surat masuk hasil uji jalur tulis harness',
+      classification: 'biasa',
+      reason: 'Pencatatan surat masuk yang baru diterima loket.',
+    },
+    note: 'agenda_no dialokasikan kolom identity; deterministik karena seed memakai RESTART IDENTITY',
+  },
+  {
+    n: 100, variant: 'sunting-draf', mount: 'surat-masuk', method: 'PATCH',
+    path: '/api/v1/urmin/surat-masuk/{id}', params: { id: 'incomingEditId' },
+    actors: ['opUrmin'],
+    body: {
+      letterNumber: '011/UJI/2026-REV',
+      sender: 'Bagian Perencanaan Polda',
+      letterDate: '2026-09-20',
+      receivedDate: '2026-09-22',
+      subject: 'Sasaran uji penyuntingan surat masuk (sudah disunting)',
+      classification: 'biasa',
+      reason: 'Perbaikan nomor surat sesuai berkas fisik.',
+      version: 1,
+    },
+    note: 'hanya status draft dan versi cocok yang lolos; version 1 -> 2',
+  },
+  {
+    n: 101, variant: 'daftarkan', mount: 'surat-masuk', method: 'POST',
+    path: '/api/v1/urmin/surat-masuk/{id}/register', params: { id: 'incomingRegisterId' },
+    actors: ['opUrmin'],
+    body: { reason: 'Surat sudah lengkap dan siap didaftarkan ke agenda.', version: 1 },
+    note: 'transisi draft -> registered; surat ber-intake justru ditolak 409 use_intake_submission',
+  },
+  {
+    n: 108, variant: 'distribusikan', mount: 'surat-masuk', method: 'POST',
+    path: '/api/v1/urmin/surat-masuk/{id}/distributions', params: { id: 'incomingDistributeId' },
+    actors: ['kaUrmin'],
+    bodyFixtures: { recipientId: 'distributionRecipientId' },
+    body: {
+      unit: 'subbagren',
+      reason: 'Diteruskan ke Subbagren untuk penyiapan bahan jawaban.',
+    },
+    note: 'penerima wajib punya urmin.distribusi.receive dengan scope unit/assigned; surat warisan tanpa baris intake bebas didistribusikan',
+  },
+  {
+    n: 103, variant: 'unggah-lampiran', mount: 'surat-masuk', method: 'POST',
+    path: '/api/v1/urmin/surat-masuk/{id}/attachments', params: { id: 'incomingAttachId' },
+    actors: ['opUrmin'],
+    multipart: [
+      { name: 'file', file: 'pdf', filename: 'lampiran-unggah-uji.pdf' },
+      { name: 'reason', value: 'Lampiran berkas fisik surat masuk dipindai dan diunggah.' },
+    ],
+    note: 'urutan bagian sengaja berkas-dulu-alasan-kemudian: Go membaca FormFile sebelum FormValue (r3b.go:250 lalu :265), jadi kiriman tanpa berkas menjadi 400 file_required — bukan 400 invalid_reason — walau keduanya salah',
+  },
+  {
+    n: 109, variant: 'intake-submit', mount: 'surat-masuk', method: 'POST',
+    path: '/api/v1/urmin/surat-masuk/intake',
+    actors: ['opUrmin'],
+    multipart: [
+      {
+        name: 'payload',
+        // Satu field teks berisi JSON, bukan body JSON. `DisallowUnknownFields`
+        // tetap berlaku di dalamnya, jadi field asing di sini pun 400.
+        //
+        // mode 'submit' + needsDisposition FALSE dipilih dengan sengaja:
+        // needsDisposition true memanggil kabagForIntake(), yang menjawab 409
+        // kalau Kabagrenmin yang memenuhi syarat bukan tepat satu — hasilnya
+        // bergantung pada isi tabel user, bukan pada perbedaan backend.
+        value: JSON.stringify({
+          id: '',
+          version: 0,
+          letterNumber: '017/UJI-INTAKE/2026',
+          sender: 'Biro Perencanaan Polda',
+          letterDate: '2026-09-28',
+          receivedDate: '2026-09-29',
+          subject: 'Undangan rapat hasil uji intake harness',
+          classification: 'biasa',
+          reason: 'Pencatatan undangan sekaligus pendaftaran lewat jalur intake.',
+          letterKind: 'undangan',
+          responseDue: '',
+          // letterKind 'undangan' pada mode 'submit' MEWAJIBKAN eventStart
+          // (validateFlexible, r5f7.go:96); tanpanya 400 invalid_intake.
+          eventStart: '2026-10-05T09:00',
+          eventEnd: '2026-10-05T12:00',
+          eventLocation: 'Aula Bagrenmin',
+          eventAgenda: 'Pembahasan rencana kerja triwulan.',
+          details: 'Peserta diminta membawa bahan paparan masing-masing.',
+          needsDisposition: false,
+          mode: 'submit',
+        }),
+      },
+      { name: 'files', file: 'pdf', filename: 'lampiran-intake-uji.pdf' },
+    ],
+    note: 'endpoint gabungan terbesar: create + attach + register + metadata intake dalam satu transaksi. Nama field berkasnya `files` (jamak) dan boleh berulang sampai 10 kali — berbeda dari endpoint 69 dan 103 yang memakai `file` tunggal',
+  },
+
+  // ---- 5.14 distribution-inbox · engsel menuju disposisi ----
+  //
+  // Berantai dan urutannya wajib: `currentIssuer()` menuntut distribusinya
+  // berstatus 'received', jadi varian 115 MUSTAHIL lolos sebelum varian 112
+  // menjalankannya. Itu bukan sekadar urutan UI — ia pemeriksaan sungguhan,
+  // dan rantai inilah yang membuktikannya.
+  {
+    n: 112, variant: 'terima-distribusi', mount: 'distribution-inbox', method: 'POST',
+    path: '/api/v1/urmin/distribution-inbox/{distributionId}/receive',
+    params: { distributionId: 'inboxDistributionId' },
+    actors: ['kasubbagren'],
+    body: { reason: 'Distribusi diterima dan akan segera ditindaklanjuti.' },
+    note: 'status sent -> received; panggilan kedua menjadi 409 already_received',
+  },
+  {
+    n: 115, variant: 'terbitkan-disposisi', mount: 'distribution-inbox', method: 'POST',
+    path: '/api/v1/urmin/distribution-inbox/{distributionId}/dispositions',
+    params: { distributionId: 'inboxDistributionId' },
+    actors: ['kasubbagren'],
+    bodyFixtures: { assigneeId: 'dispositionAssigneeId' },
+    body: {
+      instruction: 'Mohon siapkan bahan jawaban dan laporkan hasilnya kepada Kasubbagren.',
+      // `validDispositionDue` menolak tanggal di masa lalu DAN yang lebih dari
+      // setahun ke depan, jadi tanggal tetap di sini pasti membusuk suatu saat.
+      // Kalau varian ini tiba-tiba 400 invalid_input, inilah penyebabnya —
+      // bukan perubahan perilaku backend.
+      dueDate: '2027-06-30',
+    },
+    note: 'menuntut distribusi sudah received (varian 112) + penerbit != pelaksana; menulis antrean email di transaksi yang sama',
+  },
+
+  // ---- 5.15 dispositions · rantai berjenjang sampai persetujuan final ----
+  //
+  // Sasarannya BUKAN tugas yang dibuat varian 115, melainkan sembilan tugas
+  // yang ditanam `seed-documents.js` di atas lima distribusi 'received'
+  // tersendiri. Alasannya indeks `sdl_disposition_open_one_idx`: satu tugas
+  // terbuka per (distribusi, pelaksana), sementara pelaksananya op-subbagren
+  // untuk semuanya.
+  //
+  // Berbeda dari rantai `budget`, kesembilan varian tugas di sini BERDIRI
+  // SENDIRI: masing-masing punya record sendiri pada state yang dituntut
+  // handler, jadi `version: 1` selalu benar dan kegagalan satu varian tidak
+  // menjatuhkan yang lain. 125 dan 126 memakai akar berbeda justru karena itu
+  // — 126 punya baris pengajuan tertanam sendiri dan tidak menunggu 125.
+  //
+  // Satu-satunya yang benar-benar bergantung urutan adalah 123, dan ia
+  // sengaja ditaruh paling akhir: dasbor dibaca SESUDAH seluruh mutasi supaya
+  // yang terbukti bukan isi tabel, melainkan bahwa ia ikut bergerak.
+  {
+    n: 117, variant: 'riwayat-lengkap', mount: 'dispositions', method: 'GET',
+    path: '/api/v1/urmin/dispositions/{taskId}/history', params: { taskId: 'dispositionHistoryId' },
+    actors: ['kasubbagren'],
+    note: 'tugas selesai + sudah ditelaah: tiga event ditambah baris telaah yang disusulkan di ekor daftar, bukan disimpan sebagai event',
+  },
+  {
+    n: 118, variant: 'terima-tugas', mount: 'dispositions', method: 'POST',
+    path: '/api/v1/urmin/dispositions/{taskId}/accept', params: { taskId: 'dispositionAcceptId' },
+    actors: ['opSubbagren'],
+    body: { reason: 'Tugas diterima dan segera dikerjakan sesuai instruksi.', version: 1 },
+    note: 'pending -> in_progress; hanya pelaksana, penerbit justru 404',
+  },
+  {
+    n: 119, variant: 'selesaikan-tugas', mount: 'dispositions', method: 'POST',
+    path: '/api/v1/urmin/dispositions/{taskId}/complete', params: { taskId: 'dispositionCompleteId' },
+    actors: ['opSubbagren'],
+    body: { reason: 'Pekerjaan selesai, laporan hasil sudah disampaikan.', version: 1 },
+    note: 'in_progress -> completed; anak yang belum ditelaah membuatnya 409 child_tasks_unreviewed',
+  },
+  {
+    n: 120, variant: 'telaah-setuju', mount: 'dispositions', method: 'POST',
+    path: '/api/v1/urmin/dispositions/{taskId}/review', params: { taskId: 'dispositionReviewId' },
+    actors: ['kasubbagren'],
+    body: {
+      decision: 'approved',
+      reason: 'Hasil pekerjaan sudah sesuai instruksi dan dapat diterima.',
+      version: 1,
+    },
+    note: 'satu telaah permanen per tugas; panggilan kedua 409 review_already_exists',
+  },
+  {
+    n: 121, variant: 'calon-penerusan', mount: 'dispositions', method: 'GET',
+    path: '/api/v1/urmin/dispositions/{taskId}/forward-candidates',
+    params: { taskId: 'dispositionCandidatesId' },
+    actors: ['opSubbagren'],
+    note: 'penerbit dan pelaksana induk diblokir dispositionPathUsers; yang tersisa hanya staf-subbagren',
+  },
+  {
+    n: 122, variant: 'teruskan-berjenjang', mount: 'dispositions', method: 'POST',
+    path: '/api/v1/urmin/dispositions/{taskId}/forward', params: { taskId: 'dispositionForwardId' },
+    actors: ['opSubbagren'],
+    bodyFixtures: { assigneeId: 'dispositionForwardTargetId' },
+    body: {
+      instruction: 'Mohon lanjutkan penyiapan bahan dan laporkan kepada saya.',
+      // Harus di masa depan, dalam satu tahun, DAN tidak melewati tenggat
+      // induk (2027-12-31) — tiga batas sekaligus. Kalau varian ini tiba-tiba
+      // 400 invalid_input, tanggal inilah yang membusuk, bukan backend-nya.
+      dueDate: '2027-06-30',
+      version: 1,
+    },
+    note: 'depth 0 -> 1, versi INDUK ikut naik; tenggat anak melewati induk ditolak 409 child_due_after_parent',
+  },
+  {
+    n: 124, variant: 'status-final-belum-diajukan', mount: 'dispositions', method: 'GET',
+    path: '/api/v1/urmin/dispositions/{taskId}/final-status',
+    params: { taskId: 'dispositionFinalStatusId' },
+    actors: ['kabagrenmin'],
+    note: 'akar selesai + telaah disetujui tapi belum diajukan: approval not_submitted, progress 90% dan readyForSubmission true',
+  },
+  {
+    n: 125, variant: 'ajukan-final', mount: 'dispositions', method: 'POST',
+    path: '/api/v1/urmin/dispositions/{taskId}/submit-final',
+    params: { taskId: 'dispositionSubmitFinalId' },
+    actors: ['kasubbagren'],
+    body: {
+      reason: 'Seluruh tugas pada kasus ini telah selesai dan ditelaah.',
+      version: 1,
+    },
+    note: 'menuntut DUA permission (review + final.submit) dan seluruh rantai completed+approved',
+  },
+  {
+    n: 126, variant: 'putuskan-final', mount: 'dispositions', method: 'POST',
+    path: '/api/v1/urmin/dispositions/{taskId}/decide-final',
+    params: { taskId: 'dispositionDecideFinalId' },
+    actors: ['kabagrenmin'],
+    body: {
+      decision: 'approved',
+      reason: 'Hasil kasus disetujui dan dinyatakan selesai.',
+      version: 1,
+    },
+    note: 'version di sini milik baris persetujuan, BUKAN tugasnya; pimpinan yang pernah menyentuh rantainya ditolak 403 self_approval_denied',
+  },
+  {
+    n: 123, variant: 'dasbor-sesudah-keputusan', mount: 'dispositions', method: 'GET',
+    path: '/api/v1/urmin/dispositions/leadership',
+    actors: ['kabagrenmin'],
+    note: 'sengaja PALING AKHIR: membuktikan dasbor memantulkan hasil 120/125/126, bukan sekadar membaca tabel',
+  },
+
+  // ---- 5.4 unit-work · ENGINE B, mutasi pertama yang pernah berhasil ----
+  //
+  // Engine B menopang 33 endpoint di empat mount dan sampai sebelum varian ini
+  // **belum pernah dijalankan oleh satu pun mutasi yang berhasil**. Ia tidak
+  // memakai `permission_key` sama sekali: scope grant (`own`/`assigned`/`unit`)
+  // dicocokkan LANGSUNG dengan verb. Yang dibuktikan di bawah:
+  //
+  //   create/edit/delete/assign  → scope `unit` (ka-urmin) lolos atas berkas
+  //                                milik orang lain (op-urmin, scope `own`)
+  //   read                       → staf-urmin ber-scope `own` lolos atas berkas
+  //                                orang lain SEMATA karena ada tugas untuknya
+  //
+  // Cabang kedua itu yang paling mudah salah diporting: ia satu-satunya tempat
+  // Engine B melihat ke tabel LAIN (sdl_unit_work_tasks) sebelum memutuskan.
+  {
+    n: 21, variant: 'buat-berkas', mount: 'unit-work', method: 'POST',
+    path: '/api/v1/unit-work/urmin/records',
+    actors: ['kaUrmin'],
+    body: {
+      category: 'Persuratan',
+      title: 'Berkas kerja baru hasil uji jalur tulis',
+      description: 'Dibuat lewat varian harness untuk membuktikan jalur create Engine B.',
+      classification: 'biasa',
+    },
+    note: 'scope own ATAU unit boleh membuat; pemiliknya otomatis pemanggil',
+  },
+  {
+    n: 23, variant: 'sunting-berkas', mount: 'unit-work', method: 'PATCH',
+    path: '/api/v1/unit-work/urmin/records/{id}', params: { id: 'workUpdateId' },
+    actors: ['kaUrmin'],
+    body: {
+      category: 'Persuratan',
+      // Judul dan kategori SENGAJA tidak berubah: keduanya penanda fixture.
+      // Yang disunting hanya deskripsi.
+      title: 'Berkas uji penyuntingan unit-work',
+      description: 'Deskripsi sudah disunting lewat jalur tulis harness.',
+      classification: 'biasa',
+      version: 1,
+    },
+    note: 'version 1 -> 2; versi basi menjadi 409 stale_version lewat WHERE version=$8, bukan pemeriksaan terpisah',
+  },
+  {
+    n: 22, variant: 'baca-sesudah-sunting', mount: 'unit-work', method: 'GET',
+    path: '/api/v1/unit-work/urmin/records/{id}', params: { id: 'workUpdateId' },
+    actors: ['kaUrmin'],
+    note: 'respons 23 hanya {ok:true}; hanya pembacaan ulang ini yang membuktikan deskripsi dan version benar-benar berubah, berikut baris event-nya',
+  },
+  {
+    n: 24, variant: 'hapus-berkas', mount: 'unit-work', method: 'DELETE',
+    path: '/api/v1/unit-work/urmin/records/{id}', params: { id: 'workDeleteId' },
+    actors: ['kaUrmin'],
+    note: 'soft-delete; berkas dengan tugas pending/received justru 409 active_disposition — itu yang direkam kasus dasar',
+  },
+  {
+    n: 28, variant: 'tugaskan', mount: 'unit-work', method: 'POST',
+    path: '/api/v1/unit-work/urmin/records/{id}/tasks', params: { id: 'workAssignId' },
+    actors: ['kaUrmin'],
+    bodyFixtures: { to: 'workAssigneeId' },
+    body: {
+      instruction: 'Mohon tindak lanjuti berkas kerja ini dan laporkan hasilnya.',
+      dueDate: '2027-06-30',
+    },
+    note: 'penerima diuji kelayakannya lewat query terpisah (403 recipient_not_allowed), bukan lewat permit()',
+  },
+  {
+    n: 29, variant: 'terima-tugas', mount: 'unit-work', method: 'POST',
+    path: '/api/v1/unit-work/urmin/records/{id}/tasks/{taskID}/receive',
+    params: { id: 'workReceiveId', taskID: 'taskReceiveId' },
+    actors: ['stafUrmin'],
+    body: { response: 'Tugas diterima dan akan segera dikerjakan.' },
+    note: 'staf-urmin ber-scope own atas berkas MILIK ORANG LAIN: lolos read hanya karena ada tugas untuknya',
+  },
+  {
+    n: 30, variant: 'selesaikan-tugas', mount: 'unit-work', method: 'POST',
+    path: '/api/v1/unit-work/urmin/records/{id}/tasks/{taskID}/complete',
+    params: { id: 'workCompleteId', taskID: 'taskCompleteId' },
+    actors: ['stafUrmin'],
+    body: { response: 'Tugas selesai dikerjakan dan hasilnya sudah dilaporkan.' },
+    note: 'hanya transisi ini yang mewajibkan response 3..1000 (400 response_required)',
+  },
+  {
+    n: 31, variant: 'batalkan-tugas', mount: 'unit-work', method: 'POST',
+    path: '/api/v1/unit-work/urmin/records/{id}/tasks/{taskID}/cancel',
+    params: { id: 'workCancelId', taskID: 'taskCancelId' },
+    actors: ['kaUrmin'],
+    body: { response: 'Tugas dibatalkan karena berkasnya ditarik kembali.' },
+    note: 'dibatalkan PEMBERI tugas, bukan penerimanya — satu-satunya transisi yang menuntut who == from_user',
+  },
+
+  // ---- 5.7 urmin-registry · surat keluar, dari draf sampai keputusan ----
+  //
+  // Rantai lengkapnya: buat → sunting → baca ulang → ajukan → baca workflow →
+  // setujui / tolak. Dua pasang bergantung urutan dan tidak boleh dibalik:
+  // 45 sesudah 46, dan 48/51 sesudah 49 yang bersangkutan.
+  //
+  // Catatan penting: `urminregisterOwned` menolak lewat `errUrminRegisterDenied`
+  // yang dipetakan ke 403, sedangkan register yang tidak ada menjadi 404 —
+  // dua jalur yang gampang tertukar saat memporting.
+  {
+    n: 44, variant: 'buat-register', mount: 'urmin-registry', method: 'POST',
+    path: '/api/v1/urmin/registry/',
+    actors: ['kaUrmin'],
+    body: {
+      kind: 'surat_keluar',
+      code: 'SK-2026-920',
+      title: 'Surat keluar baru hasil uji jalur tulis',
+      classification: 'biasa',
+      fields: {
+        nomorSurat: 'SK/920/XI/2026',
+        tujuan: 'Kepala Bagian Perencanaan Polda',
+        tanggalSurat: '2026-10-01',
+        perihal: 'Permohonan data dukung perencanaan',
+        sifatSurat: 'Biasa',
+        statusAdministrasi: 'Draft',
+        keterangan: 'Dibuat lewat jalur tulis harness.',
+      },
+    },
+    note: 'SATU transaksi menulis tiga tabel: work record, register, dan baris workflow surat keluar. Kode ganda menjadi 409 duplicate_code lewat pemetaan SQLSTATE 23505',
+  },
+  {
+    n: 46, variant: 'sunting-register', mount: 'urmin-registry', method: 'PATCH',
+    path: '/api/v1/urmin/registry/{id}', params: { id: 'registryUpdateId' },
+    actors: ['kaUrmin'],
+    body: {
+      kind: 'surat_keluar',
+      // Kode dan judul tidak berubah: `ref_code` adalah penanda fixture, dan
+      // mengubahnya akan membuat varian ini mencari baris yang salah di run
+      // berikutnya.
+      code: 'SK-2026-911',
+      title: 'Surat keluar uji penyuntingan',
+      classification: 'biasa',
+      fields: {
+        nomorSurat: 'SK/911/XI/2026',
+        tujuan: 'Kepala Bagian Perencanaan Polda',
+        tanggalSurat: '2026-10-01',
+        perihal: 'Permintaan data dukung perencanaan (sudah disunting)',
+        sifatSurat: 'Biasa',
+        statusAdministrasi: 'Draft',
+        keterangan: 'Keterangan sudah disunting lewat jalur tulis harness.',
+      },
+      version: 1,
+    },
+    note: 'melewati lockOutgoingEditing karena tahapnya masih draft; tahap submitted/approved menjadi 409 outgoing_locked',
+  },
+  {
+    n: 45, variant: 'baca-sesudah-sunting', mount: 'urmin-registry', method: 'GET',
+    path: '/api/v1/urmin/registry/{id}', params: { id: 'registryUpdateId' },
+    actors: ['kaUrmin'],
+    note: 'membuktikan fields JSONB benar-benar tersimpan dan ter-decode ulang; respons 46 hanya {ok:true}',
+  },
+  {
+    n: 47, variant: 'hapus-register', mount: 'urmin-registry', method: 'DELETE',
+    path: '/api/v1/urmin/registry/{id}', params: { id: 'registryDeleteId' },
+    actors: ['kaUrmin'],
+    note: 'menghapus register DAN berkas kerja pasangannya dalam satu transaksi',
+  },
+  {
+    n: 49, variant: 'ajukan', mount: 'urmin-registry', method: 'POST',
+    path: '/api/v1/urmin/registry/{id}/submit', params: { id: 'registrySubmitId' },
+    actors: ['kaUrmin'],
+    body: { version: 1, note: 'Konsep surat sudah lengkap dan siap ditelaah pimpinan.' },
+    note: 'tiga gerbang: tujuan wajib terisi (409 recipient_required), minimal satu PDF (409 pdf_required_before_submit), versi workflow cocok',
+  },
+  {
+    n: 48, variant: 'workflow-sesudah-pengajuan', mount: 'urmin-registry', method: 'GET',
+    path: '/api/v1/urmin/registry/{id}/workflow', params: { id: 'registrySubmitId' },
+    actors: ['kabagrenmin'],
+    note: 'dibaca PIMPINAN sesudah varian 49: canSubmit jadi false, canReview jadi true, dan baris event submitted muncul. Kasus dasarnya 404 karena fixture-nya sudah dihapus endpoint 47',
+  },
+  {
+    n: 50, variant: 'setujui', mount: 'urmin-registry', method: 'POST',
+    path: '/api/v1/urmin/registry/{id}/approve', params: { id: 'registryApproveId' },
+    actors: ['kabagrenmin'],
+    body: { version: 2, note: 'Konsep surat disetujui untuk ditandatangani.' },
+    note: 'sasarannya ditanam sudah submitted dengan content_sha256 yang dihitung JavaScript. 200 di sini = Go, Express, dan seed sepakat soal digest; 409 document_integrity_changed = rumus hash-nya meleset. Varian inilah yang membongkar B8 (503 akibat $2 bertipe ganda), diperbaiki 2026-11-01 di kedua backend',
+  },
+  {
+    n: 49, variant: 'ajukan-untuk-ditolak', mount: 'urmin-registry', method: 'POST',
+    path: '/api/v1/urmin/registry/{id}/submit', params: { id: 'registryRejectId' },
+    actors: ['kaUrmin'],
+    body: { version: 1, note: 'Konsep surat diajukan untuk telaah pimpinan.' },
+    note: 'pasangan 51: di sini hash-nya dihitung backend sendiri, jadi rantai submit -> decide terbukti bulat tanpa bergantung pada seed',
+  },
+  {
+    n: 51, variant: 'tolak', mount: 'urmin-registry', method: 'POST',
+    path: '/api/v1/urmin/registry/{id}/reject', params: { id: 'registryRejectId' },
+    actors: ['kabagrenmin'],
+    body: { version: 2, note: 'Konsep surat dikembalikan untuk diperbaiki redaksinya.' },
+    note: 'penolakan menuntut catatan minimal 8 karakter; persetujuan tidak. Versi 2 karena varian 49 sudah menaikkannya dari 1',
   },
 ]
 

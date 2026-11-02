@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import { FIXTURE_FILES } from './files.js'
 import { Normalizer } from './normalize.js'
 import { classify, REGISTRY, VARIANTS } from './registry.js'
 
@@ -28,6 +29,29 @@ const SYNTHETIC_BY_KEY = {
 
 function syntheticFor(fixtureKey) {
   return SYNTHETIC_BY_KEY[fixtureKey] ?? SYNTHETIC_UUID
+}
+
+/**
+ * Menukar `file: '<kunci>'` di registry dengan byte sungguhan dari files.js.
+ *
+ * Registry tetap berisi data murni — tanpa Buffer di dalamnya — supaya ia bisa
+ * dibaca dan dibandingkan dengan API-CONTRACT.md tanpa terganggu isi berkas.
+ * Kunci yang tidak dikenal dilempar, bukan dilewati: bagian berkas yang hilang
+ * diam-diam akan membuat kasus merekam 400 file_required dan terbaca seolah
+ * itulah perilaku endpoint-nya.
+ */
+function resolveMultipart(parts) {
+  return parts.map((part) => {
+    if (!part.file) return { name: part.name, value: part.value }
+    const fixture = FIXTURE_FILES[part.file]
+    if (!fixture) throw new Error(`berkas fixture "${part.file}" tidak ada di files.js`)
+    return {
+      name: part.name,
+      filename: part.filename,
+      contentType: fixture.contentType,
+      bytes: fixture.bytes,
+    }
+  })
 }
 
 function slug(path) {
@@ -92,6 +116,33 @@ function casesForEndpoint(endpoint, fixtures, actors, config, cases, skipped) {
         resolved = resolved.replaceAll(`{${param}}`, encodeURIComponent(value))
       }
 
+      // Sebagian endpoint membawa ID di BODY, bukan di path: endpoint 64
+      // menerima {proposalId}, endpoint 66 menerima {paguId}. Keduanya tidak
+      // bisa ditulis sebagai literal di registry karena ID-nya dibuat ulang
+      // setiap seed, jadi dirakit di sini dari fixture yang sama.
+      let body = endpoint.body
+      if (!missingFixture && endpoint.bodyFixtures) {
+        const extra = {}
+        for (const [field, spec] of Object.entries(endpoint.bodyFixtures)) {
+          // Spec berupa array berarti field-nya memang array di body —
+          // `recipients` pada endpoint 90 misalnya. Tanpa ini, daftar penerima
+          // hanya bisa ditulis sebagai UUID literal, yang berubah tiap seed.
+          const keys = Array.isArray(spec) ? spec : [spec]
+          const resolved = []
+          for (const fixtureKey of keys) {
+            const value = fixtures[fixtureKey]
+            if (!value) {
+              missingFixture = fixtureKey
+              break
+            }
+            resolved.push(value)
+          }
+          if (missingFixture) break
+          extra[field] = Array.isArray(spec) ? resolved : resolved[0]
+        }
+        body = { ...(endpoint.body ?? {}), ...extra }
+      }
+
       if (missingFixture) {
         skipped.push({ caseId, n: endpoint.n, reason: `fixture "${missingFixture}" tidak ada di database` })
         continue
@@ -117,7 +168,10 @@ function casesForEndpoint(endpoint, fixtures, actors, config, cases, skipped) {
         continue
       }
 
-      cases.push({ caseId, endpoint, actorKey, safety, path: resolved, synthetic })
+      cases.push({
+        caseId, endpoint, actorKey, safety, path: resolved, synthetic, body,
+        ...(endpoint.multipart ? { multipart: resolveMultipart(endpoint.multipart) } : {}),
+      })
     }
   }
 }
@@ -163,8 +217,14 @@ async function execute(testCase, actor) {
   const method = endpoint.method
   const normalizer = new Normalizer()
   const needsBody = method !== 'GET'
+  // Kasus multipart TIDAK boleh juga mengirim body JSON: `Content-Type` hanya
+  // satu, dan kalau keduanya terkirim yang sampai ke Go adalah JSON dengan
+  // header multipart — ParseMultipartForm gagal dan yang terekam 413, bukan
+  // jalur suksesnya.
   const response = await actor.client.request(method, testCase.path, {
-    body: needsBody ? (endpoint.body ?? {}) : undefined,
+    ...(testCase.multipart
+      ? { multipart: testCase.multipart }
+      : { body: needsBody ? (testCase.body ?? {}) : undefined }),
     withCsrf: needsBody,
   })
 
@@ -213,24 +273,33 @@ async function execute(testCase, actor) {
     for (const field of endpoint.unordered) {
       const list = body[field]
       if (!Array.isArray(list)) continue
-      body[field] = [...list].sort((a, b) =>
-        JSON.stringify(a) < JSON.stringify(b) ? -1 : JSON.stringify(a) > JSON.stringify(b) ? 1 : 0,
-      )
+      // Kunci pengurutan sengaja MENGHAPUS nomor placeholder. Tanpa itu
+      // urutannya melingkar: nomor diberikan menurut urutan baris mentah,
+      // lalu dipakai untuk mengurutkan baris yang sama. Elemen yang hanya
+      // berbeda pada UUID-nya akan berpindah tempat antar-run, dan golden file
+      // tidak akan pernah stabil.
+      const key = (value) => JSON.stringify(value).replace(/<uuid:\d+>/g, '<uuid>')
+      body[field] = [...list].sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0))
     }
   }
+
+  // Penomoran ulang WAJIB terakhir — sesudah appendOnly dan unordered. Kedua
+  // transformasi itu menyusun ulang isi, dan nomor placeholder harus mengikuti
+  // bentuk akhir, bukan urutan baris apa adanya dari database.
+  const [renumberedPath, renumberedBody] = Normalizer.renumber([normalizedPath, body])
 
   return {
     n: endpoint.n,
     mount: endpoint.mount,
     method,
     pathTemplate: endpoint.path,
-    path: normalizedPath,
+    path: renumberedPath,
     actor: testCase.actorKey,
     safety: testCase.safety,
     ...(endpoint.variant ? { variant: endpoint.variant } : {}),
     status: response.status,
     headers: normalizer.headers(response.headers),
-    body,
+    body: renumberedBody,
     // Menandai bahwa path param memakai ID sintetis, bukan record nyata.
     // Tanpa ini, 401 dari ID palsu bisa terbaca seolah menguji data sungguhan.
     ...(testCase.synthetic ? { syntheticParams: true } : {}),
