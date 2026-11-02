@@ -11,6 +11,10 @@ COPY harness ./harness
 # backend, bukan salinan. Dua implementasi AES-GCM adalah satu implementasi
 # terlalu banyak.
 COPY src ./src
+# Alat verifikasi yang butuh database ikut dibawa: service `db` tidak pernah
+# diekspos ke host, jadi image inilah satu-satunya tempat Node bisa
+# menjangkaunya. Dijalankan lewat --entrypoint node, bukan lewat harness/index.js.
+COPY verify ./verify
 
 RUN addgroup -S harness && adduser -S -G harness harness \
  && mkdir -p /app/harness/golden && chown -R harness:harness /app

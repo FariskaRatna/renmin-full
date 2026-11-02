@@ -48,11 +48,25 @@ function runGo(commands) {
       'run', '--rm', '-i',
       '-v', `${GO_BACKEND}:/src:ro`,
       '-v', `${HERE}:/work:ro`,
+      // Cache modul Go. Tanpa ini setiap jalan mengunduh ulang seluruh
+      // dependensi, dan proxy.golang.org cukup sering memutusnya di tengah
+      // (`unexpected EOF`) sehingga alat ini gagal karena jaringan, bukan
+      // karena paritas. `email-parity.js` sudah memasangnya; di sini sempat
+      // terlewat.
+      '-v', 'sdl_verify_gomodcache:/go/pkg/mod',
       '-e', 'GOTOOLCHAIN=local',
       '-e', 'GOFLAGS=-mod=mod',
       GO_IMAGE,
       'sh', '-ec',
-      'cp -r /src /build && mkdir -p /build/cmd/crosscheck && cp /work/crosscheck.go /build/cmd/crosscheck/ && cd /build && go run ./cmd/crosscheck',
+      // notification-shim.go WAJIB ikut: crosscheck.go memanggil
+      // `auth.ExportNotificationEmail` yang hanya ada lewat shim itu, jadi
+      // tanpa salinan ini SELURUH alat gagal kompilasi — bukan hanya
+      // perintah `notif`-nya. Alat ini sempat tidak bisa dijalankan sama
+      // sekali karena itu.
+      'cp -r /src /build && mkdir -p /build/cmd/crosscheck' +
+        ' && cp /work/crosscheck.go /build/cmd/crosscheck/' +
+        ' && cp /work/notification-shim.go /build/internal/auth/' +
+        ' && cd /build && go run ./cmd/crosscheck',
     ],
     {
       input,

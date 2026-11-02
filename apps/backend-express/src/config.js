@@ -6,8 +6,13 @@
  * yang menolak menyala.
  */
 
-function hexKey(name, { required }) {
-  const raw = (process.env[name] ?? '').trim()
+// `env` diteruskan, BUKAN dibaca dari process.env. Sebelumnya fungsi ini
+// mengabaikan parameter env milik loadConfig() dan membaca global — tidak
+// terlihat di produksi (yang memang memanggilnya dengan process.env), tapi
+// membuat parameter itu bohong terhadap pemanggil lain. Suite uji keamanan
+// menyuntikkan konfigurasinya sendiri dan langsung menabraknya.
+function hexKey(env, name, { required }) {
+  const raw = (env[name] ?? '').trim()
   if (raw === '') {
     if (required) throw new Error(`${name} must be 32 random bytes (64 hex characters)`)
     return undefined
@@ -26,8 +31,8 @@ export function loadConfig(env = process.env) {
   const databaseUrl = (env.DATABASE_URL ?? '').trim()
   if (!databaseUrl) throw new Error('DATABASE_URL is not configured')
 
-  const secret = hexKey('SDL_AUTH_SECRET', { required: true })
-  const evidenceKey = hexKey('SDL_EVIDENCE_KEY', { required: false })
+  const secret = hexKey(env, 'SDL_AUTH_SECRET', { required: true })
+  const evidenceKey = hexKey(env, 'SDL_EVIDENCE_KEY', { required: false })
 
   const isProduction = (env.SDL_ENV ?? '') !== 'development'
   const secureCookie = env.SDL_COOKIE_SECURE === 'true'
@@ -58,6 +63,11 @@ export function loadConfig(env = process.env) {
     httpAddr: env.HTTP_ADDR || ':8080',
     demoSuperadminWorkspace: env.SDL_DEV_SUPERADMIN_WORKSPACE === 'true',
     emailNotificationsEnabled: env.SDL_EMAIL_NOTIFICATIONS_ENABLED !== 'false',
+    // Aturan 7 migrasi: hanya SATU worker email boleh aktif. Go memakai
+    // SDL_EMAIL_NOTIFICATIONS_ENABLED yang default-nya MENYALA; kalau Express
+    // ikut pola itu, dua worker menguras outbox yang sama dan pengguna nyata
+    // menerima email dua kali. Di sini karena itu opt-in, default MATI.
+    emailWorkerEnabled: env.SDL_EMAIL_WORKER_ENABLED === 'true',
     smtp: {
       host: env.SDL_SMTP_HOST ?? '',
       port: smtpPort,

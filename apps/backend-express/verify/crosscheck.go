@@ -124,6 +124,17 @@ func handle(w *bufio.Writer, line string) {
 		}
 		fmt.Fprintf(w, "gojson\t%s\n", hex.EncodeToString(out))
 
+	// Pesan notifikasi utuh, berikut amplop MIME-nya. Dikirim sebagai hex
+	// supaya CRLF dan byte quoted-printable selamat melewati protokol baris
+	// ini; sisi Node yang membongkar dan membandingkan tiap bagiannya.
+	case "notif":
+		out, err := auth.ExportNotificationEmail(parts[1], parts[2], parts[3], parts[4])
+		if err != nil {
+			fmt.Fprintf(w, "notif\tERROR %v\n", err)
+			return
+		}
+		fmt.Fprintf(w, "notif\t%s\n", hex.EncodeToString([]byte(out)))
+
 	case "sign":
 		secret, err := hex.DecodeString(parts[1])
 		if err != nil {

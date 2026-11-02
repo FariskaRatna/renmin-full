@@ -66,7 +66,10 @@ function runGo(commands) {
       '-e', 'GOFLAGS=-mod=mod',
       GO_IMAGE,
       'sh', '-ec',
-      'cp -r /src /build && mkdir -p /build/cmd/crosscheck && cp /work/crosscheck.go /build/cmd/crosscheck/ && cd /build && go run ./cmd/crosscheck',
+      // Shim ikut disalin walaupun kasus "notif" bukan urusan berkas ini:
+      // crosscheck.go satu-satunya dan ia memanggil auth.ExportNotificationEmail,
+      // jadi tanpa shim seluruh program gagal kompilasi (lih. email-parity.js).
+      'cp -r /src /build && mkdir -p /build/cmd/crosscheck && cp /work/crosscheck.go /build/cmd/crosscheck/ && cp /work/notification-shim.go /build/internal/auth/ && cd /build && go run ./cmd/crosscheck',
     ],
     {
       input,
