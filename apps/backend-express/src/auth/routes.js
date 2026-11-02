@@ -100,7 +100,10 @@ export function createAuthRouter({ pool, config, mailer }) {
     const body = payload.ok ? payload.value : undefined
     const username = typeof body?.username === 'string' ? body.username : ''
     const password = typeof body?.password === 'string' ? body.password : ''
-    if (!payload.ok || username.length < 3 || username.length > 254 || password.length === 0 || password.length > 256) {
+    // Byte, mengikuti len() di service.go:200. Lihat catatan di crypto/password.js.
+    const usernameBytes = Buffer.byteLength(username, 'utf8')
+    const passwordBytes = Buffer.byteLength(password, 'utf8')
+    if (!payload.ok || usernameBytes < 3 || usernameBytes > 254 || passwordBytes === 0 || passwordBytes > 256) {
       problem(res, 400, 'invalid_request')
       return
     }
@@ -392,7 +395,9 @@ export function createAuthRouter({ pool, config, mailer }) {
     const payload = parsePayload(req, ['current', 'new'])
     const current = payload.ok && typeof payload.value.current === 'string' ? payload.value.current : ''
     const next = payload.ok && typeof payload.value.new === 'string' ? payload.value.new : ''
-    if (!payload.ok || next.length < 14 || next.length > 256 || next === current) {
+    // Byte, mengikuti len() di service.go:523.
+    const nextBytes = Buffer.byteLength(next, 'utf8')
+    if (!payload.ok || nextBytes < 14 || nextBytes > 256 || next === current) {
       problem(res, 400, 'invalid_request')
       return
     }

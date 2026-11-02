@@ -216,7 +216,9 @@ export function registerProfileRoutes(router, { pool, config, mailer, requireCsr
     const payload = parsePayload(req, ['email', 'password'])
     const email = payload.ok && typeof payload.value.email === 'string' ? payload.value.email : ''
     const password = payload.ok && typeof payload.value.password === 'string' ? payload.value.password : ''
-    if (!payload.ok || !validProfileEmail(email) || password.length === 0 || password.length > 256) {
+    // Byte, mengikuti len() di profile.go:223.
+    const passwordBytes = Buffer.byteLength(password, 'utf8')
+    if (!payload.ok || !validProfileEmail(email) || passwordBytes === 0 || passwordBytes > 256) {
       problem(res, 400, 'invalid_request')
       return
     }

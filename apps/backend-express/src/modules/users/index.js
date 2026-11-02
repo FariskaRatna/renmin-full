@@ -435,7 +435,10 @@ export function createUsersRouter({ pool }) {
       !payload.ok ||
       !Number.isInteger(payload.value.version) || payload.value.version < 1 ||
       !validReason(payload.value.reason) ||
-      typeof confirmPassword !== 'string' || confirmPassword.length < 14 || confirmPassword.length > 256
+      // Byte, mengikuti len() di users/otp.go:28.
+      typeof confirmPassword !== 'string' ||
+      Buffer.byteLength(confirmPassword, 'utf8') < 14 ||
+      Buffer.byteLength(confirmPassword, 'utf8') > 256
     ) {
       problem(res, 400, 'invalid_request')
       return

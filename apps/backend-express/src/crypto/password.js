@@ -54,7 +54,15 @@ async function derive(password, salt, memoryCost, timeCost, parallelism) {
 
 /** Padanan auth.HashPassword. Menghasilkan string PHC yang diterima Go. */
 export async function hashPassword(password) {
-  if (typeof password !== 'string' || password.length < 14 || password.length > 256) {
+  // BYTE, bukan panjang string. `len()` Go menghitung byte UTF-8; `.length`
+  // JavaScript menghitung unit UTF-16. Untuk password ber-karakter non-ASCII
+  // keduanya BERBEDA, dan arah selisihnya berbahaya di dua ujung: password
+  // 13 karakter beraksen (26 byte) diterima Go tapi ditolak di sini, dan
+  // password 200 karakter beraksen (400 byte) diterima di sini tapi ditolak
+  // Go. Keduanya hanya muncul pada masukan non-ASCII, jadi tidak pernah
+  // terlihat harness — yang seluruh fixture-nya ASCII.
+  const bytes = typeof password === 'string' ? Buffer.byteLength(password, 'utf8') : 0
+  if (typeof password !== 'string' || bytes < 14 || bytes > 256) {
     throw new Error('password length outside policy')
   }
   const salt = randomBytes(SALT_LENGTH)
