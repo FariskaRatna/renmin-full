@@ -25,15 +25,21 @@ const REVIEWABLE_STAGES = new Set(['submitted'])
 const PAYLOAD_FIELDS = ['version', 'note']
 
 /**
- * Hak menyetujui surat keluar: pemegang role langsung br_kabagrenmin DENGAN
- * grant ber-scope unit di urmin dan permission urmin.surat_keluar.approve.
- * Surat "penting" menuntut grant yang batas klasifikasinya juga "penting".
+ * Hak menyetujui surat keluar: grant `br_kabagrenmin` ber-scope unit di urmin,
+ * masih hidup, dengan permission `urmin.surat_keluar.approve`. Surat "penting"
+ * menuntut grant yang batas klasifikasinya juga "penting".
+ *
+ * Sampai 2026-11-01 query padanannya di Go juga menuntut baris
+ * `sdl_user_roles` — peran LANGSUNG — padahal tabel itu hanya pernah diisi
+ * bootstrap Superadmin. Akibatnya fungsi ini false untuk siapa pun dan
+ * endpoint approve/reject tidak terjangkau. Lihat B9 di DEVIATIONS.md;
+ * diperbaiki di kedua backend bersamaan. `sdl_user_roles` tetap dibaca di
+ * bawah, tapi hanya untuk apa yang memang jadi tugasnya: menolak Superadmin.
  */
 async function canManageOutgoing(pool, actorId, classification) {
   const { rows } = await pool.query(
     `SELECT EXISTS(
        SELECT 1 FROM sdl_users u
-         JOIN sdl_user_roles ur ON ur.user_id=u.id AND ur.role_key='br_kabagrenmin'
          JOIN sdl_access_grants g ON g.user_id=u.id AND g.role_key='br_kabagrenmin'
          JOIN sdl_roles role ON role.role_key=g.role_key AND role.is_active
          JOIN sdl_role_permissions rp ON rp.role_key=g.role_key
@@ -308,10 +314,16 @@ export function registerOutgoingRoutes(router, { pool, json, handle, loadOwned }
           const currentHash = await contentHash(client, id, record.workRecordId)
           if (currentHash !== storedHash) return { kind: 'document_integrity_changed' }
 
+          // Kedua pemakaian $2 WAJIB di-cast seragam — lihat komentar padanannya
+          // di outgoing_review.go:255. Tanpa cast, Postgres mendeduksi varchar
+          // dari `stage=$2` dan text dari perbandingan di dalam CASE, lalu
+          // menolak statement-nya dengan "inconsistent types deduced for
+          // parameter $2". Keduanya diperbaiki bersamaan supaya paritas tetap
+          // utuh; golden 50/51 direkam ulang pada perubahan yang sama.
           await client.query(
             `UPDATE sdl_outgoing_workflows
-                SET stage=$2,version=version+1,
-                    approved_at=CASE WHEN $2='approved' THEN now() ELSE NULL END,
+                SET stage=$2::varchar,version=version+1,
+                    approved_at=CASE WHEN $2::varchar='approved' THEN now() ELSE NULL END,
                     last_actor=$3::uuid,last_note=$4,updated_at=now()
               WHERE register_id::text=$1`,
             [id, nextStage, req.actor, input.note],
