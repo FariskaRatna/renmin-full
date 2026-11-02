@@ -1,0 +1,26 @@
+# Image uji integrasi keamanan untuk backend Express.
+#
+# Memakai proyek npm yang sama dengan backend — satu package.json, satu
+# node_modules, tanpa proyek bersarang (keputusan yang sama dengan harness).
+#
+# 33 berkas SQL migrasi TIDAK ikut di-COPY. Aturan 6 migrasi: skema punya satu
+# sumber, `apps/backend/internal/migrations/sql/`, dan menyalinnya ke sini
+# berarti dua sumber yang akan berbeda diam-diam. Compose mem-bind-mount
+# direktori itu read-only dan menunjuknya lewat SDL_MIGRATIONS_DIR.
+FROM node:24.22.0-alpine3.24
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci --no-audit --no-fund
+
+# Backend yang diuji dijalankan DI DALAM PROSES ini lewat createApp(), bukan
+# sebagai service terpisah — sama seperti httptest.NewServer di suite Go.
+COPY src ./src
+# Pemecah proof-of-work CAPTCHA dipakai bersama harness. Satu implementasi.
+COPY harness ./harness
+COPY security ./security
+
+RUN addgroup -S sdltest && adduser -S -G sdltest sdltest && chown -R sdltest:sdltest /app
+USER sdltest
+
+ENTRYPOINT ["node", "security/index.js"]
