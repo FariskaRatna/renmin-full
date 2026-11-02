@@ -4,7 +4,15 @@ Penulisan ulang `apps/backend` (Go + chi) ke Node/Express.
 
 ## Status
 
-Tahap persiapan. Belum melayani trafik apa pun.
+**Paritas fungsional tercapai (2026-11-01). Belum melayani trafik apa pun.**
+142/142 endpoint diporting; harness golden-file 382/382 cocok dengan baseline
+Go, uji keamanan 21/21, dan keempat perkakas siklus hidup (`--migrate`,
+`--bootstrap-superadmin`, `seed-bagrenmin`, `reset-all-passwords`) sudah ada
+di `src/cli/` serta diuji A/B terhadap Go.
+
+Yang tersisa sebelum cutover: **Tahap 6**, peralihan trafik per prefix lewat
+Caddy. Di luar teknis, jawaban pemilik sistem atas
+`docs/PERTANYAAN-KONFIGURASI-AKSES.md` masih ditunggu.
 
 ## Aturan selama migrasi
 
@@ -26,6 +34,8 @@ Tahap persiapan. Belum melayani trafik apa pun.
 | [`docs/MIGRATION-PLAN.md`](docs/MIGRATION-PLAN.md) | Tahap 0–6, urutan domain, gerbang kelulusan tiap tahap, daftar risiko. |
 | [`docs/DEVIATIONS.md`](docs/DEVIATIONS.md) | Perbedaan sadar antara Express dan Go, serta backlog perbaikan pasca-paritas. |
 | [`harness/README.md`](harness/README.md) | Harness golden-file: perekam dan pembanding 142 endpoint. Alat ukur Tahap 0. |
+| `verify/` | Alat paritas untuk hal-hal yang **tidak bisa** dilihat harness: kripto, serialisasi JSON, isi email, mesin keadaan outbox, dan format/presisi timestamp. Lihat `MIGRATION-PLAN.md` → "Gerbang yang sudah lulus". |
+| `security/` | Uji integrasi keamanan, 21 skenario berurutan. Harness mengukur **bentuk** respons; suite ini mengukur **siapa yang berhak**, dan menjalankan skenario yang hanya ada maknanya kalau berurutan (OTP dipakai dua kali, CAPTCHA diputar ulang, grant dicabut saat sesi hidup). Jalankan `bash scripts/security-test-express.sh` dari root repo. |
 
 ## Stack
 
