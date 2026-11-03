@@ -1,8 +1,8 @@
 /**
- * Registry 142 endpoint, bernomor sesuai docs/API-CONTRACT.md 5.
+ * Registry 143 endpoint, bernomor sesuai docs/API-CONTRACT.md 5.
  *
  * Bentuk tiap entri:
- *   n        nomor di kontrak, 1..142
+ *   n        nomor di kontrak, 1..143
  *   mount    grup, menentukan subfolder golden
  *   method   GET | POST | PUT | PATCH | DELETE
  *   path     template; {name} diisi dari fixture atau daftar enumerasi
@@ -301,8 +301,20 @@ export const REGISTRY = [
   { n: 114, mount: 'distribution-inbox', method: 'GET', path: '/api/v1/urmin/distribution-inbox/{distributionId}/disposition-candidates', params: { distributionId: 'distributionId' }, actors: ['kaUrmin'] },
   { n: 115, mount: 'distribution-inbox', method: 'POST', path: '/api/v1/urmin/distribution-inbox/{distributionId}/dispositions', params: { distributionId: 'distributionId' }, actors: ['kaUrmin'] },
 
-  // ---- 5.15 /api/v1/urmin/dispositions (11) ----
+  // ---- 5.15 /api/v1/urmin/dispositions (12) ----
   { n: 116, mount: 'dispositions', method: 'GET', path: '/api/v1/urmin/dispositions/', actors: ['kaUrmin', 'opSubbagren'] },
+  // R5G3. Aktornya op-subbagren, BUKAN ka-urmin: op-subbagren adalah pihak
+  // disposisinya tapi grant-nya di unit subbagren, jadi Engine A menolak baca
+  // suratnya dan probe ini berhenti di 404 tanpa menulis apa pun. Memakai
+  // ka-urmin di sini akan membuat probe berhasil mengarsipkan, dan varian
+  // 'arsipkan-disposisi' di bawah tidak akan pernah melihat 201-nya.
+  { n: 143, mount: 'dispositions', method: 'POST', path: '/api/v1/urmin/dispositions/{taskId}/archive', params: { taskId: 'dispositionTaskId' }, actors: ['opSubbagren'] },
+  // R5G6. Probe 144 memakai kasubbagren — PENERBIT tugasnya, jadi ia pihak
+  // tapi bukan pelaksana, dan jawabannya 403. Itu membedakan gerbang endpoint
+  // ini dari dua saudaranya tanpa menulis satu berkas pun.
+  { n: 144, mount: 'dispositions', method: 'POST', path: '/api/v1/urmin/dispositions/{taskId}/attachments', params: { taskId: 'dispositionTaskId' }, actors: ['kasubbagren'] },
+  { n: 145, mount: 'dispositions', method: 'GET', path: '/api/v1/urmin/dispositions/{taskId}/attachments', params: { taskId: 'dispositionTaskId' }, actors: ['kasubbagren', 'kaUrmin'] },
+  { n: 146, mount: 'dispositions', method: 'GET', path: '/api/v1/urmin/dispositions/{taskId}/attachments/{fileId}/download', params: { taskId: 'dispositionTaskId', fileId: 'dispositionFileId' }, actors: ['kasubbagren'] },
   { n: 117, mount: 'dispositions', method: 'GET', path: '/api/v1/urmin/dispositions/{taskId}/history', params: { taskId: 'dispositionTaskId' }, actors: ['kaUrmin'] },
   { n: 118, mount: 'dispositions', method: 'POST', path: '/api/v1/urmin/dispositions/{taskId}/accept', params: { taskId: 'dispositionTaskId' }, actors: ['opSubbagren'] },
   { n: 119, mount: 'dispositions', method: 'POST', path: '/api/v1/urmin/dispositions/{taskId}/complete', params: { taskId: 'dispositionTaskId' }, actors: ['opSubbagren'] },
@@ -365,7 +377,7 @@ export const REGISTRY = [
 
 /**
  * Varian jalur sukses. Sengaja dipisah dari REGISTRY, bukan disisipkan ke
- * dalamnya: REGISTRY harus tetap berisi persis 142 entri yang memetakan
+ * dalamnya: REGISTRY harus tetap berisi persis 143 entri yang memetakan
  * API-CONTRACT.md satu lawan satu, dan pemeriksaan itu adalah satu-satunya
  * pengaman bahwa tidak ada endpoint yang terlupakan.
  *
@@ -603,6 +615,77 @@ export const VARIANTS = [
     actors: ['kabagrenmin'],
     body: { revision: 1 },
     note: 'revisi harus cocok; lampiran privat ikut terhapus di transaksi yang sama',
+  },
+
+  // ---- R5G2: rantai arahan-dari-surat, urutannya WAJIB ----
+  //
+  // Ketiganya membaca dan menulis surat 017/UJI/2026 secara berurutan, dan
+  // justru urutan itulah yang diuji: satu-satunya bukti bahwa workflowStatus
+  // benar-benar BERGERAK, bukan kebetulan bernilai benar sejak awal.
+  //
+  //   1. 110 membacanya sebagai 'read_kabag'   — sudah diterima, belum dijawab
+  //   2. 90  menerbitkan arahan yang menautkannya
+  //   3. 110 membacanya lagi sebagai 'directive_issued'
+  //
+  // Menyisipkan varian lain di antara 2 dan 3 akan merusak rantai ini.
+  // ---- R5G3: rentang tanggal pada daftar disposisi ----
+  //
+  // Isi daftarnya diuji lewat from/to, BUKAN lewat window=active. Tanggal surat
+  // fixture tetap ('2026-09-20') sedangkan CURRENT_DATE bergerak, jadi golden
+  // yang bersandar pada window akan membusuk begitu kalender berjalan.
+  // from/to memakai SQL BETWEEN yang sama persis, dan rentangnya tetap.
+  {
+    n: 116, variant: 'rentang-tanggal-eksplisit', mount: 'dispositions', method: 'GET',
+    path: '/api/v1/urmin/dispositions/?from=2026-09-01&to=2026-09-30',
+    actors: ['kasubbagren'],
+    note: 'from/to menimpa window; rentangnya memuat seluruh surat fixture',
+  },
+  {
+    n: 116, variant: 'rentang-semua', mount: 'dispositions', method: 'GET',
+    path: '/api/v1/urmin/dispositions/?window=all',
+    actors: ['kasubbagren'],
+    note: 'jalan keluar yang memulihkan perilaku sebelum R5G3; tidak ada baris yang tak terjangkau',
+  },
+  {
+    n: 116, variant: 'rentang-tidak-dikenal', mount: 'dispositions', method: 'GET',
+    path: '/api/v1/urmin/dispositions/?window=kemarin',
+    actors: ['kasubbagren'],
+    note: 'nilai window di luar tiga yang sah ditolak 400, bukan didiamkan jatuh ke active',
+  },
+  {
+    n: 116, variant: 'rentang-separuh', mount: 'dispositions', method: 'GET',
+    path: '/api/v1/urmin/dispositions/?from=2026-09-01',
+    actors: ['kasubbagren'],
+    note: 'from tanpa to ditolak 400: rentang setengah terbuka akan diam-diam tetap kena batas 30 hari',
+  },
+  {
+    n: 110, variant: 'intake-sebelum-arahan', mount: 'surat-masuk', method: 'GET',
+    path: '/api/v1/urmin/surat-masuk/{id}/intake',
+    params: { id: 'arahanIncomingId' },
+    actors: ['kaUrmin'],
+    note: 'workflowStatus read_kabag: distribusi ke Kabagrenmin sudah received, arahan belum terbit',
+  },
+  {
+    n: 90, variant: 'arahan-dari-surat', mount: 'directives', method: 'POST',
+    path: '/api/v1/leadership/directives/',
+    actors: ['kabagrenmin'],
+    bodyFixtures: { recipients: ['directiveRecipientId'], incomingId: 'arahanIncomingId' },
+    body: {
+      title: 'Arahan atas surat masuk uji harness',
+      body: 'Mohon siapkan bahan jawaban atas surat 017/UJI/2026 dan laporkan hasilnya.',
+      kind: 'persuratan',
+      priority: 'penting',
+    },
+    // TANPA draftRevision: varian ini tidak boleh bergantung pada ada-tidaknya
+    // draf, karena varian 82 di atas baru saja menghapusnya.
+    note: 'incomingId menautkan arahan ke suratnya; gerbangnya menuntut surat itu awaiting_kabag, milik aktor ini, dan sudah received',
+  },
+  {
+    n: 110, variant: 'intake-sesudah-arahan', mount: 'surat-masuk', method: 'GET',
+    path: '/api/v1/urmin/surat-masuk/{id}/intake',
+    params: { id: 'arahanIncomingId' },
+    actors: ['kaUrmin'],
+    note: 'workflowStatus directive_issued: turunannya bergerak tanpa route_status berubah sama sekali',
   },
 
   // ---- 5.13 surat-masuk · Engine A, scope 'own' lawan 'unit' ----
@@ -1050,11 +1133,95 @@ export const VARIANTS = [
     body: { version: 2, note: 'Konsep surat dikembalikan untuk diperbaiki redaksinya.' },
     note: 'penolakan menuntut catatan minimal 8 karakter; persetujuan tidak. Versi 2 karena varian 49 sudah menaikkannya dari 1',
   },
+
+  // ---- R5G6: lampiran bukti hasil tindak lanjut ----
+  //
+  // Dua varian baca saja. Unggah sungguhan (144) TIDAK diuji di sini: harness
+  // mengirim body JSON, sedangkan endpoint itu menerima multipart. Yang sudah
+  // dibuktikan tanpa mengunggah: berkas fixture bisa didaftar dan diunduh oleh
+  // KEDUA pihak, dan probe 144 memastikan penerbit ditolak 403.
+  // Dua varian ini menguji endpoint 144 TANPA multipart, dan itu bisa karena
+  // kedua penolakannya terjadi SEBELUM body diurai. Keduanya menutup cabang
+  // yang tidak terjangkau probe, yang fixture-nya sudah gagal di gerbang pihak.
+  {
+    n: 144, variant: 'penerbit-ditolak-unggah', mount: 'dispositions', method: 'POST',
+    path: '/api/v1/urmin/dispositions/{taskId}/attachments', params: { taskId: 'dispositionHistoryId' },
+    actors: ['kasubbagren'],
+    note: 'penerbit adalah pihak sehingga lolos 404, tapi bukan pelaksana: 403. Inilah yang membuat lampiran tetap berarti bukti pelaksana',
+  },
+  {
+    n: 144, variant: 'tugas-selesai-ditolak-unggah', mount: 'dispositions', method: 'POST',
+    path: '/api/v1/urmin/dispositions/{taskId}/attachments', params: { taskId: 'dispositionHistoryId' },
+    actors: ['opSubbagren'],
+    note: 'pelaksana pada tugas yang sudah completed: 409 already_completed. Bukti tidak boleh bertambah di belakang telaah penerbit',
+  },
+  {
+    n: 145, variant: 'daftar-bukti-pelaksana', mount: 'dispositions', method: 'GET',
+    path: '/api/v1/urmin/dispositions/{taskId}/attachments', params: { taskId: 'dispositionHistoryId' },
+    actors: ['opSubbagren'],
+    note: 'pelaksana: canUpload true selama tugasnya belum selesai',
+  },
+  {
+    n: 146, variant: 'unduh-bukti-penerbit', mount: 'dispositions', method: 'GET',
+    path: '/api/v1/urmin/dispositions/{taskId}/attachments/{fileId}/download',
+    params: { taskId: 'dispositionHistoryId', fileId: 'dispositionFileId' },
+    actors: ['kasubbagren'],
+    note: 'penerbit membuka bukti saat menelaah; sha256 diperiksa ulang sebelum dikirim',
+  },
+
+  // ---- R5G3: arsip disposisi. SENGAJA PALING AKHIR ----
+  //
+  // Mengarsipkan menulis satu sdl_unit_work_records DAN satu sdl_urmin_registry
+  // ber-kind 'arsip'. Keduanya ikut terbaca varian register 44-47 di atas, jadi
+  // menaruh varian ini lebih awal akan menggeser golden mereka karena urutan,
+  // bukan karena perbedaan backend. Apa pun yang ditambahkan nanti, taruh
+  // SEBELUM blok ini.
+  //
+  // Aktornya ka-urmin: scope 'unit' di urmin, jadi ia lolos KEDUA gerbang —
+  // baca surat lewat Engine A, dan wewenang membuat register. kasubbagren yang
+  // merupakan pihak disposisinya justru TIDAK bisa; lihat catatan B9 di
+  // API-CONTRACT.md §5.15.
+  {
+    n: 143, variant: 'arsipkan-disposisi', mount: 'dispositions', method: 'POST',
+    path: '/api/v1/urmin/dispositions/{taskId}/archive', params: { taskId: 'dispositionTaskId' },
+    actors: ['kaUrmin'],
+    note: 'surat fixture bertanggal 2026-09-20, jauh di luar rentang 30 hari; menulis dua baris sekaligus',
+  },
+  {
+    n: 143, variant: 'arsipkan-dua-kali', mount: 'dispositions', method: 'POST',
+    path: '/api/v1/urmin/dispositions/{taskId}/archive', params: { taskId: 'dispositionTaskId' },
+    actors: ['kaUrmin'],
+    note: 'ref_code deterministik membuat percobaan kedua bertabrakan di UNIQUE: 409 already_archived, bukan entri ganda',
+  },
+
+  // ---- R5G7: dua kategori arsip. WAJIB sesudah blok arsip di atas ----
+  //
+  // Justru baris yang DIBUAT varian 143 itulah yang hendak dilihat di sini.
+  // Ketiganya read-only, jadi menaruhnya paling belakang tidak menggeser
+  // golden siapa pun.
+  {
+    n: 43, variant: 'arsip-dari-disposisi', mount: 'urmin-registry', method: 'GET',
+    path: '/api/v1/urmin/registry/?kind=arsip&source=disposisi',
+    actors: ['kaUrmin'],
+    note: 'memuat entri hasil varian 143; ref_code-nya berawalan ARS-DISP-',
+  },
+  {
+    n: 43, variant: 'arsip-input-manual', mount: 'urmin-registry', method: 'GET',
+    path: '/api/v1/urmin/registry/?kind=arsip&source=manual',
+    actors: ['kaUrmin'],
+    note: 'komplemennya: entri dari disposisi TIDAK boleh muncul di sini',
+  },
+  {
+    n: 43, variant: 'sumber-tidak-dikenal', mount: 'urmin-registry', method: 'GET',
+    path: '/api/v1/urmin/registry/?kind=arsip&source=ngawur',
+    actors: ['kaUrmin'],
+    note: 'nilai di luar manual/disposisi ditolak 400 invalid_source, bukan didiamkan jatuh ke semua',
+  },
 ]
 
 const VARIANT_NAME_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/
 
-/** Pemeriksaan integritas: nomor harus unik dan lengkap 1..142. */
+/** Pemeriksaan integritas: nomor harus unik dan lengkap 1..143. */
 export function assertRegistryComplete() {
   const seen = new Set()
   for (const endpoint of REGISTRY) {
@@ -1064,13 +1231,17 @@ export function assertRegistryComplete() {
     if (seen.has(endpoint.n)) throw new Error(`nomor endpoint ganda: ${endpoint.n}`)
     seen.add(endpoint.n)
   }
+  // 143 sejak R5G3 (arsip disposisi). Penomorannya MELANJUTKAN, bukan
+  // menyisip, supaya nomor yang sudah dirujuk golden file dan dokumen lain
+  // tidak bergeser.
+  const TOTAL = 146
   const missing = []
-  for (let n = 1; n <= 142; n++) if (!seen.has(n)) missing.push(n)
+  for (let n = 1; n <= TOTAL; n++) if (!seen.has(n)) missing.push(n)
   if (missing.length > 0) {
     throw new Error(`endpoint belum terdaftar di registry: ${missing.join(', ')}`)
   }
-  if (REGISTRY.length !== 142) {
-    throw new Error(`registry berisi ${REGISTRY.length} entri, seharusnya 142`)
+  if (REGISTRY.length !== TOTAL) {
+    throw new Error(`registry berisi ${REGISTRY.length} entri, seharusnya ${TOTAL}`)
   }
 
   // Varian: nomornya harus merujuk endpoint yang ada, namanya unik per endpoint,

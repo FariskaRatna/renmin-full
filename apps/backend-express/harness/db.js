@@ -202,6 +202,20 @@ export class HarnessDb {
         'SELECT id::text AS v FROM sdl_urmin_distributions WHERE reason=$1 LIMIT 1',
         ['Diteruskan ke Kasubbagren untuk uji rantai kotak masuk.']],
 
+      // R5G6: bukti hasil tindak lanjut yang sudah terunggah. Dicari lewat
+      // nama berkas, kolom yang tidak pernah berubah sesudah unggah.
+      ['dispositionFileId',
+        'SELECT id::text AS v FROM sdl_urmin_disposition_files WHERE filename=$1 LIMIT 1',
+        ['bukti-tindak-lanjut.pdf']],
+
+      // R5G2: surat yang sah ditautkan ke sebuah arahan — menunggu Kabagrenmin
+      // dan sudah ia terima. Dicari lewat letter_number, kolom yang tidak
+      // disentuh penerbitan arahan, sehingga fixture tetap menunjuk baris yang
+      // sama pada run berikutnya.
+      ['arahanIncomingId',
+        'SELECT id::text AS v FROM sdl_urmin_incoming WHERE letter_number=$1 LIMIT 1',
+        ['017/UJI/2026']],
+
       // Pelaksana disposisi: butuh `urmin.disposisi.execute` dan grant di unit
       // yang sama dengan distribusinya. Harus BUKAN penerbitnya.
       ['dispositionAssigneeId',

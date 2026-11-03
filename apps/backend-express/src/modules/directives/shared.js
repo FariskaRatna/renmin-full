@@ -132,6 +132,27 @@ export async function isKabag(runner, userId) {
 }
 
 /**
+ * SQL letterLinkAllowed (api.go), disalin verbatim.
+ *
+ * Sebuah arahan boleh menyebut surat masuk yang memicunya, tapi hanya surat
+ * yang memang dirutekan ke Kabagrenmin ini DAN sudah ia terima. Dua fakta itu
+ * sama persis dengan yang menjaga penerusan di distributionAllowed, sehingga
+ * "boleh meneruskan surat ini" dan "boleh menulis arahannya" tidak pernah bisa
+ * berbeda jawaban.
+ *
+ * Surat tanpa baris intake (sebelum R5F7) SENGAJA tidak bisa ditautkan: di sana
+ * tidak ada penerima tercatat untuk dicocokkan, jadi menerimanya berarti
+ * Kabagrenmin mana pun boleh mengaku atas id surat mana pun.
+ */
+export const LETTER_LINK_SQL = `SELECT EXISTS(
+  SELECT 1 FROM sdl_urmin_incoming_intake it
+    JOIN sdl_urmin_distributions d ON d.incoming_id=it.incoming_id
+      AND d.recipient_user=$2::uuid AND d.status='received'
+   WHERE it.incoming_id=$1::uuid AND it.kabag_recipient=$2::uuid
+     AND it.route_status='awaiting_kabag'
+) AS ok`
+
+/**
  * Padanan draftPermission (draft.go:70): 503 kalau pemeriksaan gagal,
  * 403 kalau bukan Kabagrenmin. Mengembalikan false saat respons sudah ditulis.
  */
@@ -178,6 +199,15 @@ export function decodeTyped(req, schema) {
 
     if (kind === 'string') {
       if (absent) { out[field] = ''; continue }
+      if (typeof raw !== 'string') return { ok: false }
+      out[field] = raw
+      continue
+    }
+    // Padanan *string di Go: absen DAN null sama-sama menjadi undefined,
+    // dibedakan dari 'string' yang memadatkan keduanya menjadi ''. Dibutuhkan
+    // incomingId, yang harus bisa mengatakan "tidak ada surat asal".
+    if (kind === 'string?') {
+      if (absent) { out[field] = undefined; continue }
       if (typeof raw !== 'string') return { ok: false }
       out[field] = raw
       continue
@@ -229,7 +259,8 @@ export function parseRfc3339(value) {
 export const LIST_SQL = `SELECT d.id::text,d.title,d.body,d.kind,d.priority,d.issuer_id::text,u.display_name,d.due_at,d.created_at,
   (SELECT COUNT(*) FROM sdl_leadership_directive_recipients x WHERE x.directive_id=d.id)::int AS total,
   (SELECT COUNT(*) FROM sdl_leadership_directive_recipients x WHERE x.directive_id=d.id AND x.read_at IS NOT NULL)::int AS read,
-  (SELECT COUNT(*) FROM sdl_leadership_directive_recipients x WHERE x.directive_id=d.id AND x.acknowledged_at IS NOT NULL)::int AS acknowledged
+  (SELECT COUNT(*) FROM sdl_leadership_directive_recipients x WHERE x.directive_id=d.id AND x.acknowledged_at IS NOT NULL)::int AS acknowledged,
+  d.incoming_id::text AS incoming_id
  FROM sdl_leadership_directives d JOIN sdl_users u ON u.id=d.issuer_id`
 
 /**
@@ -239,9 +270,13 @@ export const LIST_SQL = `SELECT d.id::text,d.title,d.body,d.kind,d.priority,d.is
  * karena itu **hilang sama sekali** dari respons saat kosong — bukan muncul
  * sebagai null. Ketiganya sengaja TIDAK diisi di sini; pemanggil yang
  * menambahkannya hanya kalau memang ada nilainya.
+ *
+ * incomingId (R5G2) mengikuti aturan omitempty yang sama, dan itulah sebabnya
+ * ia ditulis bersyarat alih-alih `?? null`: arahan tanpa surat asal harus
+ * terserialisasi persis seperti sebelum R5G2.
  */
 export function mapSummary(row) {
-  return {
+  const out = {
     id: row.id,
     title: row.title,
     body: row.body,
@@ -255,6 +290,10 @@ export function mapSummary(row) {
     read: row.read,
     acknowledged: row.acknowledged,
   }
+  if (row.incoming_id !== null && row.incoming_id !== undefined) {
+    out.incomingId = row.incoming_id
+  }
+  return out
 }
 
 /** Padanan struct recipient (api.go:31); readAt/acknowledgedAt tanpa omitempty. */

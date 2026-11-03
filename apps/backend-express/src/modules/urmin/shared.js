@@ -75,8 +75,23 @@ export function validPayload(p) {
     validDate(p.letterDate) &&
     validDate(p.receivedDate) &&
     validReason(p.reason) &&
-    (p.classification === 'biasa' || p.classification === 'penting')
+    (p.classification === 'biasa' || p.classification === 'penting') &&
+    validDerajat(p.derajat)
   )
+}
+
+/**
+ * Padanan validDerajat/normalizeDerajat (incoming.go:109).
+ *
+ * Kosong diterima dan berarti 'biasa', bukan 400: field ini baru, dan pemanggil
+ * yang belum mengenalnya tidak boleh mendadak gagal. Normalisasi wajib sebelum
+ * SQL karena string kosong melanggar CHECK constraint di migrasi 034.
+ */
+export function validDerajat(s) {
+  return s === '' || s === 'biasa' || s === 'kilat'
+}
+export function normalizeDerajat(s) {
+  return s === '' ? 'biasa' : s
 }
 
 /**
@@ -106,9 +121,9 @@ export function decodeTyped(req, schema) {
   return { ok: true, value: out }
 }
 
-export const INCOMING_COLUMNS = `SELECT id::text,agenda_no,letter_number,sender,letter_date::text AS letter_date,received_date::text AS received_date,subject,classification,status,created_by::text AS created_by,version,created_at,updated_at FROM sdl_urmin_incoming`
+export const INCOMING_COLUMNS = `SELECT id::text,agenda_no,letter_number,sender,letter_date::text AS letter_date,received_date::text AS received_date,subject,classification,derajat,status,created_by::text AS created_by,version,created_at,updated_at FROM sdl_urmin_incoming`
 
-export const INCOMING_RETURNING = `RETURNING id::text,agenda_no,letter_number,sender,letter_date::text AS letter_date,received_date::text AS received_date,subject,classification,status,created_by::text AS created_by,version,created_at,updated_at`
+export const INCOMING_RETURNING = `RETURNING id::text,agenda_no,letter_number,sender,letter_date::text AS letter_date,received_date::text AS received_date,subject,classification,derajat,status,created_by::text AS created_by,version,created_at,updated_at`
 
 /** Padanan struct Incoming (incoming.go:26). */
 export function mapIncoming(row) {
@@ -121,6 +136,7 @@ export function mapIncoming(row) {
     receivedDate: row.received_date,
     subject: row.subject,
     classification: row.classification,
+    derajat: row.derajat,
     status: row.status,
     createdBy: row.created_by,
     version: Number(row.version),

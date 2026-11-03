@@ -82,6 +82,9 @@ export const MANIFEST = [
   'sql/031_direct_leadership_directives.sql',
   'sql/032_leadership_directive_drafts.sql',
   'sql/033_leadership_directive_files.sql',
+  'sql/034_urmin_derajat_doc_kind.sql',
+  'sql/035_directive_incoming_link.sql',
+  'sql/036_disposition_files.sql',
 ]
 
 /**

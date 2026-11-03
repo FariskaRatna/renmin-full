@@ -54,6 +54,84 @@ Memperbaiki sambil memporting menghilangkan kemampuan membandingkan dengan oracl
 
 ---
 
+## Perubahan kontrak yang disengaja
+
+Tabel di atas mencatat keanehan Go yang **direplikasi**. Bagian ini mencatat hal
+yang berbeda jenisnya: fitur baru yang menambah permukaan API selagi aturan 1
+("kontrak API beku") masih berlaku. Bukan deviasi antara Go dan Express —
+keduanya diubah bersamaan — melainkan pergeseran kontrak terhadap dokumen
+rujukan, dan karena itu harus terbaca di satu tempat.
+
+Syaratnya sama dengan B8/B9: persetujuan pemilik sistem, **kedua backend pada
+perubahan yang sama**, dan golden direkam ulang dalam satu siklus penuh.
+
+| # | Perubahan | Migrasi | Permukaan baru | Status |
+|---|---|---|---|---|
+| C1 | `derajat` surat masuk dan `docKind` lampiran | 034 | body & respons 97–103, 109–110 | Dikerjakan terpisah (R5G1) |
+| C2 | `incomingId`: tautan arahan → surat masuk, plus dua nilai `workflowStatus` | 035 | 80, 81, 87, 88, 90, 91; nilai baru di 97, 110 | **Selesai 2026-11-03** |
+| C3 | Rentang tanggal pada daftar disposisi, dan arsip disposisi ke register Urmin | — | query param di 116; endpoint **143** baru | **Selesai 2026-11-03** |
+| C4 | `pimpinan` + `yangMenghadiri` pada agenda; enam penyesuaian form Agenda & Rapat | — | dua kunci baru di allowlist 44/46 | **Selesai 2026-11-03** |
+| C5 | `workflowSince` pada daftar surat masuk | — | field aditif di 97 | **Selesai 2026-11-03** |
+| C6 | Lampiran bukti hasil tindak lanjut pada tugas disposisi | **036** | endpoint **144–146** baru | **Selesai 2026-11-03** |
+| C7 | Arsip dipisah dua kategori: input manual lawan hasil pengarsipan disposisi | — | query param `source` di **43** | **Selesai 2026-11-03** |
+
+### C3 — satu-satunya perubahan yang mengubah hasil BAWAAN
+
+C1 dan C2 aditif: pemanggil lama melihat persis apa yang dulu ia lihat. C3 tidak.
+`GET /urmin/dispositions` tanpa query param kini membalas `window=active`, yaitu
+hanya surat bertanggal dalam ±30 hari. Pemanggil lama yang tidak diubah akan
+melihat **lebih sedikit** baris daripada sebelumnya.
+
+Itu memang yang diminta, tapi perlu tercatat terang karena beda sifatnya:
+
+- **Tidak ada baris yang menjadi tak terjangkau.** `window=all` memulihkan
+  perilaku lama persis, dan `window=archive` adalah komplemen dari `active`.
+  Sebuah disposisi selalu berada di salah satu dari dua tampilan itu.
+- **Tidak ada paginasi di server, dan itu keputusan sadar.** B5 membuat endpoint
+  ini menyaring izin SESUDAH `LIMIT`, jadi `?page`/`?size` akan menghasilkan
+  halaman yang jumlah barisnya berubah-ubah. Pilihan 5/10/50/100 karena itu
+  dikerjakan frontend atas data yang sudah tersaring. Kalau B5 kelak diperbaiki,
+  paginasi server menjadi mungkin — sampai saat itu, jangan.
+- **Mengarsipkan tidak memindahkan disposisi.** Ia menambah entri di
+  `sdl_urmin_registry` (kind `arsip`) berikut `sdl_unit_work_records`
+  pasangannya; baris disposisinya tidak disentuh sama sekali. Jadi "masuk ke
+  Arsip" di sini berarti *tercatat juga di register arsip*, bukan *pindah ke sana*.
+- **Idempotensinya bersandar pada `ref_code` yang deterministik**, bukan pada
+  kolom penanda. `UNIQUE(kind, lower(ref_code))` yang sudah ada di migrasi 023
+  menolak percobaan kedua. Karena itu R5G3 **tidak butuh migrasi sama sekali**.
+
+### C2 — kenapa tautannya ditambahkan
+
+Migrasi 031 sengaja membuat `sdl_leadership_directives` *"independent from
+Urmin"*. Akibatnya tidak ada satu pun kolom yang bisa menjawab **"surat ini
+sudah diarahkan atau belum"**.
+
+Selama arahan dan disposisi adalah dua jalur terpisah, itu tidak terasa. Ia
+mulai merusak begitu Arahan Pimpinan menggantikan penerusan distribusi sebagai
+cara Kabagrenmin menjawab surat: antrean surat masuk akan menampilkan surat yang
+sudah dijawab dan surat yang dibuka lalu ditinggalkan **dengan status yang persis
+sama**, yaitu "Menunggu Disposisi Kabagrenmin" selamanya — karena `route_status`
+tidak pernah berubah setelah intake dan hanya penerusan distribusi yang
+menggesernya.
+
+Alternatif yang ditolak: membalik status saat surat **dibuka** (`GET`). GET tidak
+wajib CSRF di `AuthorizeOperational`, sehingga prefetch browser atau sekadar
+mengintip daftar sudah cukup untuk menggeser status, dan tidak ada kolom untuk
+menyimpannya. Yang dipakai sebagai pemicu "dibaca" adalah
+`POST /distributions/{id}/receive` (endpoint 112) — aksi eksplisit, ber-CSRF,
+dan sudah menulis `received_at` berikut baris event.
+
+Dua hal yang **tidak** ikut berubah, dan sebaiknya tetap begitu:
+
+- **Gerbang otorisasi tidak tersentuh.** `distributionAllowed` membaca kolom
+  mentah `route_status`, bukan `workflowStatus` yang diturunkan. Menambah nilai
+  turunan karena itu tidak bisa menggeser siapa boleh apa.
+- **Jalur distribusi lama tetap hidup penuh.** `dispatched` →
+  `in_progress` → `awaiting_review` tidak dihapus; surat warisan R3B tanpa baris
+  intake juga sengaja **tidak** bisa ditautkan ke arahan.
+
+---
+
 ## Cara menambah entri
 
 Saat porting, kalau menemukan sesuatu yang terasa salah di Go:

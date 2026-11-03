@@ -34,7 +34,12 @@ const UNIT = 'urmin'
 
 const FIELDS_BY_KIND = Object.freeze({
   surat_keluar: ['nomorSurat', 'tujuan', 'tanggalSurat', 'perihal', 'sifatSurat', 'statusAdministrasi', 'keterangan'],
-  agenda: ['jenisAgenda', 'tanggal', 'waktu', 'lokasi', 'penyelenggara', 'peserta', 'hasil', 'statusAgenda'],
+  // R5G4 menambah 'pimpinan' dan BERHENTI menampilkan jenisAgenda, hasil, dan
+  // statusAgenda di UI. Ketiganya sengaja TETAP di sini: daftar ini allowlist,
+  // dan payload yang memuat kunci di luarnya ditolak. Mencabutnya akan membuat
+  // setiap agenda LAMA gagal disunting dengan 400, karena form mengirim balik
+  // kunci yang sudah tersimpan di JSONB-nya.
+  agenda: ['jenisAgenda', 'tanggal', 'waktu', 'lokasi', 'penyelenggara', 'peserta', 'hasil', 'statusAgenda', 'pimpinan', 'yangMenghadiri'],
   arsip: ['jenisArsip', 'tanggalDokumen', 'lokasiSimpan', 'retensi', 'penanggungJawab', 'statusArsip', 'keterangan'],
 })
 
@@ -168,6 +173,22 @@ export function createUrminRegisterRouter({ pool }) {
       fail(res, 400, 'invalid_search')
       return
     }
+    // R5G7: arsip terbagi dua — yang diinput manual, dan yang lahir dari
+    // pengarsipan disposisi (endpoint 143). Pembedanya `fields->>'sumber'`,
+    // yang hanya ditulis oleh endpoint 143.
+    //
+    // Disaring di SQL, bukan sesudahnya: daftar ini memotong di 100 baris
+    // SETELAH penyaringan izin, jadi arsip manual bisa terdorong keluar jendela
+    // begitu entri disposisi menumpuk. Menyaring di sini membuat tiap kategori
+    // punya 100 barisnya sendiri.
+    //
+    // Entri lama tidak punya kunci 'sumber' sama sekali, dan IS DISTINCT FROM
+    // memperlakukan NULL itu sebagai manual — tanpa backfill apa pun.
+    const source = String(req.query.source ?? '').trim()
+    if (source !== '' && source !== 'manual' && source !== 'disposisi') {
+      fail(res, 400, 'invalid_source')
+      return
+    }
 
     let rows
     try {
@@ -175,8 +196,9 @@ export function createUrminRegisterRouter({ pool }) {
         `${SELECT} WHERE s.kind=$1 AND s.deleted_at IS NULL AND w.deleted_at IS NULL
                      AND w.unit_key='${UNIT}'
                      AND ($2='' OR s.title ILIKE '%'||$2||'%' OR s.ref_code ILIKE '%'||$2||'%')
+                     AND ($3='' OR ($3='disposisi') = (s.fields->>'sumber' IS NOT DISTINCT FROM 'disposisi'))
                    ORDER BY s.created_at DESC,s.id DESC LIMIT 251`,
-        [kind, search],
+        [kind, search, source],
       )
       rows = result.rows
     } catch (error) {

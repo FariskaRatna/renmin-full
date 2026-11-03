@@ -14,6 +14,7 @@ import {
   decodeTyped,
   deny,
   isKabag,
+  LETTER_LINK_SQL,
   LIST_SQL,
   mapRecipient,
   mapSummary,
@@ -50,6 +51,7 @@ const CREATE_SCHEMA = {
   dueAt: 'time?',
   recipients: 'string[]',
   draftRevision: 'int?',
+  incomingId: 'string?',
 }
 
 /** Padanan validate (api.go:101). */
@@ -59,6 +61,9 @@ function validCreate(p, now) {
   if (!uniqueRecipients(p.recipients ?? [])) return false
   if (!validKind(p.kind) || !validPriority(p.priority)) return false
   if (p.dueAt !== undefined && p.dueAt.getTime() < now.getTime()) return false
+  // Bentuk saja. Boleh-tidaknya aktor ini menautkan surat tersebut adalah
+  // pertanyaan database, dijawab di dalam transaksi kirim.
+  if (p.incomingId !== undefined && !UUID_RE.test(p.incomingId)) return false
   return true
 }
 
@@ -300,10 +305,19 @@ export function createDirectivesRouter({ pool, config }) {
           if (valid.rows[0].ok !== true) return { kind: 'invalid' }
         }
 
+        // Ditolak sebagai 400, sama dengan jalur penerima tidak sah di atas:
+        // dari sisi pemanggil keduanya berarti "payload ini menyebut sesuatu
+        // yang tidak boleh kamu kirimi".
+        if (p.incomingId !== undefined) {
+          const linkable = await client.query(LETTER_LINK_SQL, [p.incomingId, req.actor])
+          if (linkable.rows[0].ok !== true) return { kind: 'invalid' }
+        }
+
         const created = await client.query(
-          `INSERT INTO sdl_leadership_directives(issuer_id,title,body,kind,priority,due_at)
-           VALUES($1::uuid,$2,$3,$4,$5,$6) RETURNING id::text AS id`,
-          [req.actor, p.title.trim(), p.body.trim(), p.kind, p.priority, p.dueAt ?? null],
+          `INSERT INTO sdl_leadership_directives(issuer_id,title,body,kind,priority,due_at,incoming_id)
+           VALUES($1::uuid,$2,$3,$4,$5,$6,$7::uuid) RETURNING id::text AS id`,
+          [req.actor, p.title.trim(), p.body.trim(), p.kind, p.priority, p.dueAt ?? null,
+            p.incomingId ?? null],
         )
         const id = created.rows[0].id
 

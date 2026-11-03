@@ -15,10 +15,10 @@
 
 | Metrik | Nilai |
 |---|---|
-| Endpoint terpasang (mounted) | **142** |
+| Endpoint terpasang (mounted) | **146** (142 + arsip disposisi R5G3 + tiga lampiran disposisi R5G6) |
 | Prefix mount | 15 |
 | Tabel Postgres | 56 |
-| File migrasi SQL | 33 (`001_core.sql` … `033_leadership_directive_files.sql`) |
+| File migrasi SQL | 36 (`001_core.sql` … `036_disposition_files.sql`) |
 | Model otorisasi | **2 engine berbeda** (lihat §4) |
 | Worker latar | 1 (notifications, tick 10 detik) |
 
@@ -27,6 +27,8 @@
 Estimasi awal **173** berasal dari hitungan mentah pemanggilan `.Get(/.Post(/...` di seluruh
 file `.go` — termasuk file `_test.go` dan helper yang tidak terpasang. Setelah ditelusuri
 pohon komposisi router yang sebenarnya, jumlah endpoint yang benar-benar dilayani adalah **142**.
+Sejak R5G3 dan R5G6 (2026-11-03) bertambah empat menjadi **146**; penomorannya melanjutkan, bukan menyisip,
+supaya nomor yang sudah dirujuk di golden file dan dokumen lain tidak bergeser.
 
 Selisihnya bukan hanya file test. Ada juga **kode mati yang sengaja tidak dipasang**:
 `internal/delegations/service.go` mendefinisikan 4 route lengkap, tapi `router.go:242-247`
@@ -385,7 +387,7 @@ Jangan generalisasi aturan ini ke endpoint lain.
 
 ---
 
-## 5. Inventaris endpoint (142)
+## 5. Inventaris endpoint (146)
 
 Legenda guard: **P** = publik · **S** = butuh sesi · **O** = `AuthorizeOperational` ·
 **R** = `AuthorizeRoleEditor` · **C** = butuh CSRF + Origin
@@ -492,6 +494,32 @@ Registry surat **keluar** (`sdl_outgoing_workflows`, `sdl_outgoing_events`).
 | 50 | POST | `/{id}/approve` | `outgoingDecision(true)` |
 | 51 | POST | `/{id}/reject` | `outgoingDecision(false)` |
 
+#### R5G7 — `source` pada endpoint 43 (2026-11-03)
+
+Arsip Urmin terbagi dua kategori, dan pembedanya `fields->>'sumber'` — kunci
+yang **hanya** ditulis endpoint 143 saat mengarsipkan disposisi.
+
+| `source` | Hasil |
+|---|---|
+| absen / `''` | semua, perilaku sebelum R5G7 |
+| `manual` | `fields->>'sumber'` bukan `'disposisi'` — **termasuk yang tidak punya kunci itu sama sekali** |
+| `disposisi` | lahir dari pengarsipan disposisi |
+
+Nilai lain → **400 `invalid_source`**.
+
+Tiga hal yang mudah salah diporting:
+
+- **Tidak ada backfill, dan tidak perlu.** Entri arsip yang dibuat sebelum R5G7
+  tidak punya kunci `sumber`; `IS DISTINCT FROM` memperlakukan NULL itu sebagai
+  manual, yang memang benar — semuanya dulu diinput tangan.
+- **Disaring di SQL, bukan sesudahnya.** Endpoint ini memotong di 100 baris
+  SETELAH penyaringan izin per baris (pola B5). Menyaring kategori di luar SQL
+  berarti arsip manual bisa terdorong keluar jendela begitu entri disposisi
+  menumpuk. Dengan filter di SQL, tiap kategori punya 100 barisnya sendiri.
+- **Param ini berlaku untuk ketiga `kind`**, bukan hanya `arsip` — tapi hanya
+  di `arsip` ia bermakna, karena `surat_keluar` dan `agenda` tidak pernah punya
+  kunci `sumber` sehingga keduanya selalu terhitung `manual`.
+
 ### 5.8 `/api/v1/subbagren/usulan` — 10 · guard **O** · engine A
 
 | # | Method | Path | Permission |
@@ -583,6 +611,33 @@ Jalur non-Superadmin: `br_kabagrenmin` + `dashboard.cross_unit.read`.
 > **berurutan** — kalau `/{id}` naik ke atas, `GET /inbox` akan tertangkap sebagai
 > `id = "inbox"`. Pertahankan urutan deklarasi persis seperti di Go.
 
+#### R5G2 — `incomingId` (migrasi 035, 2026-11-03)
+
+Tautan opsional dari arahan ke surat masuk yang memicunya. **Diubah di Go dan
+Express bersamaan** dan golden direkam ulang dalam satu siklus.
+
+| Endpoint | Bentuk | Catatan |
+|---|---|---|
+| 90 `POST /` | body: `incomingId` UUID \| `null` \| absen | Absen dan `null` sama artinya: tidak ada surat asal |
+| 81 `PUT /draft` | body: idem | Draf hanya diperiksa **bentuknya**, bukan izinnya |
+| 80 `GET /draft` | respons: `draft.incomingId`, **selalu hadir**, `null` kalau kosong | Field draf lain pun selalu hadir, jadi tanpa `omitempty` |
+| 87, 88, 91 | respons: `incomingId` **ber-`omitempty`** | Arahan tanpa surat asal terserialisasi persis seperti sebelum R5G2 |
+
+Dua hal yang mudah salah diporting:
+
+- **`omitempty` berbeda antara draf dan summary.** Di `GET /draft` field-nya
+  selalu muncul (bisa `null`); di 87/88/91 ia **hilang sama sekali** saat kosong.
+  Ketidaksamaan ini mengikuti struct Go apa adanya.
+- **Gerbang izin hanya berjalan saat kirim, bukan saat autosave.** Draf adalah
+  kertas buram privat yang tidak pernah terkirim; memvalidasi izin di sana akan
+  membuat autosave gagal selagi penulisnya masih memilih surat.
+
+Surat yang boleh ditautkan: hanya yang `route_status='awaiting_kabag'`, yang
+`kabag_recipient`-nya adalah aktor itu sendiri, **dan** yang distribusinya sudah
+berstatus `received`. Gagal memenuhi salah satunya → **400 `invalid_request`**,
+sama dengan jalur penerima tidak sah. Surat tanpa baris intake (sebelum R5F7)
+sengaja **tidak** bisa ditautkan.
+
 ### 5.13 `/api/v1/urmin/surat-masuk` — 15 · guard **O** · engine A
 
 Komposisi: `incoming.Routes` (6) + `R3BRoutes` (7) + `R5F7Routes` (2).
@@ -614,6 +669,133 @@ Komposisi: `incoming.Routes` (6) + `R3BRoutes` (7) + `R5F7Routes` (2).
 > (`r5f7.go:164-430`). Ia menulis ke `sdl_urmin_intake_mail_outbox`. Porting paling akhir
 > di domain Urmin.
 
+#### R5G1 — `derajat` dan `docKind` (migrasi 034, 2026-11-02)
+
+Dua field aditif. **Keduanya diubah di Go dan Express bersamaan** dan golden
+file direkam ulang dalam satu siklus — bukan perubahan sepihak di Express.
+
+| Field | Di mana | Nilai | Catatan |
+|---|---|---|---|
+| `derajat` | body & respons endpoint 97–101, 109–110 | `biasa` \| `kilat` | Posisi **persis setelah `classification`** dalam urutan field. Go menserialisasi sesuai urutan deklarasi struct, jadi posisi ini bagian dari kontrak |
+| `docKind` | respons endpoint 102; field form endpoint 103; nama field multipart endpoint 109 | `surat` \| `lampiran` | Memisahkan naskah surat dari berkas pendukung |
+
+Tiga perilaku yang mudah salah diporting:
+
+- **`derajat` kosong diterima, bukan 400.** Pemanggil yang belum mengenal field
+  ini harus tetap jalan, jadi `""` dinormalkan jadi `biasa` sebelum menyentuh
+  SQL — string kosong melanggar CHECK constraint di 034.
+- **`docKind` di endpoint 103 bersifat opsional**, dan nilai di luar dua itu
+  ditolak `400 invalid_doc_kind` — tidak didiamkan jadi `lampiran`.
+- **Endpoint 109 memakai dua field multipart**: `surat` (paling banyak satu) dan
+  `files` (lampiran). Batas 10 berkas dihitung **gabungan**, bukan per field,
+  karena `MaxBytesReader` menimbang seluruh body.
+
+`derajat` **tidak ikut keputusan otorisasi mana pun.** `classification` mengatur
+siapa boleh melihat; `derajat` hanya mengatur seberapa cepat ditangani.
+Memasukkannya ke Engine A akan mengubah arti `classification_limit` pada grant
+yang sudah ada.
+
+#### R5G2 — dua nilai `workflowStatus` baru (migrasi 035, 2026-11-03)
+
+`workflowStatus` **bukan kolom**; ia diturunkan saat dibaca dari `route_status`
+ditambah keadaan distribusi, tugas, dan — sejak R5G2 — arahan yang tertaut.
+Kolom `route_status` sendiri tidak pernah berubah setelah intake.
+
+Saat `route_status='awaiting_kabag'`, presedensinya **paling maju lebih dulu**:
+
+| Urutan | Nilai | Syarat |
+|---|---|---|
+| 1 | `directive_issued` | ada arahan dengan `incoming_id` = surat ini |
+| 2 | `in_progress` / `awaiting_review` / `dispatched` | Kabagrenmin sudah meneruskan (jalur distribusi lama) |
+| 3 | `read_kabag` | distribusi ke Kabagrenmin sudah `received` |
+| 4 | `awaiting_kabag` | belum satu pun di atas |
+
+`directive_issued` **mengalahkan** `dispatched`: begitu pimpinan menjawab
+suratnya, apakah ia juga diteruskan bukan lagi yang dilaporkan field ini.
+
+#### R5G5 — `workflowSince` pada endpoint 97 (2026-11-03)
+
+Field aditif di sebelah `workflowStatuses`, **bukan di dalamnya**: peta
+`{incomingId: submitted_at}` dari `sdl_urmin_incoming_intake`.
+
+```json
+{
+  "items": [...],
+  "limited": false,
+  "workflowStatuses": { "<id>": "awaiting_kabag" },
+  "workflowSince":    { "<id>": "2026-11-01T02:15:30Z" }
+}
+```
+
+Tiga hal yang mudah salah diporting:
+
+- **Peta terpisah, bukan nilai gabungan.** Mengubah `workflowStatuses[id]` dari
+  string menjadi objek akan mematahkan setiap pemanggil lama; peta kedua tidak.
+- **Hanya memuat surat yang punya baris intake.** Surat warisan R3B tidak punya
+  `submitted_at`, jadi id-nya tidak muncul sama sekali — bukan muncul bernilai
+  null. Pemanggil harus menyiapkan diri atas id yang tidak ada.
+- **Selalu `{}` saat kosong, tidak pernah `null`.** Di Go map-nya diinisialisasi
+  non-nil; di Express ia objek literal.
+
+Gunanya: tanpa angka ini `awaiting_kabag` tidak bisa dibedakan antara surat yang
+diajukan tadi pagi dan yang menggantung dua minggu. Itulah yang dibutuhkan
+Staf Urmin untuk tahu kapan perlu mengingatkan Kabagrenmin.
+
+#### R5G6 — lampiran hasil tindak lanjut (migrasi 036, 2026-11-03)
+
+Tiga endpoint baru pada mount disposisi, dan **gerbangnya tidak sama**:
+
+| # | Aksi | Siapa | Gagal |
+|---|---|---|---|
+| 144 | unggah | pihak tugas **dan** pelaksananya, selama tugas belum `completed` | bukan pihak → 404 · pihak tapi bukan pelaksana → **403** · sudah selesai → **409 `already_completed`** |
+| 145 | daftar | seluruh pihak tugas | bukan pihak → 404 |
+| 146 | unduh | seluruh pihak tugas | bukan pihak → 404 · berkas bukan milik tugas itu → 404 |
+
+Pembedaan itu yang menjadikannya bukti. Kalau penerbit boleh mengunggah, berkas
+di sini berhenti berarti "ini yang dikerjakan pelaksana"; kalau pelaksana masih
+boleh mengunggah sesudah selesai, telaah penerbit berjalan atas kumpulan berkas
+yang masih bisa berubah di belakangnya.
+
+Empat hal yang mudah salah diporting:
+
+- **403 pada endpoint 144, bukan 404.** Penerbit adalah pihak tugas, jadi
+  keberadaan tugasnya memang sudah boleh ia ketahui — yang ditolak hanyalah
+  perbuatannya. Dua endpoint lainnya tetap 404 untuk bukan-pihak.
+- **Status dinilai ULANG di dalam transaksi, dengan `FOR UPDATE`.** Tugas bisa
+  diselesaikan selama berkasnya dibaca dari jaringan; tanpa penguncian itu,
+  bukti bisa menyelinap sesudah telaah dimulai.
+- **Batas 10 berkas per tugas**, dihitung di dalam transaksi yang sama →
+  409 `attachment_limit`.
+- **`Content-Type` balasan 146 SELALU `application/octet-stream`**, apa pun
+  `mime_type` yang tersimpan, berikut `Content-Security-Policy: sandbox` dan
+  `X-Content-Type-Options: nosniff`. Berkas ini tidak pernah dirender peramban.
+  SHA-256 diperiksa ulang sebelum satu byte pun dikirim; tidak cocok →
+  503 `attachment_integrity_failure`.
+
+Batas ukuran, daftar MIME, dan kode errornya sengaja **sama persis** dengan
+lampiran surat masuk (102–104): PDF/PNG/JPEG, maksimal 10 MiB,
+`invalid_attachment` · `file_required` · `file_too_large` · `invalid_file_type`
+· `invalid_reason`.
+
+> **Urutan route di Express.** `/{taskId}/attachments` harus dideklarasikan
+> sebelum `/{taskId}/attachments/{fileId}/download`, dan keduanya setelah
+> `/leadership`. Lihat §6.
+
+> **Belum ada endpoint "kirim pengingat", dan itu disengaja.** Kedua tabel
+> outbox yang ada tidak bisa membawanya: `sdl_urmin_email_outbox` terikat ke
+> tugas disposisi dengan `event_key` ber-CHECK tertutup, dan
+> `sdl_urmin_intake_mail_outbox` ber-`UNIQUE(distribution_id,recipient_user)`
+> yang kuotanya sudah terpakai oleh pemberitahuan intake. Pengingat lewat email
+> karena itu menuntut migrasi tersendiri.
+
+### 5.13.1 Catatan daftar vs detail
+
+> **Daftar (97) dan detail (110) sengaja tidak sama dalamnya.** Keduanya
+> mengenali `directive_issued` dan `read_kabag`, tetapi hanya 110 yang
+> menghitung rantai tugas `in_progress`/`awaiting_review` — 97 berhenti di
+> `dispatched`. Asimetri ini sudah ada sebelum R5G2 dan dipertahankan apa adanya;
+> menyamakannya akan mengubah baris yang tidak diniatkan tersentuh.
+
 ### 5.14 `/api/v1/urmin/distribution-inbox` — 5 · guard **O**
 
 Komposisi: `R3BInboxRoutes` (3) + `R3CInboxRoutes` (2).
@@ -626,13 +808,17 @@ Komposisi: `R3BInboxRoutes` (3) + `R3CInboxRoutes` (2).
 | 114 | GET | `/{distributionId}/disposition-candidates` |
 | 115 | POST | `/{distributionId}/dispositions` |
 
-### 5.15 `/api/v1/urmin/dispositions` — 11 · guard **O**
+### 5.15 `/api/v1/urmin/dispositions` — 15 · guard **O**
 
-Komposisi: `R3CTaskRoutes` (7) + `R3D3Routes` (4).
+Komposisi: `R3CTaskRoutes` (11) + `R3D3Routes` (4).
 
 | # | Method | Path | Permission |
 |---|---|---|---|
 | 116 | GET | `/` | `urmin.disposisi.read` |
+| 143 | POST | `/{taskId}/archive` | `urmin.surat_masuk.read` atas suratnya **+** wewenang buat register Urmin |
+| 144 | POST | `/{taskId}/attachments` | pihak tugas **dan** pelaksananya |
+| 145 | GET | `/{taskId}/attachments` | pihak tugas |
+| 146 | GET | `/{taskId}/attachments/{fileId}/download` | pihak tugas |
 | 117 | GET | `/{taskId}/history` | |
 | 118 | POST | `/{taskId}/accept` | `urmin.disposisi.execute` |
 | 119 | POST | `/{taskId}/complete` | `urmin.disposisi.execute` |
@@ -656,6 +842,62 @@ Komposisi: `R3CTaskRoutes` (7) + `R3D3Routes` (4).
 
 `taskChainValid()` memvalidasi rantai disposisi berjenjang (`sdl_urmin_disposition_tasks`
 dengan parent), dan `leadershipAllowed()` punya validasi UUID + whitelist permission sendiri.
+
+#### R5G3 — rentang tanggal, dan arsip disposisi (2026-11-03)
+
+**Diubah di Go dan Express bersamaan**, golden direkam ulang dalam satu siklus.
+
+**Endpoint 116 menerima tiga query param baru**, dan **perilaku bawaannya berubah**:
+
+| Param | Nilai | Arti |
+|---|---|---|
+| `window` | `active` (bawaan) · `archive` · `all` | `active` = `letter_date` dalam ±30 hari; `archive` komplemen persisnya; `all` perilaku sebelum R5G3 |
+| `from` + `to` | `YYYY-MM-DD` | Rentang eksplisit atas `letter_date`; **menimpa `window`** |
+
+Empat hal yang mudah salah diporting:
+
+- **Tanpa param apa pun, 116 TIDAK lagi mengembalikan semua.** Bawaannya kini
+  `window=active`. `window=all` memulihkan perilaku lama; tidak ada baris yang
+  menjadi tak terjangkau, ia hanya berpindah tampilan.
+- **`from` dan `to` wajib berpasangan.** Salah satu saja → `400 invalid_input`.
+  Rentang setengah terbuka terbaca sebagai "sejak tanggal ini seterusnya" oleh
+  pemanggil, padahal diam-diam tetap kena batas ±30 hari.
+- **Nilai `window` di luar ketiganya → `400 invalid_input`**, bukan didiamkan
+  jatuh ke `active`.
+- **Klausa pihak WAJIB dalam kurung.** `WHERE (t.issued_by=$1 OR t.assigned_to=$1)`
+  — tanpa kurungnya `AND` yang disusulkan mengikat ke `t.assigned_to=$1` saja,
+  dan setiap tugas yang pemanggilnya hanya menerbitkan lolos dari saringan tanggal.
+
+**Endpoint 143 `POST /{taskId}/archive`** membuat entri di register Arsip Urmin:
+
+- Tunduk pada **dua** gerbang: Engine A `urmin.surat_masuk.read` atas surat di
+  balik disposisinya (gagal → **404**, bentuk yang sama dengan endpoint 99),
+  **dan** wewenang membuat register Urmin — pemeriksaan yang sama dengan
+  `unitwork.permit()` di endpoint 44 (gagal → **403**).
+
+> **Gerbang pertama sengaja BUKAN `taskParty()`.** Mengarsipkan adalah urusan
+> rumah tangga Urmin atas daur hidup surat, sedangkan pihak disposisi hampir
+> selalu berada di `subbagren`/`subbagsumda`/`subbagbinfung` — dan tidak satu
+> pun dari ketiganya punya grant di unit `urmin`. Memasangkan `taskParty`
+> dengan pemeriksaan register akan menghasilkan endpoint yang **tidak
+> terjangkau akun nyata mana pun**: 403 bagi para pihak, 404 bagi staf Urmin
+> yang justru memiliki arsipnya. Itu persis bentuk kegagalan B9. Akun yang
+> benar-benar bisa memakainya: `ka-urmin` dan `kabagrenmin` (scope unit),
+> serta `op-urmin`/`staf-urmin` untuk surat buatan sendiri.
+- Menulis **dua baris**, sama seperti endpoint 44: satu `sdl_unit_work_records`
+  lalu satu `sdl_urmin_registry` yang menunjuknya (`work_record_id` NOT NULL UNIQUE).
+- `ref_code` deterministik: `ARS-DISP-<nomor surat>-<8 digit id tugas>`, huruf
+  besar, maksimal 64 karakter. Karena deterministik, `UNIQUE(kind, lower(ref_code))`
+  menjadi penjaga idempotensi: percobaan kedua → **409 `already_archived`**.
+- Surat yang masih di dalam rentang aktif → **409 `still_active`**. Rentangnya
+  ditegakkan di server, bukan hanya di UI.
+- **Tidak menghapus atau memindahkan apa pun.** Baris disposisinya tetap di
+  tempatnya dan tetap terjangkau lewat `?window=archive`.
+
+> **Paginasi tidak ada di API ini, dan itu disengaja.** Pilihan 5/10/50/100 per
+> halaman dikerjakan frontend atas data yang sudah lolos otorisasi. Endpoint 116
+> menyaring izin **sesudah** `LIMIT 200` (lihat B5), jadi `?page`/`?size` di
+> server akan menghasilkan halaman yang jumlah barisnya tidak tetap.
 
 ### 5.16 `/api/v1/admin` — 16 · guard **R** (Superadmin)
 

@@ -67,6 +67,9 @@ const ID = {
   // Registry berelasi 1:1 dengan work record (UNIQUE work_record_id), jadi
   // entri agenda butuh berkas kerjanya sendiri.
   workUrminAgenda: 'a0000000-0000-4000-8000-000000000005',
+  // R5G7: berkas kerja untuk satu arsip yang diinput MANUAL. Perlu sendiri
+  // karena sdl_urmin_registry.work_record_id ber-UNIQUE.
+  workUrminArsip: 'a0000000-0000-4000-8000-000000000006',
   workFile: 'a1000000-0000-4000-8000-000000000001',
   workTask: 'a2000000-0000-4000-8000-000000000001',
 
@@ -115,6 +118,7 @@ const ID = {
 
   registrySurat: 'b0000000-0000-4000-8000-000000000001',
   registryAgenda: 'b0000000-0000-4000-8000-000000000002',
+  registryArsip: 'b0000000-0000-4000-8000-000000000003',
   sumda: 'b1000000-0000-4000-8000-000000000001',
   binfung: 'b2000000-0000-4000-8000-000000000001',
 
@@ -133,10 +137,25 @@ const ID = {
   // urutan eksekusi. Statusnya 'registered' karena r3b.go:241 menolak 409
   // not_registered untuk apa pun selain itu.
   incomingWriteAttach: 'c0000000-0000-4000-8000-000000000016',
+  // R5G2: sasaran tautan arahan -> surat. Satu-satunya fixture surat yang punya
+  // baris intake, karena ia satu-satunya yang perlu `route_status` dan
+  // `kabag_recipient` terisi. Ditanam paling akhir supaya fixture `incomingId`
+  // (ORDER BY created_at LIMIT 1) tetap menunjuk incomingRegistered.
+  incomingKabagArahan: 'c0000000-0000-4000-8000-000000000017',
+  // R5G5 (2.2a): surat milik STAF-URMIN sendiri yang menunggu Kabagrenmin dan
+  // BELUM dibuka. Pemiliknya penting: grant staf-urmin ber-scope 'own', jadi
+  // satu-satunya surat yang bisa ia lihat adalah buatannya sendiri — dan itulah
+  // skenario yang hendak dibuktikan, bahwa pengaju tahu suratnya belum dibuka.
+  incomingStafMenunggu: 'c0000000-0000-4000-8000-000000000019',
   distributionWriteInbox: 'c2000000-0000-4000-8000-000000000002',
+  distributionKabagArahan: 'c2000000-0000-4000-8000-000000000003',
+  distributionStafMenunggu: 'c2000000-0000-4000-8000-000000000004',
   attachment: 'c1000000-0000-4000-8000-000000000001',
   distribution: 'c2000000-0000-4000-8000-000000000001',
   dispositionTask: 'c3000000-0000-4000-8000-000000000001',
+  // R5G6: satu bukti hasil tindak lanjut yang sudah terunggah, supaya endpoint
+  // 146 punya berkas nyata untuk diunduh tanpa bergantung pada varian 144.
+  dispositionFile: 'c4000000-0000-4000-8000-000000000001',
 
   // ---- rantai disposisi untuk varian jalur tulis (116–126) ----
   //
@@ -235,6 +254,10 @@ const DOCUMENT_TABLES = [
   'sdl_urmin_final_approvals',
   'sdl_urmin_disposition_reviews',
   'sdl_urmin_disposition_events',
+  // R5G6. WAJIB ada di daftar ini dan SEBELUM tabel tugasnya: FK-nya
+  // ON DELETE RESTRICT, jadi TRUNCATE atas sdl_urmin_disposition_tasks akan
+  // gagal selama anaknya tidak ikut dikosongkan dalam pernyataan yang sama.
+  'sdl_urmin_disposition_files',
   'sdl_urmin_disposition_tasks',
   'sdl_urmin_distribution_events',
   'sdl_urmin_distributions',
@@ -465,6 +488,7 @@ export async function seedDocuments(databaseUrl, evidenceKey) {
       [ID.workSumda, 'subbagsumda', 'Personel', 'Berkas kerja personel Subbagsumda', u['op-subbagsumda'], 2],
       [ID.workBinfung, 'subbagbinfung', 'Pembinaan', 'Berkas kerja pembinaan Subbagbinfung', u['op-subbagbinfung'], 3],
       [ID.workUrminAgenda, 'urmin', 'Agenda', 'Berkas kerja agenda Urmin', u['op-urmin'], 4],
+      [ID.workUrminArsip, 'urmin', 'Arsip', 'Berkas kerja arsip Urmin', u['op-urmin'], 5],
     ]) {
       await client.query(
         `INSERT INTO sdl_unit_work_records(id,unit_key,category,title,description,classification,created_by,updated_by,created_at,updated_at)
@@ -491,6 +515,11 @@ export async function seedDocuments(databaseUrl, evidenceKey) {
     for (const [id, kind, ref, title, work, owner, minute] of [
       [ID.registrySurat, 'surat_keluar', 'SK-2026-001', 'Surat keluar uji harness', ID.workUrmin, u['op-urmin'], 6],
       [ID.registryAgenda, 'agenda', 'AG-2026-001', 'Agenda uji harness', ID.workUrminAgenda, u['op-urmin'], 7],
+      // R5G7: arsip yang diinput manual. `fields` kosong, TANPA kunci 'sumber'
+      // — persis bentuk seluruh arsip yang dibuat sebelum R5G7. Keberadaannya
+      // membuat kategori 'manual' terbukti BERISI, bukan sekadar kosong, dan
+      // sekaligus membuktikan ia tidak bocor ke kategori 'disposisi'.
+      [ID.registryArsip, 'arsip', 'AR-2026-001', 'Arsip input manual uji harness', ID.workUrminArsip, u['op-urmin'], 8],
     ]) {
       await client.query(
         `INSERT INTO sdl_urmin_registry(id,kind,ref_code,title,fields,work_record_id,created_by,updated_by,created_at,updated_at)
@@ -692,6 +721,60 @@ export async function seedDocuments(databaseUrl, evidenceKey) {
         'Diteruskan ke Kasubbagren untuk uji rantai kotak masuk.', at(34)],
     )
 
+    // ---- R5G2: surat yang menunggu Kabagrenmin dan SUDAH ia terima ----
+    //
+    // Tiga baris yang harus lengkap bersama, karena `letterLinkAllowed`
+    // menuntut ketiganya sekaligus: baris intake ber-`route_status`
+    // 'awaiting_kabag', `kabag_recipient` = kabagrenmin, DAN distribusi kepada
+    // orang itu yang sudah berstatus 'received'. Kurang satu saja, varian 90
+    // bervariasi 'arahan-dari-surat' akan 400 — dan 400 itu benar, bukan bug.
+    //
+    // `intake_route_consistency` di migrasi 024 juga mengikat: 'awaiting_kabag'
+    // mewajibkan submitted_at terisi DAN needs_disposition TRUE.
+    await client.query(
+      `INSERT INTO sdl_urmin_incoming(id,letter_number,sender,letter_date,received_date,subject,classification,status,created_by,updated_by,created_at,updated_at)
+       VALUES($1,'017/UJI/2026','Bagian Perencanaan Polda','2026-09-20','2026-09-22',
+              'Sasaran uji arahan pimpinan dari surat masuk','biasa','registered',$2,$2,$3,$3)`,
+      [ID.incomingKabagArahan, u['op-urmin'], at(40)],
+    )
+    await client.query(
+      `INSERT INTO sdl_urmin_incoming_intake(incoming_id,letter_kind,needs_disposition,route_status,kabag_recipient,submitted_at,updated_at)
+       VALUES($1,'permintaan',TRUE,'awaiting_kabag',$2,$3,$3)`,
+      [ID.incomingKabagArahan, u['kabagrenmin'], at(41)],
+    )
+    await client.query(
+      `INSERT INTO sdl_urmin_distributions(id,incoming_id,sent_by,recipient_unit,recipient_user,status,reason,sent_at,received_at)
+       VALUES($1,$2,$3,'urmin',$4,'received',$5,$6,$7)`,
+      [ID.distributionKabagArahan, ID.incomingKabagArahan, u['op-urmin'], u['kabagrenmin'],
+        'Surat masuk menunggu arahan Kabagrenmin untuk uji harness.', at(41), at(42)],
+    )
+
+    // ---- R5G5 (2.2a): surat staf-urmin yang BELUM dibuka Kabagrenmin ----
+    //
+    // Pasangan dari fixture R5G2 di atas, dan perbedaannya satu-satunya yang
+    // penting: distribusinya berstatus 'sent', bukan 'received'. Itu yang
+    // membuat workflowStatus-nya berhenti di 'awaiting_kabag' — tepat keadaan
+    // yang ingin dilihat pengajunya sebagai "Belum dibuka".
+    //
+    // Dibuat staf-urmin supaya lolos grant ber-scope 'own' miliknya.
+    await client.query(
+      `INSERT INTO sdl_urmin_incoming(id,letter_number,sender,letter_date,received_date,subject,classification,status,created_by,updated_by,created_at,updated_at)
+       VALUES($1,'019/UJI/2026','Bagian Perencanaan Polda','2026-09-20','2026-09-22',
+              'Sasaran uji pemantauan surat menunggu Kabagrenmin','biasa','registered',$2,$2,$3,$3)`,
+      [ID.incomingStafMenunggu, u['staf-urmin'], at(43)],
+    )
+    await client.query(
+      `INSERT INTO sdl_urmin_incoming_intake(incoming_id,letter_kind,needs_disposition,route_status,kabag_recipient,submitted_at,updated_at)
+       VALUES($1,'undangan',TRUE,'awaiting_kabag',$2,$3,$3)`,
+      [ID.incomingStafMenunggu, u['kabagrenmin'], at(44)],
+    )
+    await client.query(
+      `INSERT INTO sdl_urmin_distributions(id,incoming_id,sent_by,recipient_unit,recipient_user,status,reason,sent_at)
+       VALUES($1,$2,$3,'urmin',$4,'sent',$5,$6)`,
+      [ID.distributionStafMenunggu, ID.incomingStafMenunggu, u['staf-urmin'], u['kabagrenmin'],
+        'Surat masuk diajukan staf dan menunggu dibuka Kabagrenmin.', at(44)],
+    )
+
     await client.query(
       `INSERT INTO sdl_urmin_disposition_tasks(id,distribution_id,incoming_id,unit_key,issued_by,assigned_to,instruction,due_date,status,depth,version,created_at,updated_at)
        VALUES($1,$2,$3,'subbagren',$4,$5,$6,'2026-11-30','pending',0,1,$7,$7)`,
@@ -699,6 +782,7 @@ export async function seedDocuments(databaseUrl, evidenceKey) {
         u['kasubbagren'], u['op-subbagren'],
         'Siapkan bahan jawaban dan laporkan hasilnya.', at(15)],
     )
+
 
     // ---- rantai disposisi: sasaran varian jalur tulis 117–126 ----
     //
@@ -794,6 +878,23 @@ export async function seedDocuments(databaseUrl, evidenceKey) {
           'Pekerjaan telah diselesaikan dan hasilnya dilaporkan.'],
       )
     }
+
+    // R5G6: satu bukti hasil tindak lanjut yang sudah terunggah.
+    //
+    // Ditempelkan pada ID.taskWriteHistory, BUKAN ID.dispositionTask. Fixture
+    // `dispositionTaskId` menunjuk tugas yang distribusinya masih 'sent',
+    // sehingga `taskChainValid` menolaknya dan SELURUH pihak mendapat 404 di
+    // sana — itu memang gunanya, sebagai sasaran probe. Tugas ini sebaliknya
+    // punya distribusi 'received' dan dua pihak yang sah: kasubbagren sebagai
+    // penerbit dan op-subbagren sebagai pelaksana.
+    //
+    // Diunggah op-subbagren, satu-satunya pihak yang boleh mengunggah.
+    await client.query(
+      `INSERT INTO sdl_urmin_disposition_files(id,disposition_id,uploaded_by,filename,mime_type,size_bytes,sha256,body,created_at)
+       VALUES($1,$2,$3,'bukti-tindak-lanjut.pdf','application/pdf',$4,$5,$6,$7)`,
+      [ID.dispositionFile, ID.taskWriteHistory, u['op-subbagren'],
+        PDF_BYTES.length, sha256Hex(PDF_BYTES), PDF_BYTES, at(150)],
+    )
 
     // Riwayat hanya untuk sasaran endpoint 117. Telaah TIDAK disimpan sebagai
     // event — ia baris tersendiri yang disusulkan handler di ekor daftar.

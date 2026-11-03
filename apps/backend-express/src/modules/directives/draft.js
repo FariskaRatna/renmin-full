@@ -6,6 +6,7 @@ import {
   draftPermission,
   respond,
   uniqueDraftRecipients,
+  UUID_RE,
   validKind,
   validPriority,
 } from './shared.js'
@@ -27,6 +28,7 @@ const DRAFT_SCHEMA = {
   dueAt: 'string',
   recipients: 'string[]',
   revision: 'int',
+  incomingId: 'string?',
 }
 
 const DELETE_SCHEMA = { revision: 'int' }
@@ -64,6 +66,10 @@ function validDraft(d) {
   if (!validKind(d.kind) || !validPriority(d.priority)) return false
   if (!uniqueDraftRecipients(d.recipients ?? [])) return false
   if (d.dueAt !== '' && !validLocalDateTime(d.dueAt)) return false
+  // Bentuk saja, SENGAJA bukan LETTER_LINK_SQL. Draf adalah kertas buram privat
+  // yang tidak pernah dikirim, dan autosave tidak boleh mulai gagal selagi
+  // penulisnya masih memilih. Gerbang sesungguhnya berjalan saat kirim.
+  if (d.incomingId !== undefined && !UUID_RE.test(d.incomingId)) return false
   return true
 }
 
@@ -75,7 +81,8 @@ export function getDraft({ pool }) {
     let rows
     try {
       ;({ rows } = await pool.query(
-        `SELECT title,body,kind,priority,due_at_local,recipient_ids,revision,updated_at
+        `SELECT title,body,kind,priority,due_at_local,recipient_ids,incoming_id::text AS incoming_id,
+           revision,updated_at
            FROM sdl_leadership_directive_drafts WHERE issuer_id=$1::uuid`,
         [req.actor],
       ))
@@ -109,6 +116,9 @@ export function getDraft({ pool }) {
         priority: row.priority,
         dueAt: row.due_at_local,
         recipients,
+        // TANPA omitempty di Go, berbeda dari summary: field draf lainnya pun
+        // selalu hadir, jadi di sini null ditulis apa adanya.
+        incomingId: row.incoming_id ?? null,
       },
       revision: Number(row.revision),
       updatedAt: row.updated_at,
@@ -134,13 +144,14 @@ export function putDraft({ pool }) {
     let rows
     try {
       ;({ rows } = await pool.query(
-        `INSERT INTO sdl_leadership_directive_drafts AS d(issuer_id,title,body,kind,priority,due_at_local,recipient_ids,revision,updated_at)
-         VALUES($1::uuid,$2,$3,$4,$5,$6,$7::jsonb,1,NOW())
+        `INSERT INTO sdl_leadership_directive_drafts AS d(issuer_id,title,body,kind,priority,due_at_local,recipient_ids,incoming_id,revision,updated_at)
+         VALUES($1::uuid,$2,$3,$4,$5,$6,$7::jsonb,$8::uuid,1,NOW())
          ON CONFLICT(issuer_id) DO UPDATE SET title=EXCLUDED.title,body=EXCLUDED.body,kind=EXCLUDED.kind,
            priority=EXCLUDED.priority,due_at_local=EXCLUDED.due_at_local,recipient_ids=EXCLUDED.recipient_ids,
-           revision=d.revision+1,updated_at=NOW()
-         WHERE d.revision=$8 RETURNING revision,updated_at`,
-        [req.actor, d.title, d.body, d.kind, d.priority, d.dueAt, recipients, d.revision],
+           incoming_id=EXCLUDED.incoming_id,revision=d.revision+1,updated_at=NOW()
+         WHERE d.revision=$9 RETURNING revision,updated_at`,
+        [req.actor, d.title, d.body, d.kind, d.priority, d.dueAt, recipients,
+          d.incomingId ?? null, d.revision],
       ))
     } catch {
       deny(res, 503)

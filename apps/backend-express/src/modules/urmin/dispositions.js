@@ -1,20 +1,33 @@
 import { Router } from 'express'
 
+import { createHash } from 'node:crypto'
+
+import { isDemoSuperadmin } from '../../access/devdemo.js'
 import { withTransaction } from '../../db.js'
+import { contentDisposition, readSingleFile } from '../../http/multipart.js'
 import { BODY_LIMITS, rawBody } from '../../http/payload.js'
 import { goTime } from '../../time.js'
 import {
   audit,
   AuthzUnavailable,
+  createDecision,
   decodeTyped,
   enqueueUrminEmail,
   fail,
+  loadIncoming,
   mapRecipient,
+  MAX_ATTACHMENT_SIZE,
   respond,
   Unavailable,
   UUID_RE,
+  validDate,
+  validateFile,
+  validReason,
   validText,
 } from './shared.js'
+
+/** Padanan maxDispositionFiles (r5g6.go). */
+const MAX_DISPOSITION_FILES = 10
 import {
   ChainInactive,
   dispositionEligible,
@@ -95,9 +108,93 @@ async function data(fn) {
   }
 }
 
+/**
+ * Padanan dispositionWindow (r3c.go:364).
+ *
+ * Daftar aktif dibatasi pada surat bertanggal dalam ±30 hari. 'archive' adalah
+ * komplemen PERSIS dari 'active', dan 'all' mengembalikan perilaku sebelum
+ * R5G3 — jadi tidak ada satu baris pun yang menjadi tak terjangkau lewat
+ * endpoint ini; ia hanya berpindah tampilan.
+ *
+ * Rentang from/to eksplisit menimpa `window` sepenuhnya. Keduanya wajib
+ * berpasangan: rentang setengah terbuka terbaca sebagai "sejak tanggal ini
+ * seterusnya" oleh pemanggil, padahal diam-diam tetap kena batas ±30 hari —
+ * dan itu lebih buruk daripada menolaknya.
+ *
+ * @returns {{clause: string, args: string[]} | undefined} undefined = 400.
+ */
+export function dispositionWindow(req) {
+  const from = (req.query.from ?? '').toString().trim()
+  const to = (req.query.to ?? '').toString().trim()
+  if (from !== '' || to !== '') {
+    if (!validDate(from) || !validDate(to) || from > to) return undefined
+    return { clause: ' AND i.letter_date BETWEEN $2::date AND $3::date', args: [from, to] }
+  }
+  switch ((req.query.window ?? '').toString()) {
+    case '':
+    case 'active':
+      return { clause: ' AND i.letter_date BETWEEN CURRENT_DATE - 30 AND CURRENT_DATE + 30', args: [] }
+    case 'archive':
+      return { clause: ' AND i.letter_date NOT BETWEEN CURRENT_DATE - 30 AND CURRENT_DATE + 30', args: [] }
+    case 'all':
+      return { clause: '', args: [] }
+    default:
+      return undefined
+  }
+}
+
+const ARCHIVE_CODE_UNSAFE = /[^A-Za-z0-9]+/g
+
+/**
+ * Padanan archiveRefCode (r5g3.go).
+ *
+ * Deterministik secara konstruksi, dan justru itu yang membuat pengarsipan
+ * idempoten: `sdl_urmin_registry_active_code` adalah UNIQUE(kind, lower(ref_code))
+ * atas baris yang belum dihapus, sehingga percobaan kedua bertabrakan alih-alih
+ * membuat entri ganda. Tanpa kolom tambahan dan tanpa advisory lock.
+ *
+ * Dibatasi 64 karakter karena ref_code VARCHAR(64); yang dipangkas selalu nomor
+ * suratnya, tidak pernah akhiran id tugas yang membuat kodenya unik.
+ */
+export function archiveRefCode(letterNumber, taskId) {
+  let number = letterNumber.replace(ARCHIVE_CODE_UNSAFE, '-').replace(/^-+|-+$/g, '')
+  const suffix = taskId.replace(/-/g, '').slice(0, 8)
+  const prefix = 'ARS-DISP-'
+  const room = 64 - prefix.length - suffix.length - 1
+  if (number.length > room) number = number.slice(0, room).replace(/^-+|-+$/g, '')
+  if (number === '') number = 'TANPA-NOMOR'
+  return `${prefix}${number}-${suffix}`.toUpperCase()
+}
+
+/**
+ * Padanan archiveRegisterAllowed (r5g3.go), yang sendiri mencerminkan cabang
+ * `action === 'create'` pada unitwork.permit() untuk unit 'urmin'. SQL-nya
+ * disalin verbatim supaya ketiganya tidak bisa bergeser pada hal yang penting.
+ */
+export async function archiveRegisterAllowed(pool, userId, classification) {
+  if (await isDemoSuperadmin(pool, userId)) return false
+  const { rows } = await pool.query(
+    `SELECT EXISTS(
+       SELECT 1 FROM sdl_access_grants g
+         JOIN sdl_roles r ON r.role_key=g.role_key AND r.is_active
+         JOIN sdl_user_units uu ON uu.user_id=g.user_id AND uu.unit_key=g.unit_key
+         JOIN sdl_users u ON u.id=g.user_id AND u.is_active AND NOT u.must_change_password
+        WHERE g.user_id=$1::uuid AND g.unit_key='urmin' AND g.revoked_at IS NULL
+          AND (g.expires_at IS NULL OR g.expires_at>now())
+          AND (g.scope='own' OR g.scope='unit')
+          AND ($2='biasa' OR g.classification_limit='penting')
+          AND NOT EXISTS(SELECT 1 FROM sdl_user_roles ur WHERE ur.user_id=u.id AND ur.role_key='superadmin')) AS ok`,
+    [userId, classification],
+  )
+  return rows[0].ok === true
+}
+
 export function createDispositionsRouter({ pool }) {
   const router = Router()
   const json = rawBody(BODY_LIMITS.URMIN_INCOMING)
+  // Engine A atas surat, dipakai endpoint 143. Melempar AuthzUnavailable
+  // sendiri, jadi tidak perlu dibungkus authz().
+  const decision = createDecision(pool)
 
   const handle = (fn) => async (req, res, next) => {
     try {
@@ -231,10 +328,20 @@ export function createDispositionsRouter({ pool }) {
 
   // ---- 116. GET / ----
   router.get('/', handle(async (req, res) => {
+    const window = dispositionWindow(req)
+    if (window === undefined) {
+      fail(res, 400, 'invalid_input')
+      return
+    }
+
     const tasks = await data(async () => {
       const { rows } = await pool.query(
-        `${TASK_SELECT} WHERE t.issued_by=$1 OR t.assigned_to=$1 ORDER BY t.created_at DESC,t.id DESC LIMIT 200`,
-        [req.actor],
+        // Klausa pihak WAJIB tetap dalam kurung. Tanpa kurungnya, AND yang
+        // disusulkan mengikat ke `t.assigned_to=$1` saja, dan setiap tugas yang
+        // pemanggilnya hanya menerbitkan akan lolos dari saringan tanggal.
+        `${TASK_SELECT} WHERE (t.issued_by=$1 OR t.assigned_to=$1)${window.clause}`
+        + ' ORDER BY t.created_at DESC,t.id DESC LIMIT 200',
+        [req.actor, ...window.args],
       )
       return rows.map((row) => mapTask(row))
     })
@@ -628,6 +735,324 @@ export function createDispositionsRouter({ pool }) {
       depth: outcome.depth,
       status: 'pending',
     })
+  }))
+
+  // ---- 143. POST /:taskId/archive ----
+  //
+  // Padanan archiveDisposition (r5g3.go). Memindahkan disposisi yang sudah di
+  // luar rentang aktif ke register Arsip Urmin.
+  //
+  // Endpoint ini sengaja melintasi dua domain, jadi ia tunduk pada KEDUA
+  // gerbangnya, bukan memilih yang lebih mudah:
+  //
+  //   baca     — Engine A harus mengizinkan 'urmin.surat_masuk.read' atas
+  //              surat di balik disposisinya
+  //   register — harus berwenang MEMBUAT entri register Urmin, pemeriksaan
+  //              yang sama dengan unitwork.permit() di endpoint 44
+  //
+  // Gerbang pertama adalah BACA ATAS SURAT, sengaja bukan taskParty().
+  // Mengarsipkan adalah urusan rumah tangga Urmin atas daur hidup surat,
+  // sedangkan pihak disposisi kebanyakan ada di subbagren/sumda/binfung —
+  // tidak satu pun punya grant di unit 'urmin'. Memasangkan taskParty dengan
+  // pemeriksaan register akan menghasilkan endpoint yang tidak terjangkau akun
+  // nyata mana pun: 403 bagi para pihak, 404 bagi staf Urmin yang justru
+  // memiliki arsipnya. Itu persis kegagalan B9 di DEVIATIONS.md, dan di sini
+  // dihindari dengan sengaja, bukan kebetulan.
+  //
+  // Tidak ada yang dihapus atau dipindah. Baris disposisinya tetap di
+  // tempatnya; mengarsipkan hanya MENAMBAH entri register yang menunjuk
+  // balik kepadanya, dan disposisinya tetap terjangkau lewat ?window=archive.
+  router.post('/:taskId/archive', handle(async (req, res) => {
+    const id = req.params.taskId
+    if (!UUID_RE.test(id)) {
+      fail(res, 404, 'not_found')
+      return
+    }
+    const task = await data(() => loadTask(pool, id))
+    if (!task) {
+      fail(res, 404, 'not_found')
+      return
+    }
+    const doc = await data(() => loadIncoming(pool, task.incomingId))
+    if (!doc) {
+      fail(res, 404, 'not_found')
+      return
+    }
+    // 404, bukan 403: bentuk yang sama dengan endpoint 99, supaya pemanggil
+    // tidak bisa menyelidiki surat mana yang ada lewat kode statusnya.
+    if (!(await decision(req.actor, 'urmin.surat_masuk.read', doc))) {
+      fail(res, 404, 'not_found')
+      return
+    }
+    if (!(await authz(() => archiveRegisterAllowed(pool, req.actor, task.classification)))) {
+      fail(res, 403, 'access_denied')
+      return
+    }
+
+    // letterNumber dan subject sudah ikut bersama task; tinggal tanggalnya dan
+    // putusan rentangnya yang perlu dibaca.
+    const letter = await data(() =>
+      pool.query(
+        `SELECT i.letter_date::text AS letter_date,
+           (i.letter_date NOT BETWEEN CURRENT_DATE - 30 AND CURRENT_DATE + 30) AS outside
+           FROM sdl_urmin_incoming i WHERE i.id=$1`,
+        [task.incomingId],
+      ),
+    )
+    // Rentangnya ditegakkan DI SINI, bukan hanya di UI. Klien yang sekadar
+    // menembak path ini tidak boleh bisa mengarsipkan disposisi yang masih aktif.
+    if (letter.rows[0].outside !== true) {
+      fail(res, 409, 'still_active')
+      return
+    }
+
+    const code = archiveRefCode(task.letterNumber, task.id)
+    let title = task.subject === ''
+      ? `Arsip disposisi ${task.letterNumber}`
+      : `Arsip disposisi ${task.letterNumber} - ${task.subject}`
+    if ([...title].length > 200) title = [...title].slice(0, 200).join('')
+    const fields = JSON.stringify({
+      sumber: 'disposisi',
+      dispositionId: task.id,
+      incomingId: task.incomingId,
+      letterNumber: task.letterNumber,
+      letterDate: letter.rows[0].letter_date,
+      unit: task.unit,
+    })
+
+    const outcome = await withTransaction(pool, async (client) => {
+      // Bentuk dua baris yang sama dengan endpoint 44: tiap entri register
+      // memiliki tepat satu berkas kerja (work_record_id NOT NULL UNIQUE).
+      const work = await data(() =>
+        client.query(
+          `INSERT INTO sdl_unit_work_records(unit_key,category,title,description,classification,created_by,updated_by)
+           VALUES('urmin','Register Urmin arsip',$1,'',$2,$3::uuid,$3::uuid) RETURNING id::text AS id`,
+          [title, task.classification, req.actor],
+        ),
+      )
+      const workId = work.rows[0].id
+      const registry = await data(() =>
+        client.query(
+          `INSERT INTO sdl_urmin_registry(kind,ref_code,title,fields,work_record_id,created_by,updated_by)
+           VALUES('arsip',$1,$2,$3::jsonb,$4::uuid,$5::uuid,$5::uuid)
+           ON CONFLICT DO NOTHING RETURNING id::text AS id`,
+          [code, title, fields, workId, req.actor],
+        ),
+      )
+      // Nol baris berarti kodenya sudah ada: disposisi ini pernah diarsipkan.
+      // 409, bukan entri kedua yang diam-diam.
+      if (registry.rows.length === 0) return { status: 409, code: 'already_archived' }
+      await data(() => audit(client, req.actor, 'urmin.disposisi.archived', task.id))
+      return { status: 201, id: registry.rows[0].id, workId }
+    })
+
+    if (outcome.status !== 201) {
+      fail(res, outcome.status, outcome.code)
+      return
+    }
+    respond(res, 201, { id: outcome.id, refCode: code, workRecordId: outcome.workId })
+  }))
+
+  // ---- 144-146. Lampiran hasil tindak lanjut ----
+  //
+  // Padanan r5g6.go. Tiga endpoint, dan gerbangnya TIDAK sama:
+  //
+  //   unggah : hanya PELAKSANA, dan hanya selama tugasnya belum selesai
+  //   daftar : seluruh pihak tugas
+  //   unduh  : seluruh pihak tugas
+  //
+  // Pembedaan itu yang menjadikannya bukti. Kalau penerbit boleh mengunggah,
+  // berkas di sini berhenti berarti "ini yang dikerjakan pelaksana"; kalau
+  // pelaksana masih boleh mengunggah sesudah selesai, telaah penerbit berjalan
+  // atas kumpulan berkas yang masih bisa berubah di belakangnya.
+  //
+  // URUTAN PENDAFTARAN WAJIB: `/attachments` dulu, baru
+  // `/attachments/:fileId/download`. Express mencocokkan berurutan.
+  async function fileParty(req, res) {
+    const id = req.params.taskId
+    if (!UUID_RE.test(id)) {
+      fail(res, 404, 'not_found')
+      return undefined
+    }
+    const task = await data(() => loadTask(pool, id))
+    if (!task) {
+      fail(res, 404, 'not_found')
+      return undefined
+    }
+    // 404 dan bukan 403 saat bukan pihak: bentuk yang sama dengan endpoint 117,
+    // supaya keberadaan sebuah tugas tidak bisa diselidiki lewat kode status.
+    if (!(await authz(() => taskParty(pool, req.actor, task)))) {
+      fail(res, 404, 'not_found')
+      return undefined
+    }
+    return task
+  }
+
+  // ---- 144. POST /:taskId/attachments ----
+  router.post('/:taskId/attachments', handle(async (req, res) => {
+    const task = await fileParty(req, res)
+    if (!task) return
+    // Penerbit adalah pihak, jadi ia lolos fileParty — tapi bukan ia yang
+    // mengerjakan tugasnya. 403, bukan 404: keberadaan tugasnya memang sudah
+    // boleh ia ketahui.
+    if (req.actor !== task.assigneeId) {
+      fail(res, 403, 'access_denied')
+      return
+    }
+    if (task.status === 'completed') {
+      fail(res, 409, 'already_completed')
+      return
+    }
+
+    const form = await readSingleFile(req, {
+      fieldName: 'file',
+      maxBodyBytes: MAX_ATTACHMENT_SIZE + 65536,
+      maxFileBytes: MAX_ATTACHMENT_SIZE,
+    })
+    if (form.unparsable || form.bodyExceeded) {
+      fail(res, 413, 'invalid_attachment')
+      return
+    }
+    if (form.error === 'missing') {
+      fail(res, 400, 'file_required')
+      return
+    }
+    if (form.error === 'too_large') {
+      fail(res, 413, 'file_too_large')
+      return
+    }
+    const media = await validateFile(form.file.filename, form.file.buffer)
+    if (!media) {
+      fail(res, 400, 'invalid_file_type')
+      return
+    }
+    const reason = (form.fields.reason ?? '').trim()
+    if (!validReason(reason)) {
+      fail(res, 400, 'invalid_reason')
+      return
+    }
+
+    const outcome = await withTransaction(pool, async (client) => {
+      // Tugas dikunci dan statusnya dinilai ULANG: tugas bisa saja sudah
+      // diselesaikan selama berkasnya dibaca dari jaringan, dan bukti yang
+      // menyelinap sesudah telaah dimulai adalah persis yang dicegah di sini.
+      const locked = await data(() =>
+        client.query(
+          'SELECT status,assigned_to::text AS assigned_to FROM sdl_urmin_disposition_tasks WHERE id=$1 FOR UPDATE',
+          [task.id],
+        ),
+      )
+      if (locked.rows.length === 0) return { status: 503, code: 'unavailable' }
+      if (locked.rows[0].assigned_to !== req.actor) return { status: 403, code: 'access_denied' }
+      if (locked.rows[0].status === 'completed') return { status: 409, code: 'already_completed' }
+
+      const counted = await data(() =>
+        client.query('SELECT count(*)::int AS n FROM sdl_urmin_disposition_files WHERE disposition_id=$1', [task.id]),
+      )
+      if (counted.rows[0].n >= MAX_DISPOSITION_FILES) return { status: 409, code: 'attachment_limit' }
+
+      const digest = createHash('sha256').update(form.file.buffer).digest('hex')
+      const { rows } = await data(() =>
+        client.query(
+          `INSERT INTO sdl_urmin_disposition_files(disposition_id,uploaded_by,filename,mime_type,size_bytes,sha256,body)
+           VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id::text AS id`,
+          [task.id, req.actor, form.file.filename, media, form.file.buffer.length, digest, form.file.buffer],
+        ),
+      )
+      const id = rows[0].id
+      await data(() =>
+        client.query(
+          `INSERT INTO sdl_audit_events(actor_id,event_key,subject_type,subject_id,metadata)
+           VALUES($1,'urmin.disposisi.file_uploaded','urmin.disposisi.file',$2,
+                  jsonb_build_object('disposition_id',$3::text,'reason',$4::text))`,
+          [req.actor, id, task.id, reason],
+        ),
+      )
+      return { status: 201, id }
+    })
+
+    if (outcome.status !== 201) {
+      fail(res, outcome.status, outcome.code)
+      return
+    }
+    respond(res, 201, { id: outcome.id })
+  }))
+
+  // ---- 145. GET /:taskId/attachments ----
+  router.get('/:taskId/attachments', handle(async (req, res) => {
+    const task = await fileParty(req, res)
+    if (!task) return
+
+    const { rows } = await data(() =>
+      pool.query(
+        `SELECT f.id::text AS id,f.filename,f.mime_type,f.size_bytes,f.sha256,
+           u.display_name,f.created_at
+           FROM sdl_urmin_disposition_files f JOIN sdl_users u ON u.id=f.uploaded_by
+          WHERE f.disposition_id=$1 ORDER BY f.created_at,f.id LIMIT 50`,
+        [task.id],
+      ),
+    )
+    // canUpload menjawab pertanyaan UI secara langsung, sehingga tombol unggah
+    // tidak perlu menebak-nebak dari status dan identitas sendiri.
+    respond(res, 200, {
+      items: rows.map((row) => ({
+        id: row.id,
+        filename: row.filename,
+        mimeType: row.mime_type,
+        sizeBytes: row.size_bytes,
+        sha256: row.sha256,
+        uploadedBy: row.display_name,
+        createdAt: row.created_at,
+      })),
+      canUpload: req.actor === task.assigneeId && task.status !== 'completed',
+    })
+  }))
+
+  // ---- 146. GET /:taskId/attachments/:fileId/download ----
+  router.get('/:taskId/attachments/:fileId/download', handle(async (req, res) => {
+    const task = await fileParty(req, res)
+    if (!task) return
+    const fileId = req.params.fileId
+    if (!UUID_RE.test(fileId)) {
+      fail(res, 404, 'not_found')
+      return
+    }
+
+    const { rows } = await data(() =>
+      pool.query(
+        'SELECT filename,mime_type,body,sha256 FROM sdl_urmin_disposition_files WHERE id=$1 AND disposition_id=$2',
+        [fileId, task.id],
+      ),
+    )
+    const row = rows[0]
+    if (!row) {
+      fail(res, 404, 'not_found')
+      return
+    }
+    // Integritas diperiksa sebelum satu byte pun dikirim.
+    const digest = createHash('sha256').update(row.body).digest('hex')
+    if (digest !== row.sha256) {
+      fail(res, 503, 'attachment_integrity_failure')
+      return
+    }
+    await data(() =>
+      pool.query(
+        `INSERT INTO sdl_audit_events(actor_id,event_key,subject_type,subject_id,metadata)
+         VALUES($1,'urmin.disposisi.file_downloaded','urmin.disposisi.file',$2,
+                jsonb_build_object('disposition_id',$3::text))`,
+        [req.actor, fileId, task.id],
+      ),
+    )
+
+    // Content-Type SELALU octet-stream, apa pun mime_type yang tersimpan —
+    // berkas ini tidak pernah dirender peramban.
+    res.set('Content-Type', 'application/octet-stream')
+    res.set('Content-Disposition', contentDisposition('attachment', row.filename))
+    res.set('Content-Security-Policy', 'sandbox')
+    res.set('X-Content-Type-Options', 'nosniff')
+    res.set('Cache-Control', 'no-store')
+    res.set('Content-Length', String(row.body.length))
+    res.end(row.body)
   }))
 
   // ---- 124. GET /:taskId/final-status ----

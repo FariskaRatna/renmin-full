@@ -22,6 +22,7 @@ import {
   mapIncoming,
   mapRecipient,
   MAX_ATTACHMENT_SIZE,
+  normalizeDerajat,
   recipientEligible,
   recipientOf,
   respond,
@@ -60,6 +61,7 @@ const PAYLOAD_SCHEMA = {
   receivedDate: 'string',
   subject: 'string',
   classification: 'string',
+  derajat: 'string',
   reason: 'string',
   version: 'int',
 }
@@ -176,24 +178,48 @@ export function createSuratMasukRouter({ pool }) {
 
     // Metadata hanya diminta untuk ID yang SUDAH lolos otorisasi.
     const workflowStatuses = {}
+    const workflowSince = {}
     if (items.length > 0) {
       try {
         const { rows } = await pool.query(
+          // R5G2 menambah dua langkah di sini, tapi SENGAJA bukan rantai tugas
+          // yang dihitung intake detail (#110). Daftar memang selalu yang lebih
+          // kasar dari keduanya, dan menyamakannya akan mengubah baris yang
+          // tidak diniatkan tersentuh perubahan ini.
           `SELECT i.incoming_id::text AS id,i.route_status,i.kabag_recipient::text AS kabag,
              CASE WHEN i.kabag_recipient IS NULL THEN false ELSE EXISTS(
                SELECT 1 FROM sdl_urmin_distributions d
                 WHERE d.incoming_id=i.incoming_id AND d.sent_by=i.kabag_recipient
-                  AND d.recipient_user<>i.kabag_recipient) END AS forwarded
+                  AND d.recipient_user<>i.kabag_recipient) END AS forwarded,
+             EXISTS(SELECT 1 FROM sdl_leadership_directives dir
+                     WHERE dir.incoming_id=i.incoming_id) AS directed,
+             CASE WHEN i.kabag_recipient IS NULL THEN false ELSE EXISTS(
+               SELECT 1 FROM sdl_urmin_distributions d
+                WHERE d.incoming_id=i.incoming_id AND d.recipient_user=i.kabag_recipient
+                  AND d.status='received') END AS received,
+             i.submitted_at
            FROM sdl_urmin_incoming_intake i
            WHERE i.incoming_id=ANY(string_to_array($1,',')::uuid[])`,
           [items.map((doc) => doc.id).join(',')],
         )
         for (const row of rows) {
-          // Surat yang sudah diteruskan Kabagrenmin tidak lagi "menunggu"-nya.
-          const status = row.forwarded && row.route_status === 'awaiting_kabag'
-            ? 'dispatched'
-            : row.route_status
+          // Urutan presedensi, paling maju lebih dulu. Arahan yang sudah terbit
+          // mengalahkan penerusan: begitu pimpinan menjawab suratnya, apakah ia
+          // juga diteruskan bukan lagi yang ditanyakan daftar ini.
+          let status = row.route_status
+          if (row.route_status === 'awaiting_kabag') {
+            if (row.directed) status = 'directive_issued'
+            else if (row.forwarded) status = 'dispatched'
+            else if (row.received) status = 'read_kabag'
+          }
           workflowStatuses[row.id] = status
+          // R5G5: sejak kapan surat ini berada pada keadaan sekarang. Tanpa
+          // angka ini, "Menunggu Disposisi Kabagrenmin" tidak bisa dibedakan
+          // antara yang baru diajukan tadi pagi dan yang menggantung dua
+          // minggu — padahal justru itu yang dicari petugas Urmin.
+          if (row.submitted_at !== null && row.submitted_at !== undefined) {
+            workflowSince[row.id] = row.submitted_at
+          }
         }
       } catch {
         fail(res, 503, 'unavailable')
@@ -201,7 +227,7 @@ export function createSuratMasukRouter({ pool }) {
       }
     }
 
-    respond(res, 200, { items, limited: candidates.length === 200, workflowStatuses })
+    respond(res, 200, { items, limited: candidates.length === 200, workflowStatuses, workflowSince })
   }))
 
   // ---- 98. POST / ----
@@ -226,10 +252,10 @@ export function createSuratMasukRouter({ pool }) {
     try {
       doc = await withTransaction(pool, async (client) => {
         const { rows } = await client.query(
-          `INSERT INTO sdl_urmin_incoming(letter_number,sender,letter_date,received_date,subject,classification,created_by,updated_by)
-           VALUES($1,$2,$3::date,$4::date,$5,$6,$7,$7) ${INCOMING_RETURNING}`,
+          `INSERT INTO sdl_urmin_incoming(letter_number,sender,letter_date,received_date,subject,classification,derajat,created_by,updated_by)
+           VALUES($1,$2,$3::date,$4::date,$5,$6,$7,$8,$8) ${INCOMING_RETURNING}`,
           [p.letterNumber.trim(), p.sender.trim(), p.letterDate, p.receivedDate,
-            p.subject.trim(), p.classification, req.actor],
+            p.subject.trim(), p.classification, normalizeDerajat(p.derajat), req.actor],
         )
         const created = mapIncoming(rows[0])
         await addHistory(client, created.id, req.actor, 'created', null, 'draft', p.reason.trim(), created.version)
@@ -338,10 +364,10 @@ export function createSuratMasukRouter({ pool }) {
           )
           : await client.query(
             `UPDATE sdl_urmin_incoming SET letter_number=$1,sender=$2,letter_date=$3::date,received_date=$4::date,
-               subject=$5,classification=$6,updated_by=$7,updated_at=NOW(),version=version+1
-              WHERE id::text=$8 ${INCOMING_RETURNING}`,
+               subject=$5,classification=$6,derajat=$7,updated_by=$8,updated_at=NOW(),version=version+1
+              WHERE id::text=$9 ${INCOMING_RETURNING}`,
             [p.letterNumber.trim(), p.sender.trim(), p.letterDate, p.receivedDate,
-              p.subject.trim(), p.classification, req.actor, doc.id],
+              p.subject.trim(), p.classification, normalizeDerajat(p.derajat), req.actor, doc.id],
           )
 
         const updated = mapIncoming(rows[0])
@@ -378,8 +404,10 @@ export function createSuratMasukRouter({ pool }) {
     let items
     try {
       const { rows } = await pool.query(
-        `SELECT id::text AS id,filename,mime_type,size_bytes,sha256,uploaded_by::text AS uploaded_by,created_at
-           FROM sdl_urmin_incoming_attachments WHERE incoming_id=$1 ORDER BY created_at,id LIMIT 50`,
+        // Naskah surat mendahului lampiran — urutan baris sama dengan urutan
+        // dua bagian di layar (r3b.go:164).
+        `SELECT id::text AS id,filename,mime_type,size_bytes,sha256,uploaded_by::text AS uploaded_by,created_at,doc_kind
+           FROM sdl_urmin_incoming_attachments WHERE incoming_id=$1 ORDER BY (doc_kind<>'surat'),created_at,id LIMIT 50`,
         [doc.id],
       )
       items = rows.map((row) => ({
@@ -390,6 +418,7 @@ export function createSuratMasukRouter({ pool }) {
         sha256: row.sha256,
         uploadedBy: row.uploaded_by,
         createdAt: row.created_at,
+        docKind: row.doc_kind,
       }))
     } catch {
       fail(res, 503, 'unavailable')
@@ -464,6 +493,13 @@ export function createSuratMasukRouter({ pool }) {
       fail(res, 400, 'invalid_reason')
       return
     }
+    // Opsional; tidak dikirim berarti lampiran, sama dengan DEFAULT kolomnya.
+    // Nilai lain ditolak, bukan didiamkan jadi lampiran (r3b.go:275).
+    const docKind = (form.fields.docKind ?? '').trim() || 'lampiran'
+    if (docKind !== 'surat' && docKind !== 'lampiran') {
+      fail(res, 400, 'invalid_doc_kind')
+      return
+    }
 
     let outcome
     try {
@@ -488,9 +524,9 @@ export function createSuratMasukRouter({ pool }) {
 
         const digest = createHash('sha256').update(form.file.buffer).digest('hex')
         const { rows } = await client.query(
-          `INSERT INTO sdl_urmin_incoming_attachments(incoming_id,uploaded_by,filename,mime_type,size_bytes,sha256,body)
-           VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id::text AS id`,
-          [doc.id, req.actor, form.file.filename, media, form.file.buffer.length, digest, form.file.buffer],
+          `INSERT INTO sdl_urmin_incoming_attachments(incoming_id,uploaded_by,filename,mime_type,size_bytes,sha256,body,doc_kind)
+           VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id::text AS id`,
+          [doc.id, req.actor, form.file.filename, media, form.file.buffer.length, digest, form.file.buffer, docKind],
         )
         const id = rows[0].id
         await client.query(
@@ -776,28 +812,39 @@ export function createSuratMasukRouter({ pool }) {
       return
     }
 
-    const uploads = form.files.filter((f) => f.field === 'files')
-    if (uploads.length > 10) {
+    // Naskah surat lewat field 'surat' (paling banyak satu), lampiran lewat
+    // 'files'. Batas gabungan tetap 10 agar maxBodyBytes di atas tidak
+    // terlampaui (r5f7.go:195).
+    const suratUploads = form.files.filter((f) => f.field === 'surat')
+    if (suratUploads.length > 1) {
       fail(res, 400, 'too_many_files')
       return
     }
-    if (p.mode === 'draft' && uploads.length > 0) {
+    const uploads = form.files.filter((f) => f.field === 'files')
+    if (uploads.length + suratUploads.length > 10) {
+      fail(res, 400, 'too_many_files')
+      return
+    }
+    if (p.mode === 'draft' && uploads.length + suratUploads.length > 0) {
       fail(res, 400, 'draft_files_not_supported')
       return
     }
 
     const files = []
-    for (const upload of uploads) {
-      if (upload.truncated || upload.buffer.length < 1 || upload.buffer.length > MAX_ATTACHMENT_SIZE) {
-        fail(res, 413, 'file_too_large')
-        return
+    // Naskah lebih dulu supaya urutan baris mengikuti urutan tampil.
+    for (const group of [{ list: suratUploads, kind: 'surat' }, { list: uploads, kind: 'lampiran' }]) {
+      for (const upload of group.list) {
+        if (upload.truncated || upload.buffer.length < 1 || upload.buffer.length > MAX_ATTACHMENT_SIZE) {
+          fail(res, 413, 'file_too_large')
+          return
+        }
+        const media = await validateFile(upload.filename, upload.buffer)
+        if (!media) {
+          fail(res, 400, 'invalid_file_type')
+          return
+        }
+        files.push({ filename: upload.filename, mime: media, body: upload.buffer, docKind: group.kind })
       }
-      const media = await validateFile(upload.filename, upload.buffer)
-      if (!media) {
-        fail(res, 400, 'invalid_file_type')
-        return
-      }
-      files.push({ filename: upload.filename, mime: media, body: upload.buffer })
     }
 
     const newDoc = { createdBy: req.actor, classification: p.classification, status: 'draft' }
@@ -836,10 +883,10 @@ export function createSuratMasukRouter({ pool }) {
         let doc
         if (p.id === '') {
           const { rows } = await client.query(
-            `INSERT INTO sdl_urmin_incoming(letter_number,sender,letter_date,received_date,subject,classification,created_by,updated_by)
-             VALUES($1,$2,$3::date,$4::date,$5,$6,$7,$7) ${INCOMING_RETURNING}`,
+            `INSERT INTO sdl_urmin_incoming(letter_number,sender,letter_date,received_date,subject,classification,derajat,created_by,updated_by)
+             VALUES($1,$2,$3::date,$4::date,$5,$6,$7,$8,$8) ${INCOMING_RETURNING}`,
             [p.letterNumber.trim(), p.sender.trim(), p.letterDate, p.receivedDate,
-              p.subject.trim(), p.classification, req.actor],
+              p.subject.trim(), p.classification, normalizeDerajat(p.derajat), req.actor],
           )
           doc = mapIncoming(rows[0])
           await addHistory(client, doc.id, req.actor, 'created', null, 'draft', p.reason.trim(), doc.version)
@@ -915,9 +962,9 @@ export function createSuratMasukRouter({ pool }) {
         for (const f of files) {
           const digest = createHash('sha256').update(f.body).digest('hex')
           await client.query(
-            `INSERT INTO sdl_urmin_incoming_attachments(incoming_id,uploaded_by,filename,mime_type,size_bytes,sha256,body)
-             VALUES($1,$2,$3,$4,$5,$6,$7)`,
-            [doc.id, req.actor, f.filename, f.mime, f.body.length, digest, f.body],
+            `INSERT INTO sdl_urmin_incoming_attachments(incoming_id,uploaded_by,filename,mime_type,size_bytes,sha256,body,doc_kind)
+             VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
+            [doc.id, req.actor, f.filename, f.mime, f.body.length, digest, f.body, f.docKind],
           )
         }
         if (files.length > 0) {
@@ -1025,25 +1072,27 @@ export function createSuratMasukRouter({ pool }) {
     }
 
     // workflowStatus adalah turunan, bukan kolom: ia naik dari awaiting_kabag
-    // ke dispatched begitu Kabagrenmin meneruskan, lalu mengikuti keadaan
-    // tugas disposisinya.
+    // ke dibaca, lalu ke arahan terbit atau ke rantai distribusi lama.
+    //
+    // R5G2 melipat dua round trip menjadi satu CASE supaya presedensi antar
+    // cabang dinyatakan SEKALI, di SQL, bukan disusun ulang oleh dua backend
+    // secara terpisah. Urutan: paling maju lebih dulu. Arahan yang sudah terbit
+    // mengalahkan penerusan — begitu pimpinan menjawab suratnya, apakah ia juga
+    // diteruskan bukan lagi yang dilaporkan field ini.
     if (intake.routeStatus === 'awaiting_kabag' && intake.kabagRecipient !== null) {
       try {
-        const forwarded = await pool.query(
-          `SELECT EXISTS(SELECT 1 FROM sdl_urmin_distributions d
-             WHERE d.incoming_id=$1 AND d.sent_by=$2 AND d.recipient_user<>$2) AS ok`,
+        const { rows } = await pool.query(
+          `SELECT CASE
+             WHEN EXISTS(SELECT 1 FROM sdl_leadership_directives dir WHERE dir.incoming_id=$1) THEN 'directive_issued'
+             WHEN EXISTS(SELECT 1 FROM sdl_urmin_distributions d WHERE d.incoming_id=$1 AND d.sent_by=$2 AND d.recipient_user<>$2) THEN
+               (CASE WHEN EXISTS(SELECT 1 FROM sdl_urmin_disposition_tasks t WHERE t.incoming_id=$1 AND t.status<>'completed') THEN 'in_progress'
+                     WHEN EXISTS(SELECT 1 FROM sdl_urmin_disposition_tasks t WHERE t.incoming_id=$1) THEN 'awaiting_review'
+                     ELSE 'dispatched' END)
+             WHEN EXISTS(SELECT 1 FROM sdl_urmin_distributions d WHERE d.incoming_id=$1 AND d.recipient_user=$2 AND d.status='received') THEN 'read_kabag'
+             ELSE 'awaiting_kabag' END AS status`,
           [id, intake.kabagRecipient],
         )
-        if (forwarded.rows[0].ok === true) {
-          const { rows } = await pool.query(
-            `SELECT CASE
-               WHEN EXISTS(SELECT 1 FROM sdl_urmin_disposition_tasks t WHERE t.incoming_id=$1 AND t.status<>'completed') THEN 'in_progress'
-               WHEN EXISTS(SELECT 1 FROM sdl_urmin_disposition_tasks t WHERE t.incoming_id=$1) THEN 'awaiting_review'
-               ELSE 'dispatched' END AS status`,
-            [id],
-          )
-          intake.workflowStatus = rows[0].status
-        }
+        intake.workflowStatus = rows[0].status
       } catch {
         fail(res, 503, 'unavailable')
         return
@@ -1070,7 +1119,7 @@ export function createSuratMasukRouter({ pool }) {
 const INTAKE_FIELDS = {
   id: 'string', version: 'int', letterNumber: 'string', sender: 'string',
   letterDate: 'string', receivedDate: 'string', subject: 'string',
-  classification: 'string', reason: 'string', letterKind: 'string',
+  classification: 'string', derajat: 'string', reason: 'string', letterKind: 'string',
   responseDue: 'string', eventStart: 'string', eventEnd: 'string',
   eventLocation: 'string', eventAgenda: 'string', details: 'string',
   needsDisposition: 'bool', mode: 'string',
