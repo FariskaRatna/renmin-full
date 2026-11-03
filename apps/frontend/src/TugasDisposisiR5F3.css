@@ -10,7 +10,15 @@
 .sdl-tasks-r5f3__heading p{color:var(--muted);font-size:12px;margin:0;line-height:1.6}
 .sdl-tasks-r5f3__heading .btn{flex-shrink:0}
 .sdl-tasks-r5f3__limit{background:var(--subtle);border:1px solid var(--border);border-radius:9px;padding:11px 13px;color:var(--muted);font-size:12px;line-height:1.5}
-.sdl-tasks-r5f3__filters{display:grid;grid-template-columns:minmax(0,1fr) 175px 180px;gap:10px;margin-bottom:15px}
+/* R5G3: filternya bertambah dari 3 menjadi sampai 7 kontrol (rentang tanggal,
+   hapus rentang, jumlah per halaman). Grid tiga kolom tetap akan memadatkannya
+   sampai tidak terbaca, jadi dibuat membungkus dengan lebar minimum. */
+.sdl-tasks-r5f3__filters{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:15px}
+.sdl-tasks-r5f3__filters>label:first-child{flex:1 1 240px;min-width:0}
+.sdl-tasks-r5f3__filters>label{flex:0 1 175px;min-width:0}
+.sdl-tasks-r5f3__filters>.btn{flex:0 0 auto}
+.sdl-tasks-r5f3__pager{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;margin-top:14px;color:var(--muted);font-size:12px}
+.sdl-tasks-r5f3__pager>div{display:flex;align-items:center;gap:10px}
 .sdl-tasks-r5f3__filters input,.sdl-tasks-r5f3__filters select{width:100%;min-width:0;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:11px 12px;color:var(--ink);font:inherit;font-size:12px;min-height:42px}
 .sdl-tasks-r5f3__table{min-width:860px}.sdl-tasks-r5f3__table td{padding:14px 11px;vertical-align:middle;font-size:12px}.sdl-tasks-r5f3__table strong{display:block;color:var(--ink);font-size:12px}.sdl-tasks-r5f3__table small{display:block;margin-top:5px;font-size:11px;color:var(--muted);line-height:1.45;max-width:300px;overflow-wrap:anywhere}
 .sdl-tasks-r5f3__active td{background:var(--subtle)}
@@ -64,3 +72,11 @@
 @media(max-width:800px){.sdl-tasks-r5f3__facts{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:650px){.sdl-tasks-r5f11__backdrop{padding:9px}.sdl-tasks-r5f11__dialog{max-height:96dvh;border-radius:12px}.sdl-tasks-r5f11__modal-head{padding:15px}.sdl-tasks-r5f11__modal-body{padding:15px}.sdl-tasks-r5f3__filters label:not(:first-child){flex:1 1 140px}.sdl-tasks-r5f11__overview{gap:7px 14px}}
 @media(max-width:430px){.sdl-tasks-r5f3__facts{grid-template-columns:1fr}.sdl-tasks-r5f3__filters label:first-child{min-width:100%}.sdl-tasks-r5f11__modal-head h2{font-size:16px}}
+
+/* R5G6: daftar lampiran bukti hasil tindak lanjut. */
+.sdl-tasks-r5f3__files{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:9px}
+.sdl-tasks-r5f3__files li{display:flex;flex-direction:column;gap:3px;padding:10px 12px;border:1px solid var(--border);border-radius:9px;background:var(--subtle)}
+.sdl-tasks-r5f3__files a{color:var(--ink);font-size:12px;font-weight:800;text-decoration:none;overflow-wrap:anywhere}
+.sdl-tasks-r5f3__files a:hover,.sdl-tasks-r5f3__files a:focus-visible{text-decoration:underline}
+.sdl-tasks-r5f3__files small{color:var(--muted);font-size:11px;line-height:1.45}
+.sdl-tasks-r5f3__hint{display:block;margin-top:5px;color:var(--muted);font-size:11px;font-weight:600;line-height:1.5}

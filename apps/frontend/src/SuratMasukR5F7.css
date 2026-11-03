@@ -26,3 +26,15 @@
    tidak melebar dan merusak lebar tabel pada layar sempit. */
 .sm-awaiting{display:block;margin-top:5px;font-size:10px;font-weight:800;line-height:1.3;color:#8c651d}
 @media(prefers-color-scheme:dark){.sm-awaiting{color:#e0b964}}
+
+/* R5G5 (2.2a): lama menunggu Kabagrenmin. Mengikuti .sm-awaiting di atas —
+   baris kecil di bawah label status, bukan kolom baru, supaya tabelnya tidak
+   melebar di layar sempit. */
+.sm-kabagwait{display:block;margin-top:4px;font-size:10px;font-weight:800;line-height:1.3;color:#6b7589}
+.sm-kabagwait.is-read{color:#2b7a62}
+.sm-kabagwait.is-overdue{color:#a8431f}
+@media(prefers-color-scheme:dark){
+  .sm-kabagwait{color:#95a0b5}
+  .sm-kabagwait.is-read{color:#6ac4a4}
+  .sm-kabagwait.is-overdue{color:#f09272}
+}

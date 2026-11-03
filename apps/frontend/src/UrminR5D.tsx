@@ -15,7 +15,22 @@ const workflowLabel:Record<string,string>={draft:'Draft',submitted:'Menunggu App
 function outgoingStatus(item:Entry) {return item.workflowStatus || 'draft'}
 type WorkflowDetail={status:string;version:number;canSubmit:boolean;canReview:boolean;signingAvailable:boolean;emailDeliveryAvailable:boolean;events:{id:string;action:string;actor:string;note:string;at:string}[]}
 type Entry = { id: string; kind: Kind; code: string; title: string; classification: 'biasa' | 'penting'; fields: Record<string, string>; workRecordId: string; version: number; createdAt: string; workflowStatus?:string }
-type Field = { key: string; label: string; input?: 'number' | 'date' | 'select' | 'textarea'; choices?: string[]; placeholder?: string }
+type Field = { key: string; label: string; input?: 'number' | 'date' | 'select' | 'textarea' | 'multi'; choices?: string[]; placeholder?: string }
+
+/**
+ * R5G4: pilihan "Yang Menghadiri" — jabatan, bukan akun orang.
+ *
+ * Daftarnya sengaja TETAP, tidak ditarik dari API. Empat unitnya ditanam di
+ * migrasi 001 dan tidak pernah berubah, sedangkan satu-satunya endpoint yang
+ * menyebutkannya (#140 GET /admin/units) berada di balik guard Superadmin —
+ * akun operasional yang mengisi agenda tidak akan pernah bisa memanggilnya.
+ *
+ * Tingkatnya subbag, bukan paur: satu subbag terdiri dari beberapa paur, jadi
+ * memilih subbag sudah mencakup paur di bawahnya. Kalau kelak paur perlu
+ * dipilih satu per satu, nama-namanya harus didaftarkan dulu — saat ini tidak
+ * ada satu pun paur di dalam sistem.
+ */
+const JABATAN_HADIR = ['Kabagrenmin', 'Urmin', 'Subbagren', 'Subbagsumda', 'Subbagbinfung']
 type StoredFile = { id: string; name: string; mediaType: string; size: number; createdAt: string }
 type QueuedFile = { id: string; file: File; url: string }
 type FilePreview = { name: string; mime: string; url: string; temporary: boolean }
@@ -56,15 +71,20 @@ const schema: Record<Kind, { title: string; singular: string; code: string; name
     {key:'sifatSurat',label:'Sifat',input:'select',choices:['Biasa','Penting','Segera']},
     {key:'keterangan',label:'Catatan / Keterangan',input:'textarea'},
   ]},
+  // R5G4: jenisAgenda, hasil, dan statusAgenda tidak lagi ditampilkan, dan
+  // Kode Agenda tidak lagi diketik manual. Ketiga kunci lama TETAP diterima
+  // backend — lihat catatan di urmin_register.go — sehingga agenda yang sudah
+  // ada tidak gagal disunting hanya karena form berhenti menampilkannya.
+  //
+  // `peserta` digantikan `yangMenghadiri`, tapi kuncinya TETAP diterima backend
+  // supaya agenda lama yang sudah punya isian peserta tidak gagal disunting.
   agenda: {title:'Agenda & Rapat',singular:'Agenda',code:'Kode Agenda',name:'Nama Agenda / Rapat',icon:'agenda',helper:'Register kegiatan, rapat, undangan, notulen, dan tindak lanjut.',fields:[
-    {key:'jenisAgenda',label:'Jenis Agenda',input:'select',choices:['Rapat','Koordinasi','Undangan','Kegiatan','Lainnya']},
     {key:'tanggal',label:'Tanggal',input:'date'},
     {key:'waktu',label:'Jam',placeholder:'Contoh: 09:30'},
     {key:'lokasi',label:'Lokasi',placeholder:'Ruangan atau tempat'},
+    {key:'pimpinan',label:'Pimpinan',placeholder:'Nama pimpinan rapat'},
     {key:'penyelenggara',label:'Penyelenggara / PIC',placeholder:'Nama koordinator'},
-    {key:'peserta',label:'Peserta',placeholder:'Unit/kelompok peserta'},
-    {key:'hasil',label:'Hasil / Notulen Singkat',input:'textarea'},
-    {key:'statusAgenda',label:'Status',input:'select',choices:['Direncanakan','Berlangsung','Selesai','Dibatalkan']},
+    {key:'yangMenghadiri',label:'Yang Menghadiri',input:'multi',choices:JABATAN_HADIR},
   ]},
   arsip: {title:'Arsip & Dokumentasi',singular:'Arsip',code:'Kode Arsip Internal',name:'Judul / Nama Arsip',icon:'arsip',helper:'Register metadata arsip dan lampiran PDF/foto; tanpa mengubah aturan retensi atau pemusnahan arsip resmi.',fields:[
     {key:'jenisArsip',label:'Jenis Arsip',input:'select',choices:['Surat Masuk','Surat Keluar','Administrasi','Rapat','Laporan','Lainnya']},
@@ -128,7 +148,53 @@ async function uploadAttachment(recordID: string, file: File): Promise<void> {
     throw Error(errorMessage(e.error || `Upload gagal (HTTP ${r.status})`))
   }
 }
-const blank = (kind: Kind): Draft => ({kind,code:'',title:'',classification:'biasa',fields:kind==='surat_keluar'?{statusAdministrasi:'Draft'}:{},version:0})
+/**
+ * R5G4: Kode Agenda tidak lagi diketik manual.
+ *
+ * Kolomnya TIDAK bisa dihapus — `sdl_urmin_registry.ref_code` NOT NULL, dan
+ * `urminregisterValid` menuntut 2..64 karakter di kedua backend. Yang bisa
+ * dilakukan adalah berhenti meminta pengguna mengisinya dan membangkitkannya
+ * sendiri. Detik ikut dipakai karena `UNIQUE(kind, lower(ref_code))` menolak
+ * duplikat; dua agenda yang dibuat pada detik yang sama akan ditolak dengan
+ * `duplicate_code`, dan itu jauh lebih jarang daripada dua orang mengarang
+ * kode yang sama.
+ */
+function agendaCode(now = new Date()): string {
+  const p = (n: number, w = 2) => String(n).padStart(w, '0')
+  return `AGD-${now.getFullYear()}${p(now.getMonth() + 1)}${p(now.getDate())}`
+    + `-${p(now.getHours())}${p(now.getMinutes())}${p(now.getSeconds())}`
+}
+
+/**
+ * Pemilih jabatan ganda. Disimpan sebagai satu string dipisah koma, bukan
+ * array, karena `fields` di backend bertipe map[string]string dengan batas 200
+ * karakter per nilai. Kelima jabatan yang ada berjumlah ~57 karakter kalau
+ * dipilih semua, jadi batas itu tidak pernah tersentuh.
+ *
+ * Urutannya mengikuti JABATAN_HADIR, bukan urutan klik, supaya dua agenda
+ * dengan kehadiran sama menghasilkan string yang sama persis.
+ */
+function MultiPick({ field, value, onChange }: { field: Field; value: string; onChange: (v: string) => void }) {
+  const picked = value.split(',').map(s=>s.trim()).filter(Boolean)
+  const toggle = (choice: string) => {
+    const next = picked.includes(choice) ? picked.filter(x=>x!==choice) : [...picked, choice]
+    onChange((field.choices||[]).filter(c=>next.includes(c)).join(', '))
+  }
+  return <div className="sumda-field sumda-field-wide">
+    <span>{field.label}</span>
+    <div className="sdl-multipick" role="group" aria-label={field.label}>
+      {(field.choices||[]).map(choice=>{
+        const on = picked.includes(choice)
+        return <button type="button" key={choice} className={`sdl-multipick__chip${on?' is-on':''}`} aria-pressed={on} onClick={()=>toggle(choice)}>
+          <Icon name={on?'check':'plus'} size={15}/> {choice}
+        </button>
+      })}
+    </div>
+    <small className="sdl-multipick__hint">{picked.length===0?'Belum ada yang dipilih. Boleh lebih dari satu.':`${picked.length} dipilih: ${picked.join(', ')}`}</small>
+  </div>
+}
+
+const blank = (kind: Kind): Draft => ({kind,code:kind==='agenda'?agendaCode():'',title:'',classification:'biasa',fields:kind==='surat_keluar'?{statusAdministrasi:'Draft'}:{},version:0})
 const readableDate = (iso: string) => {const date = new Date(iso);return Number.isNaN(date.getTime()) ? '-' : date.toLocaleDateString('id-ID',{day:'2-digit',month:'short',year:'numeric'})}
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0,2).map(x => x.charAt(0).toLocaleUpperCase('id-ID')).join('') || '–'
 
@@ -146,6 +212,9 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate}: {kind
   const [notice,setNotice] = useState('')
   const [limited,setLimited] = useState(false)
   const [sort,setSort] = useState<'latest'|'az'>('latest')
+  // R5G7: kategori arsip. '' = semua, 'manual' = diinput sendiri,
+  // 'disposisi' = lahir dari pengarsipan disposisi (endpoint 143).
+  const [source,setSource] = useState<''|'manual'|'disposisi'>('')
   const [outgoingFilter,setOutgoingFilter] = useState<OutgoingStatus>('all')
   const [workflowRecord,setWorkflowRecord]=useState<Entry|null>(null)
   const [workflowDetail,setWorkflowDetail]=useState<WorkflowDetail|null>(null)
@@ -169,16 +238,33 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate}: {kind
   },[])
 
 
-  async function load(q = '') {
-    const data = await call<{items:Entry[];limited:boolean}>(`${url}?kind=${kind}&q=${encodeURIComponent(q)}`)
+  async function load(q = '', src = source) {
+    const data = await call<{items:Entry[];limited:boolean}>(`${url}?kind=${kind}&q=${encodeURIComponent(q)}${src?`&source=${src}`:''}`)
     setRecords(data.items)
     setLimited(data.limited)
     setAppliedSearch(q)
   }
+  // R5G7: mengganti kategori memuat ulang dari server, bukan menyaring daftar
+  // yang sudah ada. Backend memotong di 100 baris per kategori, jadi menyaring
+  // di sini akan menampilkan potongan dari jendela yang salah.
+  useEffect(() => {
+    if(kind!=='arsip') return
+    let alive = true
+    setLoading(true)
+    call<{items:Entry[];limited:boolean}>(`${url}?kind=${kind}&q=${encodeURIComponent(appliedSearch)}${source?`&source=${source}`:''}`)
+      .then(data => { if(alive){setRecords(data.items);setLimited(data.limited)} })
+      .catch(e => { if(alive) setError(e instanceof Error?e.message:'Gagal memuat data') })
+      .finally(() => { if(alive) setLoading(false) })
+    return () => { alive = false }
+  // appliedSearch sengaja TIDAK ikut: pencarian punya jalurnya sendiri lewat
+  // load(), dan menambahkannya di sini membuat tiap pencarian berjalan dua kali.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[source,kind])
   useEffect(() => {
     let alive = true
     setRecords([]); setSelected(null); setForm(blank(kind)); setEditing(false)
     setSearch(''); setAppliedSearch(''); setError(''); setNotice(''); setLimited(false); setLoading(true)
+    setSource('')
     call<{items:Entry[];limited:boolean}>(`${url}?kind=${kind}`).then(data => {
       if(alive) {setRecords(data.items);setLimited(data.limited)}
     }).catch(e => {if(alive) setError(e instanceof Error?e.message:'Tidak bisa memuat data')}).finally(() => {if(alive) setLoading(false)})
@@ -388,6 +474,14 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate}: {kind
           <button type="submit" disabled={busy}>{busy?'Memuat...':'Cari'}</button>
         </form>
         <div className="sumda-toolbar-controls">
+          {kind==='arsip'&&<>
+            <label className="sumda-sort-label" htmlFor="urmin-arsip-source">Kategori</label>
+            <select id="urmin-arsip-source" value={source} onChange={e=>setSource(e.target.value as ''|'manual'|'disposisi')} aria-label="Kategori arsip">
+              <option value="">Semua Arsip</option>
+              <option value="manual">Input Manual</option>
+              <option value="disposisi">Dari Disposisi</option>
+            </select>
+          </>}
           <label className="sumda-sort-label" htmlFor={`urmin-sort-${kind}`}>Urutkan</label>
           <select id={`urmin-sort-${kind}`} value={sort} onChange={e=>setSort(e.target.value as 'latest'|'az')} aria-label="Urutan daftar"><option value="latest">Terbaru</option><option value="az">Nama A–Z</option></select>
           <button className="sumda-icon-button" type="button" onClick={()=>{void run(()=>load(appliedSearch),'')}} disabled={busy} title="Muat ulang" aria-label="Muat ulang"><Icon name="refresh" size={18}/></button>
@@ -399,7 +493,7 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate}: {kind
       {limited&&<div className="sumda-inline-note"><Icon name="info" size={16}/> Data yang dimuat dibatasi 100 entri; filter status hanya berlaku pada data yang ditampilkan. Gunakan pencarian untuk menemukan surat lain.</div>}
       {loading ? <div className="sumda-empty" role="status"><div className="sumda-empty-icon"><Icon name="refresh" size={24}/></div><h4>Memuat data...</h4><p></p></div>
       : displayed.length===0 ? <div className="sumda-empty"><div className="sumda-empty-icon"><Icon name={appliedSearch?'search':def.icon} size={30}/></div><h4>{kind==='surat_keluar'&&outgoingFilter!=='all'?'Tidak ada surat pada status ini':appliedSearch?'Tidak ada hasil yang cocok':'Belum ada data terdaftar'}</h4><p>{kind==='surat_keluar'&&outgoingFilter!=='all'?'Ubah filter status atau cari menggunakan kode register.':appliedSearch?'Coba kata kunci lain atau reset pencarian.':'Belum ada data. Tambahkan data pertama Anda.'}</p><button type="button" className="sumda-button sumda-button-primary" onClick={kind==='surat_keluar'&&outgoingFilter!=='all'?()=>setOutgoingFilter('all'):appliedSearch?resetSearch:newRecord}>{kind==='surat_keluar'&&outgoingFilter!=='all'?'Semua status':appliedSearch?'Tampilkan semua':`Tambah ${def.singular} pertama`}</button></div>
-      : <div className="sumda-table-scroll"><table className="sumda-table"><thead>{kind==='surat_keluar'?<tr><th>Register / Nomor Surat</th><th>Perihal</th><th>Tujuan</th><th>Tanggal Surat</th><th>Status Surat</th><th className="sumda-actions-title">Aksi</th></tr>:<tr><th>{def.code}</th><th>Judul / Keterangan</th><th>Informasi</th><th>Klasifikasi</th><th>Tanggal input</th><th className="sumda-actions-title">Aksi</th></tr>}</thead><tbody>{displayed.map(p=><tr key={p.id} className={selected?.id===p.id?'sdl-urmin-focus-row':undefined}>
+      : <div className="sumda-table-scroll"><table className="sumda-table"><thead>{kind==='surat_keluar'?<tr><th>Register / Nomor Surat</th><th>Perihal</th><th>Tujuan</th><th>Tanggal Surat</th><th>Status Surat</th><th className="sumda-actions-title">Aksi</th></tr>:<tr>{kind!=='agenda'&&<th>{def.code}</th>}<th>Judul / Keterangan</th><th>Informasi</th>{kind!=='agenda'&&<th>Klasifikasi</th>}<th>Tanggal input</th><th className="sumda-actions-title">Aksi</th></tr>}</thead><tbody>{displayed.map(p=><tr key={p.id} className={selected?.id===p.id?'sdl-urmin-focus-row':undefined}>
          {kind==='surat_keluar'?<>
            <td><span className="sumda-code">{p.code}</span><small className="sdl-outgoing-secondary">{p.fields.nomorSurat||'Nomor surat belum diisi'}</small></td>
            <td><strong className="sdl-outgoing-title">{p.title}</strong>{p.classification==='penting'&&<small className="sdl-outgoing-important">Penting</small>}</td>
@@ -407,10 +501,14 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate}: {kind
            <td className="sumda-secondary-cell">{p.fields.tanggalSurat?readableDate(`${p.fields.tanggalSurat}T12:00:00`):'–'}</td>
            <td><span className={`sdl-outgoing-status ${outgoingStatus(p)==='submitted'?'is-pending':outgoingStatus(p)==='approved'?'is-registered':''}`}>{workflowLabel[outgoingStatus(p)]||'Draft'}</span></td>
          </>:<>
-           <td><span className="sumda-code">{p.code}</span></td>
-           <td><div className="sumda-person-cell"><span className="sumda-avatar" aria-hidden="true">{initials(p.title)}</span><strong>{p.title}</strong></div></td>
+           {kind!=='agenda'&&<td><span className="sumda-code">{p.code}</span></td>}
+           <td><div className="sumda-person-cell"><span className="sumda-avatar" aria-hidden="true">{initials(p.title)}</span><div><strong>{p.title}</strong>
+             {/* R5G7: penanda tetap muncul walau sedang menampilkan "Semua
+                 Arsip", supaya asal entri terbaca tanpa mengganti kategori. */}
+             {kind==='arsip'&&<small className={`sdl-arsip-source${p.fields.sumber==='disposisi'?' is-disposisi':''}`}>{p.fields.sumber==='disposisi'?'Dari Disposisi':'Input Manual'}</small>}
+           </div></div></td>
            <td className="sumda-secondary-cell">{detail(p)||'–'}</td>
-           <td><span className={`sumda-classification ${p.classification==='penting'?'is-important':''}`}>{p.classification==='penting'?'Penting':'Biasa'}</span></td>
+           {kind!=='agenda'&&<td><span className={`sumda-classification ${p.classification==='penting'?'is-important':''}`}>{p.classification==='penting'?'Penting':'Biasa'}</span></td>}
            <td className="sumda-secondary-cell">{readableDate(p.createdAt)}</td>
          </>}
          <td><div className="sumda-actions">{kind==='surat_keluar'&&<button type="button" className="sumda-action" onClick={()=>void openWorkflow(p)}><Icon name="info" size={16}/> Proses</button>}<button type="button" className="sumda-action" title="Edit data" onClick={()=>edit(p)} disabled={kind==='surat_keluar'&&!(['draft','rejected'].includes(outgoingStatus(p)))}><Icon name="edit" size={16}/> <span>Edit</span></button><button type="button" className="sumda-action sumda-action-attachment" title={kind==='surat_keluar'?'Buka berkas dan tugas internal':'Buka lampiran dan disposisi'} onClick={()=>openFiles(p.workRecordId)}><Icon name="attachment" size={16}/> <span>{kind==='surat_keluar'?'Berkas Kerja':'File & Disposisi'}</span></button><button type="button" className="sumda-action sumda-action-danger" title="Arsipkan data" onClick={()=>remove(p)} disabled={busy||(kind==='surat_keluar'&&!(['draft','rejected'].includes(outgoingStatus(p))))}><Icon name="archive" size={16}/><span className="sumda-sr-only">Arsipkan</span></button></div></td>
@@ -444,13 +542,18 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate}: {kind
         <div className="sumda-dialog-head"><div className="sumda-dialog-emblem"><Icon name={def.icon} size={22}/></div><div><span className="sumda-eyebrow">{selected?'UBAH DATA':'ENTRI BARU'} / URMIN</span><h2 id="urmin-dialog-title">{selected?'Edit':'Tambah'} {def.singular}</h2><p id="urmin-dialog-hint">{kind==='surat_keluar'?'Lengkapi data dan lampiran PDF, lalu ajukan melalui tombol Proses setelah tersimpan.':'Isi data di bawah ini. Kolom dengan tanda * wajib diisi.'}</p></div><button type="button" className="sumda-dialog-close" onClick={closeEditor} aria-label="Tutup formulir" disabled={busy}><Icon name="close" size={20}/></button></div>
         <form id="urmin-register-edit-form" className="sumda-dialog-form" onSubmit={save}>
           <div className="sumda-form-block"><div className="sumda-form-section"><span className="sumda-form-step">01</span><div><h3>Informasi utama</h3><p>Identitas dan nama {def.singular.toLowerCase()}.</p></div></div><div className="sumda-form-grid">
-            <label className="sumda-field"><span>{def.code} <b aria-label="wajib diisi">*</b></span><input autoFocus required minLength={2} maxLength={64} value={form.code} onChange={e=>setForm(v=>({...v,code:e.target.value}))} placeholder={`Masukkan ${def.code.toLowerCase()}`}/></label>
+            {/* R5G4: agenda tidak lagi meminta kode. Nilainya tetap terkirim —
+                backend mewajibkannya — hanya dibangkitkan, bukan diketik. */}
+            {kind!=='agenda'&&<label className="sumda-field"><span>{def.code} <b aria-label="wajib diisi">*</b></span><input autoFocus required minLength={2} maxLength={64} value={form.code} onChange={e=>setForm(v=>({...v,code:e.target.value}))} placeholder={`Masukkan ${def.code.toLowerCase()}`}/></label>}
             <label className="sumda-field"><span>{def.name} <b aria-label="wajib diisi">*</b></span><input required minLength={3} maxLength={200} value={form.title} onChange={e=>setForm(v=>({...v,title:e.target.value}))} placeholder={`Masukkan ${def.name.toLowerCase()}`}/></label>
           </div></div>
           <div className="sumda-form-block"><div className="sumda-form-section"><span className="sumda-form-step">02</span><div><h3>Detail {def.singular}</h3><p>Lengkapi informasi pendukung yang relevan.</p></div></div><div className="sumda-form-grid">
-            {def.fields.map(f=><label className={`sumda-field ${f.input==='textarea'?'sumda-field-wide':''}`} key={f.key}><span>{f.label}</span>{f.input==='select'?<select value={form.fields[f.key]||''} onChange={e=>changeField(f.key,e.target.value)}><option value="">Pilih {f.label.toLowerCase()}</option>{f.choices?.map(x=><option key={x} value={x}>{x}</option>)}</select>:f.input==='textarea'?<textarea rows={3} maxLength={200} value={form.fields[f.key]||''} onChange={e=>changeField(f.key,e.target.value)} placeholder={f.placeholder||'Tambahkan keterangan...'}/>:<input type={f.input||'text'} min={f.input==='number'?0:undefined} step={f.input==='number'?1:undefined} maxLength={f.input==='number'?undefined:200} value={form.fields[f.key]||''} onChange={e=>changeField(f.key,e.target.value)} placeholder={f.placeholder||''}/>}</label>)}
+            {def.fields.map(f=>f.input==='multi'?<MultiPick key={f.key} field={f} value={form.fields[f.key]||''} onChange={v=>changeField(f.key,v)}/>:<label className={`sumda-field ${f.input==='textarea'?'sumda-field-wide':''}`} key={f.key}><span>{f.label}</span>{f.input==='select'?<select value={form.fields[f.key]||''} onChange={e=>changeField(f.key,e.target.value)}><option value="">Pilih {f.label.toLowerCase()}</option>{f.choices?.map(x=><option key={x} value={x}>{x}</option>)}</select>:f.input==='textarea'?<textarea rows={3} maxLength={200} value={form.fields[f.key]||''} onChange={e=>changeField(f.key,e.target.value)} placeholder={f.placeholder||'Tambahkan keterangan...'}/>:<input type={f.input||'text'} min={f.input==='number'?0:undefined} step={f.input==='number'?1:undefined} maxLength={f.input==='number'?undefined:200} value={form.fields[f.key]||''} onChange={e=>changeField(f.key,e.target.value)} placeholder={f.placeholder||''}/>}</label>)}
           </div></div>
-          <div className="sumda-form-block"><div className="sumda-form-section"><span className="sumda-form-step">03</span><div><h3>Pengaturan akses data</h3><p>Pilih klasifikasi sesuai dokumen yang dicatat.</p></div></div><div className="sumda-form-grid"><label className="sumda-field"><span>Klasifikasi</span><select value={form.classification} onChange={e=>setForm(v=>({...v,classification:e.target.value as 'biasa'|'penting'}))}><option value="biasa">Biasa</option><option value="penting">Penting</option></select></label><div className="sumda-classification-help"><Icon name="info" size={18}/><span>Data penting hanya dapat diakses oleh akun dengan grant klasifikasi yang sesuai.</span></div></div></div>
+          {/* R5G4: agenda tidak memakai klasifikasi; seluruh agenda tercatat
+              'biasa'. Blok ini disembunyikan, bukan dihapus — dua kind lain
+              masih memakainya, dan backend tetap mewajibkan nilainya. */}
+          {kind!=='agenda'&&<div className="sumda-form-block"><div className="sumda-form-section"><span className="sumda-form-step">03</span><div><h3>Pengaturan akses data</h3><p>Pilih klasifikasi sesuai dokumen yang dicatat.</p></div></div><div className="sumda-form-grid"><label className="sumda-field"><span>Klasifikasi</span><select value={form.classification} onChange={e=>setForm(v=>({...v,classification:e.target.value as 'biasa'|'penting'}))}><option value="biasa">Biasa</option><option value="penting">Penting</option></select></label><div className="sumda-classification-help"><Icon name="info" size={18}/><span>Data penting hanya dapat diakses oleh akun dengan grant klasifikasi yang sesuai.</span></div></div></div>}
 
 
           {kind==='surat_keluar'&&<div className="sumda-form-block urmin-attachment-block">

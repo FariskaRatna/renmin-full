@@ -36,3 +36,18 @@
 .urmin-preview-image img{max-height:100%;max-width:100%;object-fit:contain}
 @media(max-width:680px){.urmin-file-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.urmin-preview-backdrop{padding:0}.urmin-preview-dialog{width:100%;height:100dvh;border-radius:0}}
 @media(max-width:370px){.urmin-file-grid{grid-template-columns:1fr}}
+
+/* R5G4: pemilih "Yang Menghadiri". Chip, bukan <select multiple> — pilihan
+   ganda lewat ctrl+klik tidak terbaca sebagai "boleh lebih dari satu", dan di
+   layar sentuh praktis tidak bisa dipakai. */
+.sdl-multipick{display:flex;flex-wrap:wrap;gap:8px}
+.sdl-multipick__chip{display:inline-flex;align-items:center;gap:6px;padding:9px 13px;border:1px solid var(--border,#d6dce5);border-radius:999px;background:var(--card,#fff);color:var(--ink,#1d2531);font:inherit;font-size:12px;font-weight:700;cursor:pointer;transition:background .15s,border-color .15s,color .15s}
+.sdl-multipick__chip:hover{border-color:#2b9a80}
+.sdl-multipick__chip.is-on{background:#2b9a80;border-color:#2b9a80;color:#fff}
+.sdl-multipick__chip:focus-visible{outline:2px solid #2b9a80;outline-offset:2px}
+.sdl-multipick__hint{color:var(--muted,#64708a);font-size:11px;font-weight:600;line-height:1.5}
+
+/* R5G7: penanda kategori arsip pada baris daftar. */
+.sdl-arsip-source{display:inline-block;margin-top:4px;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:800;line-height:1.5;background:var(--subtle,#eef1f6);color:var(--muted,#64708a);border:1px solid var(--border,#d6dce5)}
+.sdl-arsip-source.is-disposisi{background:#e7f7f1;color:#1f6f5a;border-color:#9fd9c7}
+@media(prefers-color-scheme:dark){.sdl-arsip-source.is-disposisi{background:#15372f;color:#6ac4a4;border-color:#2b6a58}}

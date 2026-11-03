@@ -17,6 +17,9 @@ type Task = {
   slaStatus: SLAStatus; parentTaskId: string | null; depth: number
 }
 type Event = { action: string; actor: string; reason: string; at: string }
+/** R5G6: bukti hasil tindak lanjut (endpoint 145). */
+type Attachment = { id: string; filename: string; mimeType: string; sizeBytes: number; sha256: string; uploadedBy: string; createdAt: string }
+type FileList = { items: Attachment[]; canUpload: boolean }
 type Candidate = { id: string; name: string; unit: string }
 type TaskList = { items: Task[]; pending: number; overdue: number; limited?: boolean }
 // Bentuk baris dari /urmin/distribution-inbox/ — surat yang ditujukan ke akun
@@ -64,12 +67,18 @@ async function api<T>(url: string, method: 'GET' | 'POST' = 'GET', body?: Record
   }
   return response.json() as Promise<T>
 }
+/** Ukuran berkas yang terbaca manusia; dibulatkan ke satu desimal. */
+function fileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
 function eventLabel(value: string) {
   const names: Record<string, string> = { issued: 'Diterbitkan', accepted: 'Diterima', completed: 'Diselesaikan', approved: 'Hasil Disetujui', revision_requested: 'Perlu Tindak Lanjut', forwarded: 'Diteruskan' }
   return names[value] ?? 'Pembaruan'
 }
 
-export default function TugasDisposisiR5F3({ currentUserId, initialID, workspaceTab, onOpenLetter, onOpenInbox }: { currentUserId: string; initialID?: string; workspaceTab?: 'mine'|'issued'|'review'|'history'; onOpenLetter?: (incomingID: string) => void; onOpenInbox?: () => void }) {
+export default function TugasDisposisiR5F3({ currentUserId, initialID, workspaceTab, onOpenLetter, onOpenInbox }: { currentUserId: string; initialID?: string; workspaceTab?: 'mine'|'issued'|'review'|'arsip'; onOpenLetter?: (incomingID: string) => void; onOpenInbox?: () => void }) {
   const [items, setItems] = useState<Task[]>([])
   // Surat yang ditujukan ke akun ini tapi BELUM menjadi tugas disposisi.
   // Daftar tugas menyaring assigneeId, jadi surat yang baru tiba tidak pernah
@@ -82,11 +91,22 @@ export default function TugasDisposisiR5F3({ currentUserId, initialID, workspace
   const [ownerFilter, setOwnerFilter] = useState<OwnerFilter>('all')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [sortOrder, setSortOrder] = useState<'latest'|'due'>('latest')
+  // R5G3. Rentang tanggal dan ukuran halaman.
+  //
+  // from/to dikirim ke server karena ia menyaring atas letter_date, kolom yang
+  // tidak ikut dalam respons; menyaringnya di sini mustahil. Ukuran halaman
+  // sebaliknya murni di sini — server menyaring izin SESUDAH LIMIT, jadi
+  // paginasi di server akan menghasilkan halaman yang jumlahnya tidak tetap.
+  const [fromDate, setFromDate] = useState('')
+  const [toDate, setToDate] = useState('')
+  const [pageSize, setPageSize] = useState(10)
+  const [page, setPage] = useState(1)
   const [selectedID, setSelectedID] = useState('')
   const [detail, setDetail] = useState<Detail | null>(null)
   const [detailState, setDetailState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [reason, setReason] = useState('')
   const [forwardPeople, setForwardPeople] = useState<Candidate[] | null>(null)
+  const [files, setFiles] = useState<FileList>({ items: [], canUpload: false })
   const [forwardTo, setForwardTo] = useState('')
   const [forwardInstruction, setForwardInstruction] = useState('')
   const [forwardDue, setForwardDue] = useState('')
@@ -108,7 +128,18 @@ export default function TugasDisposisiR5F3({ currentUserId, initialID, workspace
     const seq = ++listSeq.current
     setLoadState('loading')
     try {
-      const result = await api<TaskList>(`${BASE}/`)
+      // Rentang eksplisit menimpa `window` di server, jadi keduanya tidak
+      // pernah dikirim bersamaan. Separuh rentang diabaikan sampai lengkap —
+      // server menolak from tanpa to, dan menampilkan 400 saat pengguna baru
+      // mengisi kotak pertama akan terbaca seperti kerusakan.
+      const params = new URLSearchParams()
+      if (fromDate && toDate) {
+        params.set('from', fromDate)
+        params.set('to', toDate)
+      } else {
+        params.set('window', workspaceTab === 'arsip' ? 'archive' : 'active')
+      }
+      const result = await api<TaskList>(`${BASE}/?${params.toString()}`)
       if (!mounted.current || seq !== listSeq.current) return
       setItems(result.items ?? [])
       setSummary({ pending: result.pending ?? 0, overdue: result.overdue ?? 0, limited: Boolean(result.limited) })
@@ -126,7 +157,7 @@ export default function TugasDisposisiR5F3({ currentUserId, initialID, workspace
       setLoadState('error')
       showToast(errText(error), 'error')
     }
-  }, [])
+  }, [workspaceTab, fromDate, toDate])
 
   const clearDetail = useCallback(() => {
     ++detailSeq.current
@@ -158,6 +189,15 @@ export default function TugasDisposisiR5F3({ currentUserId, initialID, workspace
       setDetail(loaded)
       setDetailState('ready')
       const task = loaded.item
+      // R5G6: lampiran diambil TERPISAH dan kegagalannya tidak menggagalkan
+      // detail tugas. Dua sumber berbeda, dan lampiran yang gagal dimuat tidak
+      // boleh membuat seluruh panel tampil sebagai error.
+      try {
+        const files = await api<FileList>(`${BASE}/${encodeURIComponent(id)}/attachments`)
+        if (mounted.current && seq === detailSeq.current && selectedRef.current === id) setFiles(files)
+      } catch {
+        if (mounted.current && seq === detailSeq.current) setFiles({ items: [], canUpload: false })
+      }
       if (task.assigneeId === currentUserId && task.status === 'in_progress' && task.depth < 2) {
         try {
           const people = await api<{ items: Candidate[] }>(`${BASE}/${encodeURIComponent(id)}/forward-candidates`)
@@ -209,6 +249,10 @@ export default function TugasDisposisiR5F3({ currentUserId, initialID, workspace
   }, [selectedID, busy, clearDetail])
 
   useEffect(() => { void refreshList() }, [refreshList])
+  // Kembali ke halaman 1 setiap kali isi daftarnya berubah bentuk. Tanpa ini,
+  // menyaring dari 80 baris menjadi 6 selagi berada di halaman 4 menghasilkan
+  // layar kosong yang terbaca seperti "tidak ada data".
+  useEffect(() => { setPage(1) }, [workspaceTab, fromDate, toDate, query, statusFilter, ownerFilter, pageSize])
   useEffect(() => {
     if (!initialID || deepLinkHandled.current === initialID) return
     deepLinkHandled.current = initialID
@@ -239,6 +283,66 @@ export default function TugasDisposisiR5F3({ currentUserId, initialID, workspace
       if (selectedRef.current === task.id) await openDetail(task.id, false)
     } finally { if (mounted.current) setBusy(false) }
   }
+  /**
+   * R5G6: unggah bukti hasil tindak lanjut.
+   *
+   * Tidak lewat `api()` — helper itu mengirim JSON, sedangkan endpoint 144
+   * menerima multipart. CSRF tetap wajib, jadi tokennya diambil dengan cara
+   * yang sama sebelum berkasnya dikirim.
+   */
+  async function uploadFile(task: Task, file: File) {
+    if (busy) return
+    setBusy(true)
+    try {
+      const csrf = await fetch('/api/v1/auth/csrf', { credentials: 'same-origin', cache: 'no-store' })
+      if (!csrf.ok) throw new Error('Sesi berakhir. Silakan masuk kembali.')
+      const { csrfToken } = await csrf.json() as { csrfToken: string }
+      const body = new FormData()
+      body.append('file', file)
+      // Alasan wajib minimal 8 karakter di backend; isian pengguna dipakai
+      // kalau ada, kalau tidak diberi keterangan baku yang tetap bermakna di
+      // jejak audit.
+      body.append('reason', reason.trim().length >= 8 ? reason.trim() : `Lampiran hasil tindak lanjut: ${file.name}`)
+      const response = await fetch(`${BASE}/${encodeURIComponent(task.id)}/attachments`, {
+        method: 'POST', credentials: 'same-origin', cache: 'no-store',
+        headers: { 'X-CSRF-Token': csrfToken }, body,
+      })
+      if (!response.ok) {
+        const e: { error?: string } = await response.json().catch(() => ({}))
+        throw new Error(
+          e.error === 'invalid_file_type' ? 'Hanya PDF, PNG, atau JPG yang dapat diunggah.'
+          : e.error === 'file_too_large' || e.error === 'invalid_attachment' ? 'Ukuran berkas melebihi 10 MB.'
+          : e.error === 'attachment_limit' ? 'Lampiran sudah mencapai batas 10 berkas.'
+          : e.error === 'already_completed' ? 'Tugas sudah selesai; lampiran tidak dapat ditambah lagi.'
+          : 'Unggah lampiran belum berhasil. Silakan coba lagi.')
+      }
+      showToast('Lampiran berhasil diunggah.', 'success')
+      const next = await api<FileList>(`${BASE}/${encodeURIComponent(task.id)}/attachments`)
+      if (mounted.current && selectedRef.current === task.id) setFiles(next)
+    } catch (error) {
+      showToast(errText(error), 'error')
+    } finally { if (mounted.current) setBusy(false) }
+  }
+
+  // R5G3. Memindahkan disposisi ke register Arsip Urmin. Server tetap
+  // memverifikasi ulang bahwa suratnya memang di luar rentang aktif, jadi
+  // tombol ini tidak memegang keputusan apa pun — ia hanya memintanya.
+  async function archive(task: Task) {
+    if (busy) return
+    const ok = await confirmDialog(
+      `Arsipkan disposisi ${task.letterNumber}? Entri arsip dibuat atas nama Anda dan tidak dapat ditarik kembali dari sini.`,
+      { confirmLabel: 'Arsipkan' },
+    )
+    if (!ok || !mounted.current) return
+    setBusy(true)
+    try {
+      const result = await api<{ refCode: string }>(`${BASE}/${task.id}/archive`, 'POST')
+      showToast(`Disposisi diarsipkan dengan kode ${result.refCode}.`, 'success')
+      await refreshList()
+    } catch (error) {
+      showToast(errText(error), 'error')
+    } finally { if (mounted.current) setBusy(false) }
+  }
   async function forward(event: FormEvent, task: Task) {
     event.preventDefault()
     if (busy || !forwardTo || forwardInstruction.trim().length < 8 || forwardInstruction.trim().length > 1000 || !forwardDue || forwardDue > task.dueDate || selectedRef.current !== task.id) return
@@ -262,17 +366,24 @@ export default function TugasDisposisiR5F3({ currentUserId, initialID, workspace
     if (workspaceTab === 'mine' && task.assigneeId !== currentUserId) return false
     if (workspaceTab === 'issued' && task.issuerId !== currentUserId) return false
     if (workspaceTab === 'review' && (task.issuerId !== currentUserId || task.reviewStatus !== 'awaiting_review')) return false
-    if (workspaceTab === 'history' && (task.status !== 'completed' || task.reviewStatus === 'awaiting_review')) return false
+    // Tab 'arsip' TIDAK menyaring di sini: keanggotaannya ditentukan tanggal
+    // surat, kolom yang tidak ikut dalam respons. Server yang memutuskannya
+    // lewat ?window=archive.
     if (!workspaceTab && ownerFilter === 'mine' && task.assigneeId !== currentUserId) return false
     if (!workspaceTab && ownerFilter === 'issued' && task.issuerId !== currentUserId) return false
-    if (workspaceTab !== 'review' && workspaceTab !== 'history' && (statusFilter === 'awaiting_review' ? task.reviewStatus !== 'awaiting_review' : statusFilter !== 'all' && task.status !== statusFilter)) return false
+    if (workspaceTab !== 'review' && (statusFilter === 'awaiting_review' ? task.reviewStatus !== 'awaiting_review' : statusFilter !== 'all' && task.status !== statusFilter)) return false
     if (!normalQuery) return true
     return [task.letterNumber, task.subject, task.issuerName, task.assigneeName, task.instruction, task.unit].some(value => value.toLocaleLowerCase('id-ID').includes(normalQuery))
   })
-  const displayed = [...visible].sort((a, b) => {
+  const sorted = [...visible].sort((a, b) => {
     if (sortOrder === 'due') return a.dueDate.localeCompare(b.dueDate) || b.createdAt.localeCompare(a.createdAt)
     return b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id)
   })
+  // Paginasi dihitung di sini, atas data yang SUDAH lolos otorisasi server,
+  // sehingga satu halaman selalu berisi persis sebanyak yang diminta.
+  const pageCount = Math.max(1, Math.ceil(sorted.length / pageSize))
+  const safePage = Math.min(page, pageCount)
+  const displayed = sorted.slice((safePage - 1) * pageSize, safePage * pageSize)
   // Hanya di tab "Tugas Saya", dan hanya yang berstatus 'sent' — begitu surat
   // dikonfirmasi diterima ia berhenti menunggu, dan menampilkannya terus akan
   // membuat daftar tidak pernah habis. Filter status tugas sengaja tidak
@@ -307,13 +418,24 @@ export default function TugasDisposisiR5F3({ currentUserId, initialID, workspace
       <span><strong>{loadState === 'ready' ? reviewCount : '—'}</strong> Perlu Review</span>
     </div>
     <section className="panel sdl-tasks-r5f3__panel" aria-label="Daftar tugas disposisi">
-      <div className="sdl-tasks-r5f11__toolbar"><div><strong>{loadState === 'ready' ? `${displayed.length} tugas` : 'Daftar tugas'}</strong><span>{workspaceTab === 'mine' ? 'Ditugaskan kepada Anda' : workspaceTab === 'issued' ? 'Disposisi yang Anda berikan' : workspaceTab === 'review' ? 'Hasil yang memerlukan keputusan Anda' : workspaceTab === 'history' ? 'Tugas selesai dengan review sudah diproses' : 'Tugas yang dapat Anda akses'}</span></div><button type="button" className="btn" disabled={busy || loadState === 'loading'} onClick={() => void refresh()}>{loadState === 'loading' ? 'Memuat...' : 'Perbarui'}</button></div>
+      <div className="sdl-tasks-r5f11__toolbar"><div><strong>{loadState === 'ready' ? `${sorted.length} tugas` : 'Daftar tugas'}</strong><span>{workspaceTab === 'mine' ? 'Ditugaskan kepada Anda' : workspaceTab === 'issued' ? 'Disposisi yang Anda berikan' : workspaceTab === 'review' ? 'Hasil yang memerlukan keputusan Anda' : workspaceTab === 'arsip' ? 'Surat di luar rentang 30 hari, siap diarsipkan' : 'Tugas yang dapat Anda akses'}</span></div><button type="button" className="btn" disabled={busy || loadState === 'loading'} onClick={() => void refresh()}>{loadState === 'loading' ? 'Memuat...' : 'Perbarui'}</button></div>
+      <p className="sdl-tasks-r5f3__limit">{fromDate && toDate
+        ? `Rentang tanggal surat ${dateOnly(fromDate)} sampai ${dateOnly(toDate)}.`
+        : workspaceTab === 'arsip'
+          ? 'Surat yang tanggalnya di luar rentang 30 hari. Mengarsipkan membuat entri di register Arsip Urmin; disposisinya sendiri tetap utuh di sini.'
+          : 'Menampilkan surat bertanggal 30 hari ke belakang sampai 30 hari ke depan. Selebihnya ada di tab Arsip.'}</p>
       {summary.limited && <p className="sdl-tasks-r5f3__limit">Menampilkan maksimal 200 tugas terbaru. Ringkasan pencarian dan jumlah review hanya mencakup data yang ditampilkan.</p>}
       <div className="sdl-tasks-r5f3__filters">
         <label><span className="sdl-sr-only">Cari tugas</span><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Cari nomor surat, perihal atau petugas" aria-label="Cari tugas" /></label>
         {!workspaceTab && <label><span className="sdl-sr-only">Kelompok tugas</span><select value={ownerFilter} onChange={e => setOwnerFilter(e.target.value as OwnerFilter)} aria-label="Kelompok tugas"><option value="all">Semua Tugas</option><option value="mine">Ditugaskan ke Saya</option><option value="issued">Saya Terbitkan</option></select></label>}
-        {workspaceTab!=='review'&&workspaceTab!=='history'&&<label><span className="sdl-sr-only">Status tugas</span><select value={statusFilter} onChange={e => setStatusFilter(e.target.value as StatusFilter)} aria-label="Status tugas"><option value="all">Semua Status</option><option value="pending">Menunggu Diterima</option><option value="in_progress">Dalam Proses</option><option value="completed">Selesai</option><option value="awaiting_review">Menunggu Review</option></select></label>}
+        {workspaceTab!=='review'&&<label><span className="sdl-sr-only">Status tugas</span><select value={statusFilter} onChange={e => setStatusFilter(e.target.value as StatusFilter)} aria-label="Status tugas"><option value="all">Semua Status</option><option value="pending">Menunggu Diterima</option><option value="in_progress">Dalam Proses</option><option value="completed">Selesai</option><option value="awaiting_review">Menunggu Review</option></select></label>}
         <label><span className="sdl-sr-only">Urutkan tugas</span><select value={sortOrder} onChange={e => setSortOrder(e.target.value as 'latest'|'due')} aria-label="Urutkan tugas"><option value="latest">Terbaru</option><option value="due">Tenggat terdekat</option></select></label>
+        {/* Rentang baru dikirim ke server setelah KEDUANYA terisi; mengisi satu
+            kotak saja tidak mengubah apa pun. */}
+        <label><span className="sdl-sr-only">Tanggal surat dari</span><input type="date" value={fromDate} max={toDate || undefined} onChange={e => setFromDate(e.target.value)} aria-label="Tanggal surat dari" /></label>
+        <label><span className="sdl-sr-only">Tanggal surat sampai</span><input type="date" value={toDate} min={fromDate || undefined} onChange={e => setToDate(e.target.value)} aria-label="Tanggal surat sampai" /></label>
+        {(fromDate || toDate) && <button type="button" className="btn" onClick={() => { setFromDate(''); setToDate('') }}>Hapus Rentang</button>}
+        <label><span className="sdl-sr-only">Jumlah data per halaman</span><select value={pageSize} onChange={e => setPageSize(Number(e.target.value))} aria-label="Jumlah data per halaman"><option value={5}>5 per halaman</option><option value={10}>10 per halaman</option><option value={50}>50 per halaman</option><option value={100}>100 per halaman</option></select></label>
       </div>
       {loadState === 'loading' && !items.length ? <div className="sdl-tasks-r5f3__empty" role="status">Memuat tugas...</div>
         : loadState === 'error' ? <div className="sdl-tasks-r5f3__empty" role="alert"><strong>Daftar tugas belum tersedia.</strong><p>Periksa sesi dan coba kembali.</p><button type="button" className="btn" onClick={() => void refresh()}>Coba Lagi</button></div>
@@ -335,8 +457,16 @@ export default function TugasDisposisiR5F3({ currentUserId, initialID, workspace
           <td>{dateOnly(t.dueDate)}</td>
           <td><span className={`r3c-status ${t.status}`}>{statusNames[t.status]}</span></td>
           <td><span className={`r3d-sla ${t.slaStatus}`}>{slaNames[t.slaStatus]}</span><small>{reviewNames[t.reviewStatus]}</small></td>
-          <td><button type="button" className="btn" disabled={busy} onClick={() => void openDetail(t.id)}>Detail</button></td>
+          <td><button type="button" className="btn" disabled={busy} onClick={() => void openDetail(t.id)}>Detail</button>{workspaceTab === 'arsip' && <button type="button" className="btn" disabled={busy} onClick={() => void archive(t)}>Arsipkan</button>}</td>
         </tr>)}</tbody></table></div>}
+      {loadState === 'ready' && sorted.length > 0 && <div className="sdl-tasks-r5f3__pager">
+        <span>Menampilkan {(safePage - 1) * pageSize + 1}–{Math.min(safePage * pageSize, sorted.length)} dari {sorted.length}</span>
+        <div>
+          <button type="button" className="btn" disabled={safePage <= 1} onClick={() => setPage(safePage - 1)}>Sebelumnya</button>
+          <span aria-live="polite">Halaman {safePage} dari {pageCount}</span>
+          <button type="button" className="btn" disabled={safePage >= pageCount} onClick={() => setPage(safePage + 1)}>Berikutnya</button>
+        </div>
+      </div>}
     </section>
     {selectedID && <div className="sdl-tasks-r5f11__backdrop" role="presentation">
       <section ref={dialogRef} className="sdl-tasks-r5f11__dialog" role="dialog" aria-modal="true" aria-labelledby="sdl-tasks-r5f11-title" aria-describedby="sdl-tasks-r5f11-subtitle">
@@ -356,7 +486,27 @@ export default function TugasDisposisiR5F3({ currentUserId, initialID, workspace
           {task.completionNote && <div className="sdl-tasks-r5f3__section"><h3>Hasil Tindak Lanjut</h3><p className="sdl-tasks-r5f3__copy">{task.completionNote}</p></div>}
           {task.reviewReason && <div className="sdl-tasks-r5f3__section"><h3>Catatan Review</h3><p className="sdl-tasks-r5f3__copy">{task.reviewReason}</p></div>}
           <div className="sdl-tasks-r5f3__section"><h3>Riwayat Disposisi</h3>{detail.events.length === 0 ? <p className="sdl-tasks-r5f3__message">Belum ada riwayat.</p> : <ol className="sdl-tasks-r5f3__events">{detail.events.map((ev, i) => <li key={`${ev.at}-${ev.action}-${i}`}><strong>{eventLabel(ev.action)}</strong><small>{ev.actor} · {datetime(ev.at)}</small><p>{ev.reason}</p></li>)}</ol>}</div>
-          {canAct && <div className="sdl-tasks-r5f3__section"><h3>{task.status === 'pending' ? 'Terima Tugas' : 'Selesaikan Tugas'}</h3><label className="sdl-tasks-r5f3__field">{task.status === 'pending' ? 'Keterangan Penerimaan' : 'Hasil Tindak Lanjut'}<textarea className="rm-input" rows={3} minLength={8} maxLength={1000} value={reason} onChange={e => setReason(e.target.value)} disabled={busy} placeholder="Tuliskan keterangan minimal 8 karakter" /></label><button type="button" className="btn primary" disabled={busy || !noteValid} onClick={() => void action(task, task.status === 'pending' ? 'accept' : 'complete')}>{busy ? 'Memproses...' : task.status === 'pending' ? 'Terima Tugas' : 'Selesaikan Tugas'}</button></div>}
+          {canAct && <div className="sdl-tasks-r5f3__section"><h3>{task.status === 'pending' ? 'Terima Tugas' : 'Selesaikan Tugas'}</h3><label className="sdl-tasks-r5f3__field">{task.status === 'pending' ? 'Keterangan Penerimaan' : 'Hasil Tindak Lanjut'}<textarea className="rm-input" rows={3} minLength={8} maxLength={1000} value={reason} onChange={e => setReason(e.target.value)} disabled={busy} placeholder="Tuliskan keterangan minimal 8 karakter" /></label>
+            {/* R5G6: lampiran diunggah SEBELUM tugas diselesaikan. Setelah
+                statusnya completed, backend menolak 409 — bukti tidak boleh
+                bertambah di belakang telaah penerbit. */}
+            {task.status !== 'pending' && files.canUpload && <label className="sdl-tasks-r5f3__field">Lampiran Bukti (opsional)
+              <input type="file" accept="application/pdf,image/png,image/jpeg" disabled={busy} onChange={e => {
+                const picked = e.target.files?.[0]
+                e.target.value = ''
+                if (picked) void uploadFile(task, picked)
+              }} />
+              <small className="sdl-tasks-r5f3__hint">PDF, PNG, atau JPG · maksimal 10 MB · paling banyak 10 berkas. Unggah dulu, lalu tekan Selesaikan Tugas.</small>
+            </label>}
+            <button type="button" className="btn primary" disabled={busy || !noteValid} onClick={() => void action(task, task.status === 'pending' ? 'accept' : 'complete')}>{busy ? 'Memproses...' : task.status === 'pending' ? 'Terima Tugas' : 'Selesaikan Tugas'}</button></div>}
+          {/* Terlihat oleh KEDUA pihak: pelaksana memastikan buktinya terkirim,
+              penerbit membukanya saat menelaah. */}
+          {files.items.length > 0 && <div className="sdl-tasks-r5f3__section"><h3>Lampiran Bukti</h3><ul className="sdl-tasks-r5f3__files">
+            {files.items.map(f => <li key={f.id}>
+              <a href={`${BASE}/${encodeURIComponent(task.id)}/attachments/${encodeURIComponent(f.id)}/download`} download={f.filename}>{f.filename}</a>
+              <small>{fileSize(f.sizeBytes)} · {f.uploadedBy} · {datetime(f.createdAt)}</small>
+            </li>)}
+          </ul></div>}
           {task.assigneeId === currentUserId && task.status === 'in_progress' && task.depth < 2 && forwardPeople !== null && <div className="sdl-tasks-r5f3__section"><h3>Teruskan ke Petugas · Level {task.depth + 1}</h3><form onSubmit={event => void forward(event, task)} className="sdl-tasks-r5f3__forward"><label className="sdl-tasks-r5f3__field">Petugas Tujuan<select className="rm-input" required disabled={busy} value={forwardTo} onChange={e => setForwardTo(e.target.value)}><option value="">Pilih petugas</option>{forwardPeople.map(person => <option key={person.id} value={person.id}>{person.name}</option>)}</select></label><label className="sdl-tasks-r5f3__field">Tenggat<input className="rm-input" type="date" required disabled={busy} max={task.dueDate} value={forwardDue} onChange={e => setForwardDue(e.target.value)} /></label><label className="sdl-tasks-r5f3__field sdl-tasks-r5f3__wide">Arahan untuk Petugas<textarea className="rm-input" required minLength={8} maxLength={1000} rows={3} disabled={busy} value={forwardInstruction} onChange={e => setForwardInstruction(e.target.value)} /></label><button type="submit" className="btn primary" disabled={busy || !forwardTo || forwardInstruction.trim().length < 8 || !forwardDue || forwardDue > task.dueDate}>{busy ? 'Memproses...' : 'Teruskan Tugas'}</button>{forwardPeople.length === 0 && <p className="sdl-tasks-r5f3__message">Belum ada petugas yang dapat dipilih.</p>}</form></div>}
           {canReview && <div className="sdl-tasks-r5f3__section"><h3>Review Hasil Tugas</h3><label className="sdl-tasks-r5f3__field">Catatan Review<textarea className="rm-input" minLength={8} maxLength={1000} rows={3} disabled={busy} value={reason} onChange={e => setReason(e.target.value)} placeholder="Tuliskan hasil penilaian minimal 8 karakter" /></label><div className="sdl-tasks-r5f3__buttons"><button type="button" className="btn primary" disabled={busy || !noteValid} onClick={() => void action(task, 'approved')}>Setujui Hasil</button><button type="button" className="btn" disabled={busy || !noteValid} onClick={() => void action(task, 'revision_requested')}>Perlu Tindak Lanjut</button></div></div>}
           {task.depth === 0 && <div className="sdl-tasks-r5f3__section"><DisposisiAutoCompleteR5F20 key={`${task.id}-${task.version}-${task.reviewStatus}`} taskId={task.id} version={task.version} issuerId={task.issuerId} currentUserId={currentUserId} reviewStatus={task.reviewStatus} status={task.status} /></div>}

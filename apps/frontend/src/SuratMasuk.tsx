@@ -19,6 +19,27 @@ const blankExtra:IntakeExtra={letterKind:'lainnya',responseDue:'',eventStart:'',
 // dispatched: surat yang dijawab lewat Arahan Pimpinan tidak pernah melewati
 // jalur distribusi, jadi tanpa keduanya ia akan tertinggal di "Menunggu".
 const routeLabels:Record<string,string>={draft:'Draft',recorded:'Tercatat · Tanpa Disposisi',awaiting_kabag:'Menunggu Disposisi Kabagrenmin',read_kabag:'Dibaca Kabagrenmin',directive_issued:'Arahan Sudah Dibuat',dispatched:'Sudah Didistribusikan Kabagrenmin',in_progress:'Dalam Tindak Lanjut',awaiting_review:'Menunggu Review'}
+
+/**
+ * R5G5: lama sebuah surat berada pada keadaannya sekarang.
+ *
+ * Dihitung dari `submitted_at`, bukan tanggal surat — yang dicari petugas
+ * adalah "sudah berapa lama saya menunggu jawaban", bukan umur suratnya.
+ * Mengembalikan null kalau surat itu tidak punya baris intake sama sekali
+ * (surat warisan R3B), sehingga tidak ada angka yang dikarang.
+ */
+function waitingDays(since?:string):number|null{
+ if(!since) return null
+ const t=new Date(since).getTime()
+ if(Number.isNaN(t)) return null
+ return Math.max(0,Math.floor((Date.now()-t)/86400000))
+}
+function waitingLabel(days:number):string{
+ return days===0?'hari ini':days===1?'1 hari':`${days} hari`
+}
+// Dua hari dipilih sebagai batas "perlu diingatkan": cukup lama untuk bukan
+// sekadar belum sempat dibuka, cukup pendek untuk masih berguna diingatkan.
+const REMIND_AFTER_DAYS=2
 // `surat` = naskah suratnya (paling banyak satu, field multipart terpisah),
 // `files` = lampiran pendukung. Backend menandai keduanya lewat doc_kind.
 async function submitIntake(payload:Record<string,unknown>,files:File[],surat:File[]=[]):Promise<{item:Item;routeStatus:string;filesSaved:number}>{
@@ -99,8 +120,35 @@ function fileError(file:File):string|null{
  return null
 }
 
+/**
+ * R5G5 (2.2a): memberi tahu pengaju apakah Kabagrenmin sudah membuka suratnya.
+ *
+ * Datanya sudah ada sejak R5G2 — `awaiting_kabag` berarti belum dibuka,
+ * `read_kabag` berarti sudah. Yang kurang hanya LAMANYA, dan tanpa itu kedua
+ * keadaan terbaca sama saja: surat yang diajukan tadi pagi dan yang menggantung
+ * dua minggu sama-sama bertulis "Menunggu Disposisi Kabagrenmin".
+ *
+ * Hanya muncul pada dua keadaan itu. Begitu suratnya diteruskan atau dijawab
+ * lewat arahan, lama menunggu berhenti menjadi pertanyaan.
+ */
+function KabagWait({status,since}:{status?:string;since?:string}){
+ if(status!=='awaiting_kabag'&&status!=='read_kabag') return null
+ const days=waitingDays(since)
+ if(days===null) return null
+ const unread=status==='awaiting_kabag'
+ const overdue=unread&&days>=REMIND_AFTER_DAYS
+ return <span
+   className={`sm-kabagwait${overdue?' is-overdue':''}${unread?'':' is-read'}`}
+   title={unread
+     ?`Diajukan ${waitingLabel(days)} lalu dan belum dibuka Kabagrenmin${overdue?'. Pertimbangkan untuk mengingatkan.':'.'}`
+     :`Sudah dibuka Kabagrenmin. Diajukan ${waitingLabel(days)} lalu.`}>
+   {unread?`Belum dibuka · ${waitingLabel(days)}`:`Sudah dibuka · ${waitingLabel(days)}`}
+ </span>
+}
+
 export default function SuratMasuk({initialID,initialCreate}:{initialID?:string;initialCreate?:boolean}){
  const [list,setList]=useState<Item[]>([]),[search,setSearch]=useState(''),[filter,setFilter]=useState(''),[limited,setLimited]=useState(false),[workflowStatuses,setWorkflowStatuses]=useState<Record<string,string>>({})
+ const [workflowSince,setWorkflowSince]=useState<Record<string,string>>({})
  const [selected,setSelected]=useState<string|null>(null),[detail,setDetail]=useState<Item|null>(null),[history,setHistory]=useState<History[]>([])
  const [canEdit,setCanEdit]=useState(false),[canCreate,setCanCreate]=useState(false),[editing,setEditing]=useState(false),[creating,setCreating]=useState(false)
  const [form,setForm]=useState<Draft>({...blank}),[extra,setExtra]=useState<IntakeExtra>({...blankExtra}),[intakeRecord,setIntakeRecord]=useState<IntakeRecord|null>(null)
@@ -119,8 +167,8 @@ export default function SuratMasuk({initialID,initialCreate}:{initialID?:string;
  const uploadDoc=uploadOptions.find(i=>i.id===uploadTarget)
  const modalOpen=creating||editing||uploadOpen||submitConfirm
  const reload=useCallback(async()=>{
-  const [items,caps]=await Promise.all([api<{items:Item[];limited:boolean;workflowStatuses?:Record<string,string>}>(`/api/v1/urmin/surat-masuk/?q=${encodeURIComponent(filter)}`),api<{canCreate:boolean}>('/api/v1/urmin/surat-masuk/capabilities')])
-  setList(items.items);setLimited(items.limited);setWorkflowStatuses(items.workflowStatuses||{});setCanCreate(caps.canCreate)
+  const [items,caps]=await Promise.all([api<{items:Item[];limited:boolean;workflowStatuses?:Record<string,string>;workflowSince?:Record<string,string>}>(`/api/v1/urmin/surat-masuk/?q=${encodeURIComponent(filter)}`),api<{canCreate:boolean}>('/api/v1/urmin/surat-masuk/capabilities')])
+  setList(items.items);setLimited(items.limited);setWorkflowStatuses(items.workflowStatuses||{});setWorkflowSince(items.workflowSince||{});setCanCreate(caps.canCreate)
   // Surat yang DITUJUKAN ke akun ini dan belum dikonfirmasi diterima. Sumbernya
   // distribusi, bukan register, jadi harus diambil terpisah — register tidak
   // tahu apa-apa soal siapa yang dituju. Kegagalannya sengaja ditelan: penanda
@@ -239,7 +287,7 @@ export default function SuratMasuk({initialID,initialCreate}:{initialID?:string;
     <div className="sdl-sm-r5f6__toolbar-actions"><button type="button" className="btn" onClick={()=>beginUpload(detail?.status==='registered'?detail.id:undefined)}>Upload Lampiran</button><button className="btn primary" disabled={!canCreate||busy} title={canCreate?'Buat draft surat masuk':'Tidak ada izin membuat surat'} onClick={beginCreate}>+ Tambah Surat</button></div>
    </div>
    {limited&&<p className="sm-hint">Daftar dibatasi 200 surat terbaru sesuai akses akun. Surat lama dapat dicari melalui kolom pencarian.</p>}
-   <div className="table-scroll"><table className="data-table"><thead><tr><th>Agenda</th><th>Nomor Surat</th><th>Surat Dari</th><th>Tanggal Surat</th><th>Status</th><th>Aksi</th></tr></thead><tbody>{list.map(i=><tr key={i.id} className={selected===i.id?'sm-selected':''}><td>SM-{new Date(i.createdAt).getFullYear()}-{i.agendaNo}</td><td><span className="sm-title-row"><strong>{i.letterNumber}</strong><DerajatTag value={i.derajat??'biasa'}/></span></td><td>{i.sender}</td><td>{readableDate(i.letterDate)}</td><td><span className={`sm-state ${i.status}`}>{routeLabels[workflowStatuses[i.id]]|| (i.status==='draft'?'Draft':'Terdaftar')}</span>{awaitingIds.has(i.id)&&<span className="sm-awaiting" title="Surat ini ditujukan kepada Anda dan belum dikonfirmasi diterima">Menunggu tindakan Anda</span>}</td><td><div className="sdl-sm-r5f6__row-actions"><button className="btn" type="button" onClick={()=>open(i.id).catch(e=>setError(e instanceof Error?e.message:'Gagal membuka surat'))}>Detail</button>{i.status==='registered'&&<button className="btn" type="button" onClick={()=>beginUpload(i.id)}>Upload</button>}</div></td></tr>)}</tbody></table></div>
+   <div className="table-scroll"><table className="data-table"><thead><tr><th>Agenda</th><th>Nomor Surat</th><th>Surat Dari</th><th>Tanggal Surat</th><th>Status</th><th>Aksi</th></tr></thead><tbody>{list.map(i=><tr key={i.id} className={selected===i.id?'sm-selected':''}><td>SM-{new Date(i.createdAt).getFullYear()}-{i.agendaNo}</td><td><span className="sm-title-row"><strong>{i.letterNumber}</strong><DerajatTag value={i.derajat??'biasa'}/></span></td><td>{i.sender}</td><td>{readableDate(i.letterDate)}</td><td><span className={`sm-state ${i.status}`}>{routeLabels[workflowStatuses[i.id]]|| (i.status==='draft'?'Draft':'Terdaftar')}</span>{awaitingIds.has(i.id)&&<span className="sm-awaiting" title="Surat ini ditujukan kepada Anda dan belum dikonfirmasi diterima">Menunggu tindakan Anda</span>}<KabagWait status={workflowStatuses[i.id]} since={workflowSince[i.id]}/></td><td><div className="sdl-sm-r5f6__row-actions"><button className="btn" type="button" onClick={()=>open(i.id).catch(e=>setError(e instanceof Error?e.message:'Gagal membuka surat'))}>Detail</button>{i.status==='registered'&&<button className="btn" type="button" onClick={()=>beginUpload(i.id)}>Upload</button>}</div></td></tr>)}</tbody></table></div>
    {!loading&&list.length===0&&<div className="sm-empty">Belum ada surat yang bisa ditampilkan.</div>}{loading&&<div className="sm-empty">Memuat daftar surat...</div>}
   </section>
   {detail&&<section className="panel sm-panel"><div className="sm-section-title sdl-sm-r5f6__detail-head"><div><span className="eyebrow">DETAIL SURAT MASUK</span><span className="sm-title-row"><h3>{detail.letterNumber}</h3><DerajatTag value={detail.derajat??'biasa'}/></span><p>Agenda SM-{new Date(detail.createdAt).getFullYear()}-{detail.agendaNo} · Versi {detail.version} · {routeLabels[intakeRecord?.workflowStatus||'']||(detail.status==='draft'?'Draft':'Terdaftar')}</p></div><div className="sdl-sm-r5f6__row-actions">{canEdit&&<button className="btn" type="button" onClick={beginEdit}>Edit Draft</button>}{detail.status==='registered'&&<button className="btn primary" type="button" onClick={()=>beginUpload(detail.id)}>Upload Lampiran</button>}</div></div>

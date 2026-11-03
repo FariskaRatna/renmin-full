@@ -94,7 +94,10 @@ const urminNav: {id:string; label:string; icon:IconName}[] = [
 ]
 const urminTabs: Record<string,{id:string;label:string}[]> = {
  'surat-masuk':[{id:'daftar',label:'Daftar Surat'},{id:'riwayat',label:'Riwayat Penerimaan'}],
- 'disposisi':[{id:'mine',label:'Tugas Saya'},{id:'issued',label:'Diberikan'},{id:'review',label:'Perlu Review'},{id:'history',label:'Riwayat'}],
+ // R5G3: tab 'history' (Riwayat) diganti 'arsip'. Riwayat per tugas TIDAK
+ // hilang — ia tetap ada di bagian "Riwayat Disposisi" dalam detail tugas,
+ // dan endpoint 117 tetap melayaninya.
+ 'disposisi':[{id:'mine',label:'Tugas Saya'},{id:'issued',label:'Diberikan'},{id:'review',label:'Perlu Review'},{id:'arsip',label:'Arsip'}],
  '__admin':[{id:'users',label:'Pengguna'},{id:'roles',label:'Role & Akses'},{id:'security',label:'Kewenangan'}]
 }
 const defaultUrminTab: Record<string,string>={'surat-masuk':'daftar','disposisi':'mine','__admin':'users'}
@@ -456,7 +459,7 @@ function App() {
           : chosenModule?.id==='surat-masuk' && unit.id==='urmin' ? <SuratMasuk initialID={effectiveScreen.recordID} initialCreate={effectiveScreen.create}/>
           : chosenModule?.id==='usulan' && unit.id==='ren' ? <UsulanR4A/>
           : chosenModule?.id==='realisasi' && unit.id==='ren' ? <BudgetR4A3/>
-          : chosenModule?.id==='disposisi' && unit.id==='urmin' ? <TugasDisposisi key={activeTab||'mine'} currentUserId={account.id} initialID={effectiveScreen.recordID} workspaceTab={(activeTab||'mine') as 'mine'|'issued'|'review'|'history'} onOpenLetter={incomingID=>navigate({view:'workspace',unit:'urmin',menu:'surat-masuk',tab:'daftar',recordID:incomingID})}/>
+          : chosenModule?.id==='disposisi' && unit.id==='urmin' ? <TugasDisposisi key={activeTab||'mine'} currentUserId={account.id} initialID={effectiveScreen.recordID} workspaceTab={(activeTab||'mine') as 'mine'|'issued'|'review'|'arsip'} onOpenLetter={incomingID=>navigate({view:'workspace',unit:'urmin',menu:'surat-masuk',tab:'daftar',recordID:incomingID})}/>
           : chosenModule ? <><div className="panel table-panel"><div className="table-toolbar"><label className="search-box"><Icon name="search" size={17}/><input disabled placeholder="Cari data (tersedia setelah API aktif)" aria-label="Cari data" /></label><Label>0 data tersambung</Label><button className="btn primary" disabled title="Fitur tambah data memerlukan backend dan autentikasi"><Icon name="plus" size={15}/> Tambah Data</button></div><div className="table-scroll"><table className="data-table"><thead><tr>{chosenModule.columns.map(col=><th key={col}>{col}</th>)}</tr></thead></table></div><EmptyState title="Belum ada data operasional" description={`${chosenModule.title} sedang dipersiapkan. Pencarian, tambah/edit dan ekspor baru akan aktif setelah API, permission, dan modul ini selesai.`} icon={chosenModule.icon}/></div><div className="info-strip"><Icon name="info" size={18}/>  </div></>
           : unit.id==='urmin' ? <UrminCommandDashboard accountID={account.id} onOpen={(menu,recordID,create)=>navigate({view:'workspace',unit:'urmin',menu,recordID,create})} onInbox={(distributionID)=>navigate({view:'workspace',unit:'urmin',menu:'disposisi',tab:'mine',recordID:distributionID})} onTask={(taskID)=>navigate({view:'workspace',unit:'urmin',menu:'disposisi',tab:'mine',recordID:taskID})}/>
           : <SmartUnitDashboard unit={unit.id} title={unit.name} accent={unit.accent} onOpen={menu=>navigate({view:'workspace',unit:unit.id,menu})}/>
