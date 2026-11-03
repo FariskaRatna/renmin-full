@@ -1,0 +1,166 @@
+/* R5E UX01 — Portal ringkas; all selectors are scoped to the portal. */
+.brand-symbol { width:42px; height:42px; background:transparent !important; border:0 !important; box-shadow:none !important; flex-shrink:0; }
+.brand-symbol img { width:100%; height:100%; object-fit:contain; border-radius:0; }
+.sdl-logo-fallback {font-weight:900; font-size:14px; letter-spacing:-.06em; color:var(--ink,#203a5d)}
+.brand-words small {letter-spacing:.01em}
+.portal-clean{width:min(1140px,100%);margin:0 auto;padding:32px 0 72px}
+.portal-clean__intro{position:relative;isolation:isolate;overflow:hidden;min-height:258px;border:1px solid #dce6f0;border-radius:22px;display:flex;align-items:center;justify-content:space-between;gap:30px;padding:42px 50px;background:linear-gradient(116deg,#ffffff 0%,#f8fafc 60%,#eef4fb 100%);box-shadow:0 14px 42px rgba(20,43,75,.035)}
+.portal-clean__intro-copy{position:relative;z-index:1;max-width:710px}
+.portal-clean__eyebrow{font-size:11px;letter-spacing:.17em;font-weight:800;color:#a87938}
+.portal-clean__intro h1{font-size:clamp(27px,3.4vw,42px);letter-spacing:-.045em;line-height:1.15;font-weight:800;color:#19304d;margin:13px 0 13px}
+.portal-clean__intro h1 span{color:#b78b4a}
+.portal-clean__intro p{font-size:14px;line-height:1.75;color:#60738b;max-width:565px;margin:0}
+.portal-clean__brand-art{width:152px;height:152px;flex:none;display:grid;place-items:center;border-radius:35px;background:rgba(255,255,255,.64);border:1px solid #e2e8f1;box-shadow:0 15px 40px rgba(24,50,81,.035)}
+.portal-clean__brand-art img{max-width:112px;max-height:112px;width:76%;height:76%;object-fit:contain}
+.portal-clean__actions{display:flex;gap:11px;flex-wrap:wrap;margin-top:23px}
+.portal-clean__actions button{border-radius:10px;display:inline-flex;align-items:center;justify-content:center;gap:9px;min-height:43px;padding:0 17px;font-weight:700;font-size:12px;cursor:pointer;transition:transform .18s ease,box-shadow .18s ease}
+.portal-clean__actions button:hover{transform:translateY(-1px)}
+.portal-clean__primary{background:#223f68;border:1px solid #223f68;color:white;box-shadow:0 6px 14px rgba(30,59,99,.12)}
+.portal-clean__secondary{color:#25436e;background:white;border:1px solid #d9e1eb}
+.portal-clean__units{scroll-margin-top:90px;margin-top:36px}
+.portal-clean__section-head{display:flex;align-items:end;justify-content:space-between;gap:16px;margin-bottom:18px}
+.portal-clean__section-head h2{font-size:23px;color:#1b314c;letter-spacing:-.035em;line-height:1.3;margin:7px 0 0}
+.portal-clean__count{font-size:11px;font-weight:700;color:#647990;border:1px solid #e0e7f0;background:#fff;border-radius:99px;padding:8px 12px}
+.portal-clean__grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.portal-clean__unit{display:flex;align-items:flex-start;flex-direction:column;text-align:left;min-height:206px;border:1px solid #e1e8ef;border-top:3px solid var(--unit,#365879);background:#fff;border-radius:15px;padding:21px 20px;cursor:pointer;box-shadow:0 10px 24px rgba(28,49,80,.025);transition:transform .17s ease,box-shadow .17s ease,border-color .17s ease}
+.portal-clean__unit:not(:disabled):hover{transform:translateY(-3px);box-shadow:0 15px 32px rgba(25,48,79,.085);border-color:#c6d4e4}
+.portal-clean__unit:focus-visible,.portal-clean__actions button:focus-visible,.portal-clean__shortcuts button:focus-visible{outline:3px solid #9dbbe9;outline-offset:3px}
+.portal-clean__unit:disabled{opacity:.58;cursor:not-allowed}
+.portal-clean__unit-icon{display:grid;place-items:center;width:43px;height:43px;border-radius:12px;background:var(--unit-soft,#f1f5fa);color:var(--unit,#365879);margin-bottom:18px}
+.portal-clean__unit strong{font-size:14px;font-weight:800;letter-spacing:-.01em;color:#1a2e48}
+.portal-clean__unit-desc{font-size:12px;line-height:1.6;color:#667993;margin:9px 0 15px;flex:1}
+.portal-clean__unit-action{display:flex;align-items:center;justify-content:space-between;width:100%;font-size:12px;font-weight:750;color:var(--unit,#355779)}
+.portal-clean__shortcuts{margin-top:28px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-top:20px;border-top:1px solid #e3eaf1}
+.portal-clean__shortcuts>span{font-size:12px;color:#718198;margin-right:7px}
+.portal-clean__shortcuts button{display:flex;align-items:center;gap:8px;padding:10px 13px;border:1px solid #dce5ee;background:#fff;border-radius:9px;color:#274565;font-size:12px;font-weight:700;cursor:pointer}
+@media(max-width:1080px){.portal-clean__grid{grid-template-columns:repeat(2,minmax(0,1fr))}.portal-clean{padding-top:20px}}
+@media(max-width:680px){.portal-clean{padding-top:14px;padding-bottom:40px}.portal-clean__intro{padding:27px 23px;min-height:auto;border-radius:17px}.portal-clean__brand-art{width:70px;height:70px;border-radius:17px;position:absolute;right:18px;top:16px;opacity:.23}.portal-clean__intro-copy{max-width:100%}.portal-clean__intro h1{padding-right:18px}.portal-clean__grid{grid-template-columns:1fr}.portal-clean__unit{min-height:160px}.portal-clean__unit-icon{margin-bottom:10px}.portal-clean__units{margin-top:27px}.portal-clean__section-head h2{font-size:21px}.portal-clean__actions{gap:8px}}
+/* Keep the same hierarchy when app-level dark theme is selected. */
+[data-theme="dark"] .portal-clean__intro{background:linear-gradient(115deg,#1c2b41,#23354b);border-color:#374b61}
+[data-theme="dark"] .portal-clean__intro h1,[data-theme="dark"] .portal-clean__section-head h2{color:#edf4ff}
+[data-theme="dark"] .portal-clean__intro p,[data-theme="dark"] .portal-clean__unit-desc{color:#aabacf}
+[data-theme="dark"] .portal-clean__brand-art{background:#2b3c50;border-color:#485c72}
+[data-theme="dark"] .portal-clean__unit,[data-theme="dark"] .portal-clean__count,[data-theme="dark"] .portal-clean__shortcuts button{background:#1e2e41;border-color:#3b5069}
+[data-theme="dark"] .portal-clean__unit strong{color:#eaf1fa}
+[data-theme="dark"] .portal-clean__shortcuts{border-color:#3c4a5d}
+[data-theme="dark"] .portal-clean__secondary{background:#263b52;color:#e9f1fa;border-color:#50637b}
+@media(prefers-reduced-motion:reduce){.portal-clean__unit,.portal-clean__actions button{transition:none}}
+
+
+/* R5E UX02 — Restore original identity. Clean header and anchored footer. */
+.sdl-shell{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}
+.sdl-shell>.portal-main{flex:1 0 auto;width:100%;max-width:none;padding:0 clamp(18px,3vw,52px) 16px;display:flex;flex-direction:column}
+.sdl-shell>.work-layout{flex:1 0 auto;min-height:0}
+.sdl-shell>.sdl-footer{width:100%;margin-top:auto;padding:18px clamp(18px,3vw,52px);min-height:58px;border-top:1px solid var(--border);background:var(--card);flex-shrink:0}
+.sdl-header{gap:22px;padding:0 clamp(16px,2.8vw,44px)}
+.sdl-header .header-left{flex-shrink:0;min-width:0}
+.sdl-header .brand-words small{white-space:nowrap}
+.sdl-header .sdl-nav-clean{margin-left:auto;min-width:0;gap:5px;justify-content:flex-end;flex-wrap:nowrap}
+.sdl-nav-clean .header-text-btn{border-radius:9px;padding:10px 12px;gap:8px;font-size:12px;font-weight:750;white-space:nowrap}
+.sdl-nav-clean .header-text-btn:hover,.sdl-nav-clean .header-text-btn.nav-current{background:var(--subtle);color:var(--ink)}
+.sdl-nav-separator{width:1px;height:25px;background:var(--border);margin:0 7px;flex:none}
+.sdl-nav-menu{position:relative;flex-shrink:0}
+.sdl-nav-menu>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:7px;border-radius:9px;min-height:38px;padding:7px 11px;font-size:12px;font-weight:750;color:var(--ink-2);white-space:nowrap}
+.sdl-nav-menu>summary::-webkit-details-marker{display:none}
+.sdl-nav-menu>summary:hover,.sdl-nav-menu[open]>summary{background:var(--subtle);color:var(--ink)}
+.sdl-nav-menu>summary:focus-visible,.sdl-nav-clean button:focus-visible{outline:3px solid #83a5db;outline-offset:2px}
+.sdl-nav-dropdown{position:absolute;z-index:101;top:calc(100% + 10px);left:0;min-width:207px;background:var(--card);border:1px solid var(--border);border-radius:13px;padding:6px;box-shadow:0 19px 50px rgba(13,29,51,.16)}
+.sdl-nav-dropdown--right{right:0;left:auto}
+.sdl-nav-dropdown button{display:flex;gap:10px;align-items:center;background:transparent;border:0;border-radius:8px;width:100%;padding:11px 12px;text-align:left;color:var(--ink-2);font-size:12px;font-weight:650;white-space:nowrap;cursor:pointer}
+.sdl-nav-dropdown button:hover{background:var(--subtle);color:var(--ink)}
+.sdl-nav-dropdown .sdl-nav-signout{border-top:1px solid var(--border);border-radius:0;margin-top:5px;padding-top:13px}
+.sdl-nav-theme{width:37px;height:37px;border:1px solid var(--border);border-radius:10px}
+.sdl-nav-account>summary{gap:9px;padding:5px 7px}
+.sdl-nav-account .header-self-avatar{width:29px;height:29px;border-radius:50%;object-fit:cover}
+.sdl-nav-account-name{max-width:143px;text-overflow:ellipsis;overflow:hidden;display:block}
+.portal-refined{width:min(1090px,100%);padding:42px 0 35px}
+.portal-refined .portal-clean__intro{min-height:252px;padding:36px 44px;background:radial-gradient(circle at 82% 0%,#304a6c 0%,transparent 36%),linear-gradient(114deg,#101d30,#233c5b);border:0;border-radius:20px;box-shadow:0 15px 35px rgba(19,40,71,.10)}
+.portal-refined .portal-clean__intro h1{font-size:clamp(33px,4.3vw,54px);font-weight:850;color:#fff;letter-spacing:-.045em;line-height:1.13;margin:15px 0 10px}
+.portal-refined .portal-clean__intro h1 span{color:#e4bc79}
+.portal-refined .portal-clean__intro p{font-size:13px;color:#bdcbdb;line-height:1.6}
+.portal-refined .portal-clean__eyebrow{color:#dab47b}
+.portal-refined .portal-clean__brand-art{width:112px;height:112px;border-radius:26px;background:#ffffff13;border-color:#ffffff24;box-shadow:none}
+.portal-refined .portal-clean__brand-art img{max-width:90px;max-height:90px}
+.portal-refined .portal-clean__units{margin-top:29px}
+.portal-refined .portal-clean__section-head{margin-bottom:13px}
+.portal-refined .portal-clean__section-head .portal-clean__eyebrow{color:var(--gold-ink)}
+.portal-refined .portal-clean__section-head h2{font-size:19px;color:var(--ink);margin:5px 0 0}
+.portal-refined .portal-clean__grid{gap:12px}
+.portal-refined .portal-clean__unit{min-height:142px;padding:18px 19px;border-top-width:1px;border-radius:14px;box-shadow:0 7px 22px rgba(21,44,75,.025)}
+.portal-refined .portal-clean__unit-icon{height:36px;width:36px;border-radius:10px;margin-bottom:12px}
+.portal-refined .portal-clean__unit strong{font-size:12px}
+.portal-refined .portal-clean__unit-action{margin-top:auto;padding-top:15px;font-size:11px}
+[data-theme="dark"] .portal-refined .portal-clean__intro{background:radial-gradient(circle at 82% 0%,#304a6c 0%,transparent 36%),linear-gradient(114deg,#101d30,#233c5b)}
+[data-theme="dark"] .portal-refined .portal-clean__intro h1{color:#fff}
+[data-theme="dark"] .portal-refined .portal-clean__intro p{color:#bdcbdb}
+[data-theme="dark"] .portal-refined .portal-clean__section-head h2{color:var(--ink)}
+@media(max-width:1240px){.sdl-header .sdl-nav-clean{gap:2px}.sdl-nav-clean .header-text-btn{padding:9px 8px}.sdl-nav-account-name{max-width:92px}.sdl-header .brand-words small{display:none}}
+@media(max-width:1050px){.sdl-header .brand-words{display:none}.sdl-nav-account-name{display:none}.sdl-nav-clean .header-text-btn{font-size:11px}}
+@media(max-width:770px){.sdl-nav-clean .header-text-btn span,.sdl-nav-menu>summary span:not(.sdl-nav-account-name){display:none}.sdl-nav-clean .header-text-btn{padding:9px}.sdl-nav-menu>summary{padding:9px}.portal-refined{padding-top:24px}.portal-refined .portal-clean__grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:520px){.sdl-header{padding:0 12px;gap:8px}.sdl-nav-clean .header-text-btn{padding:8px 5px}.sdl-nav-separator{margin:0 2px}.sdl-nav-theme{width:32px;height:32px}.sdl-nav-menu>summary{padding:7px 3px}.sdl-nav-clean{gap:1px}.portal-refined .portal-clean__intro{padding:28px 24px;min-height:210px}.portal-refined .portal-clean__brand-art{width:58px;height:58px;opacity:.3;top:16px;right:16px}.portal-refined .portal-clean__brand-art img{max-width:47px;max-height:47px}.portal-refined .portal-clean__intro h1{font-size:clamp(30px,8vw,38px)}.portal-refined .portal-clean__unit{min-height:125px;padding:15px 14px}.portal-refined .portal-clean__section-head h2{font-size:18px}.sdl-shell>.sdl-footer{justify-content:center;text-align:center;gap:3px;padding:14px}}
+@media(prefers-reduced-motion:reduce){.portal-refined .portal-clean__unit{transition:none}}
+
+/* Keep workspace sidebar above footer rather than pushing the footer below viewport. */
+@media(min-width:901px){.sdl-shell>.work-layout .work-sidebar{height:calc(100dvh - 75px - 58px)}}
+@media(max-width:900px){.sdl-shell>.work-layout .work-sidebar{height:calc(100dvh - 75px)}}
+@media(max-width:640px){.sdl-shell>.work-layout .work-sidebar{height:calc(100dvh - 67px)}}
+
+/* R5E UX04A — Footer stays in the visible viewport across all signed-in pages.
+   Reserve identical space below scrollable content to avoid hiding controls. */
+.sdl-shell--active {
+  --sdl-viewport-footer: 54px;
+  padding-bottom: var(--sdl-viewport-footer);
+}
+.sdl-shell--active > .sdl-footer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  height: var(--sdl-viewport-footer);
+  min-height: var(--sdl-viewport-footer);
+  margin: 0;
+  padding: 0 clamp(18px, 3vw, 52px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 16px;
+  z-index: 40;
+  border-top: 1px solid var(--border);
+  background: var(--card);
+}
+.sdl-shell--active > .sdl-footer span { min-width: 0; }
+.sdl-shell--active > .work-layout { min-height: 0; }
+.sdl-shell--active > .portal-main { min-height: 0; }
+@media (min-width: 901px) {
+  .sdl-shell--active > .work-layout .work-sidebar {
+    height: calc(100dvh - 75px - var(--sdl-viewport-footer));
+    max-height: calc(100dvh - 75px - var(--sdl-viewport-footer));
+  }
+}
+@media (max-width: 900px) {
+  .sdl-shell--active > .work-layout .work-sidebar {
+    height: calc(100dvh - 75px - var(--sdl-viewport-footer));
+    max-height: calc(100dvh - 75px - var(--sdl-viewport-footer));
+  }
+}
+@media (max-width: 640px) {
+  .sdl-shell--active { --sdl-viewport-footer: 58px; }
+  .sdl-shell--active > .sdl-footer {
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+    padding: 6px 12px;
+    text-align: center;
+    font-size: 9px;
+  }
+  .sdl-shell--active > .work-layout .work-sidebar {
+    height: calc(100dvh - 67px - var(--sdl-viewport-footer));
+    max-height: calc(100dvh - 67px - var(--sdl-viewport-footer));
+  }
+}
+@media (max-height: 450px) and (max-width: 640px) {
+  .sdl-shell--active { --sdl-viewport-footer: 48px; }
+}

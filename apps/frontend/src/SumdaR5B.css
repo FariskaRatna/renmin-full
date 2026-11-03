@@ -1,0 +1,118 @@
+/* R5B UX01 — component-scoped styles. No changes to shared authentication or app theme. */
+.sumda-r5b{--sm-surface:var(--card,#fff);--sm-ink:var(--ink,#162842);--sm-muted:var(--muted,#71829a);--sm-secondary:var(--ink-2,#4d6079);--sm-border:var(--border,#e4e9f1);--sm-soft:var(--subtle,#f5f7fa);--sm-brand:#244475;--sm-ring:rgba(46,96,165,.13);display:grid;gap:18px;color:var(--sm-ink);width:100%;min-width:0}
+.sumda-r5b *, .sumda-r5b *::before, .sumda-r5b *::after{box-sizing:border-box}
+.sumda-r5b button,.sumda-r5b input,.sumda-r5b select,.sumda-r5b textarea{font:inherit}
+.sumda-r5b button{cursor:pointer}
+.sumda-r5b button:disabled{opacity:.55;cursor:not-allowed}
+.sumda-r5b :is(button,input,select,textarea):focus-visible{outline:3px solid #9cbaf1;outline-offset:2px}
+.sumda-eyebrow{display:block;color:#987b51;font-size:10px;font-weight:850;letter-spacing:1.25px;line-height:1.4}
+.sumda-overview{display:flex;align-items:center;gap:18px;padding:22px 24px;border-radius:16px;border:1px solid var(--sm-border);background:var(--sm-surface);box-shadow:0 8px 28px rgba(19,41,75,.03)}
+.sumda-overview-mark{flex:0 0 54px;width:54px;height:54px;display:grid;place-items:center;border:1px solid #d5dcef;border-radius:15px;color:#2b4c80;background:linear-gradient(145deg,#eff4ff,#e9eefb)}
+.sumda-overview-title{min-width:0;flex:1}
+.sumda-overview-title h2{font-size:19px;font-weight:850;letter-spacing:-.45px;line-height:1.3;margin:5px 0}
+.sumda-overview-title p{color:var(--sm-muted);font-size:12px;line-height:1.6;margin:2px 0 0}
+.sumda-overview-stats{display:flex;gap:12px;flex:0 0 auto}
+.sumda-stat{min-width:128px;padding:10px 17px;border-radius:12px;border:1px solid var(--sm-border);background:var(--sm-soft)}
+.sumda-stat span{display:block;color:var(--sm-muted);font-size:10px;font-weight:700;white-space:nowrap}
+.sumda-stat strong{display:block;margin-top:4px;font-size:23px;font-weight:850;font-variant-numeric:tabular-nums;letter-spacing:-.6px;color:var(--sm-ink)}
+.sumda-card{border-radius:16px;overflow:hidden;background:var(--sm-surface);border:1px solid var(--sm-border);box-shadow:0 10px 32px rgba(22,39,65,.04)}
+.sumda-card-head{padding:22px 24px 18px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.sumda-card-head h3{font-size:18px;letter-spacing:-.35px;line-height:1.35;font-weight:850;margin:5px 0}
+.sumda-card-head p{font-size:12px;color:var(--sm-muted);margin:5px 0 0;line-height:1.5}
+.sumda-button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:42px;padding:10px 15px;border-radius:10px;border:1px solid var(--sm-border);font-size:12px;font-weight:800;white-space:nowrap;background:var(--sm-surface);color:var(--sm-secondary);transition:background .15s,border-color .15s,box-shadow .15s}
+.sumda-button:hover:not(:disabled){background:var(--sm-soft)}
+.sumda-button-primary{background:var(--sm-brand);border-color:var(--sm-brand);color:#fff;box-shadow:0 5px 15px rgba(37,68,116,.16)}
+.sumda-button-primary:hover:not(:disabled){background:#1d385f;border-color:#1d385f;box-shadow:0 6px 18px rgba(37,68,116,.21)}
+.sumda-button-quiet{min-height:38px;padding:8px 11px}
+.sumda-toolbar{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:15px 24px;border-block:1px solid var(--sm-border);background:var(--sm-soft)}
+.sumda-search{display:flex;align-items:center;gap:9px;max-width:525px;min-width:230px;flex:1;min-height:43px;border:1px solid var(--sm-border);border-radius:10px;background:var(--sm-surface);padding:4px 5px 4px 13px;color:var(--sm-muted);margin:0}
+.sumda-r5b .sumda-search input{border:0!important;outline:0!important;box-shadow:none!important;min-width:0;flex:1;width:100%;background:transparent!important;color:var(--sm-ink)!important;font-size:12px;font-weight:500;min-height:30px;padding:3px 0!important;margin:0!important}
+.sumda-search input::placeholder{color:var(--sm-muted);opacity:.92}
+.sumda-search:focus-within{border-color:#88a5d2;box-shadow:0 0 0 3px var(--sm-ring)}
+.sumda-search button{border:0;border-radius:7px;background:var(--sm-brand);color:#fff;padding:8px 14px;min-height:33px;font-size:11px;font-weight:800}
+.sumda-toolbar-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.sumda-r5b .sumda-sort-label{font-size:11px;color:var(--sm-muted);font-weight:700;white-space:nowrap;margin:0}
+.sumda-r5b .sumda-toolbar-controls select{min-height:38px;background:var(--sm-surface);color:var(--sm-ink);border:1px solid var(--sm-border);border-radius:9px;font-size:12px;padding:0 30px 0 10px;max-width:150px}
+.sumda-icon-button{height:38px;width:38px;display:inline-flex;align-items:center;justify-content:center;background:var(--sm-surface);color:var(--sm-secondary);border:1px solid var(--sm-border);border-radius:9px}
+.sumda-icon-button:hover:not(:disabled){background:var(--sm-soft);border-color:#a5b4c9}
+.sumda-inline-note{margin:16px 24px 0;padding:11px 13px;display:flex;align-items:center;gap:8px;border-radius:9px;background:#fff8e8;color:#906523;border:1px solid #f3dfb4;font-size:12px}
+.sumda-table-scroll{width:100%;overflow-x:auto}
+.sumda-table{width:100%;border-collapse:collapse;min-width:870px}
+.sumda-table thead{background:var(--sm-surface)}
+.sumda-table th{text-align:left;padding:14px 15px;color:var(--sm-muted);font-size:10px;font-weight:850;letter-spacing:.6px;text-transform:uppercase;border-bottom:1px solid var(--sm-border);white-space:nowrap}
+.sumda-table th:first-child,.sumda-table td:first-child{padding-left:24px}
+.sumda-table th:last-child,.sumda-table td:last-child{padding-right:24px}
+.sumda-table td{padding:15px;border-bottom:1px solid var(--sm-border);font-size:12px;vertical-align:middle;color:var(--sm-ink)}
+.sumda-table tr:last-child td{border-bottom:0}
+.sumda-table tbody tr:hover{background:var(--sm-soft)}
+.sumda-code{display:inline-block;padding:6px 9px;color:#3b5782;background:#f0f4fb;border-radius:6px;font-size:11px;font-weight:850;white-space:nowrap;font-variant-numeric:tabular-nums}
+.sumda-person-cell{display:flex;align-items:center;gap:10px;min-width:180px}
+.sumda-person-cell strong{font-weight:800;line-height:1.4}
+.sumda-avatar{flex:0 0 35px;width:35px;height:35px;border-radius:10px;background:#edf0f9;border:1px solid #dfe6f4;color:#476392;display:grid;place-items:center;font-size:11px;font-weight:850;letter-spacing:.3px}
+.sumda-secondary-cell{color:var(--sm-secondary)!important;line-height:1.5;max-width:200px}
+.sumda-classification{display:inline-flex;align-items:center;gap:7px;border:1px solid #cce9df;background:#e9f8f1;color:#20785b;border-radius:99px;font-size:11px;font-weight:800;padding:5px 9px}
+.sumda-classification:before{content:'';display:block;width:6px;height:6px;border-radius:50%;background:currentColor}
+.sumda-classification.is-important{color:#a56c20;background:#fff5df;border-color:#f5e2b5}
+.sumda-actions{display:flex;align-items:center;justify-content:flex-end;gap:6px;white-space:nowrap}
+.sumda-actions-title{text-align:right!important}
+.sumda-action{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--sm-border);border-radius:8px;min-height:32px;padding:6px 9px;background:var(--sm-surface);color:var(--sm-secondary);font-size:11px;font-weight:800}
+.sumda-action:hover:not(:disabled){background:var(--sm-soft);border-color:#afbed1}
+.sumda-action-attachment{color:#245487}
+.sumda-action-danger{color:#a34848;min-width:33px;padding:6px}
+.sumda-action-danger:hover:not(:disabled){background:#fff2f1;border-color:#ecc6c3}
+.sumda-list-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 24px;border-top:1px solid var(--sm-border);color:var(--sm-muted);font-size:11px}
+.sumda-list-footer span:first-child{display:flex;align-items:center;gap:8px}
+.sumda-list-footer span:last-child:before{content:'';display:inline-block;width:7px;height:7px;border-radius:50%;background:#25aa7d;margin-right:7px}
+.sumda-empty{min-height:270px;padding:28px 20px 35px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+.sumda-empty-icon{display:grid;place-items:center;width:66px;height:66px;border-radius:20px;background:#eff3fb;border:1px solid #e2e9f6;color:#456792;margin-bottom:15px}
+.sumda-empty h4{font-size:16px;letter-spacing:-.25px;font-weight:850;margin:0 0 7px}
+.sumda-empty p{color:var(--sm-muted);font-size:12px;max-width:440px;line-height:1.7;margin:0 0 20px}
+.sumda-message{display:flex;align-items:center;gap:11px;padding:13px 15px;border-radius:11px;border:1px solid var(--sm-border);font-size:12px;font-weight:700}
+.sumda-message span{flex:1}
+.sumda-message button{background:none;border:0;color:inherit;display:grid;place-items:center;padding:5px}
+.sumda-message-error{background:#fff0f0;border-color:#f0cece;color:#9b3434}
+.sumda-message-success{background:#eafaef;border-color:#cee9d8;color:#1d7851}
+.sumda-footnote{display:flex;align-items:flex-start;gap:10px;color:var(--sm-muted);font-size:11px;line-height:1.65;padding:5px 4px}
+.sumda-footnote svg{flex:none;margin-top:1px}
+.sumda-dialog-backdrop{position:fixed;inset:0;z-index:200;background:rgba(14,27,46,.58);backdrop-filter:blur(3px);display:flex;justify-content:center;align-items:center;padding:25px}
+.sumda-dialog{width:min(780px,100%);max-height:min(90vh,950px);max-height:min(90dvh,950px);overflow:hidden;display:flex;flex-direction:column;border-radius:18px;background:var(--sm-surface);box-shadow:0 35px 80px rgba(0,0,0,.26);color:var(--sm-ink)}
+.sumda-dialog-head{display:flex;align-items:center;gap:15px;padding:23px 28px;border-bottom:1px solid var(--sm-border);flex:none}
+.sumda-dialog-emblem{width:48px;height:48px;border-radius:13px;display:grid;place-items:center;flex:none;background:#ebf0fc;color:#315186}
+.sumda-dialog-head>div:nth-child(2){flex:1;min-width:0}
+.sumda-dialog-head h2{margin:5px 0 4px;font-weight:850;font-size:21px;letter-spacing:-.45px}
+.sumda-dialog-head p{margin:0;color:var(--sm-muted);font-size:12px;line-height:1.5}
+.sumda-dialog-close{display:grid;place-items:center;align-self:flex-start;border:1px solid var(--sm-border);border-radius:9px;width:36px;height:36px;background:var(--sm-surface);color:var(--sm-secondary);flex:none}
+.sumda-dialog-form{padding:0 28px 16px;overflow-y:auto;min-height:0;overscroll-behavior:contain}
+.sumda-form-block{padding:25px 0 22px;border-bottom:1px solid var(--sm-border)}
+.sumda-form-block:last-child{border-bottom:0}
+.sumda-form-section{display:flex;align-items:flex-start;gap:11px;margin-bottom:19px}
+.sumda-form-step{display:grid;place-items:center;width:30px;height:30px;border-radius:9px;background:#e9effa;color:#315287;font-size:11px;font-weight:900;flex:none}
+.sumda-form-section h3{font-size:14px;letter-spacing:-.2px;font-weight:850;margin:1px 0 3px}
+.sumda-form-section p{font-size:11px;color:var(--sm-muted);line-height:1.5;margin:0}
+.sumda-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:17px 18px}
+.sumda-r5b .sumda-field{display:flex;flex-direction:column;gap:8px;min-width:0;margin:0!important;color:var(--sm-secondary);font-weight:800;font-size:12px;line-height:1.35}
+.sumda-field b{color:#be644c}
+.sumda-r5b .sumda-field :is(input,select,textarea){display:block;width:100%;min-width:0;min-height:44px;border:1px solid #cfd8e5!important;border-radius:9px;background:var(--sm-surface)!important;color:var(--sm-ink)!important;padding:10px 13px!important;font-size:13px;font-weight:500;outline:0;box-shadow:0 1px 2px rgba(24,40,70,.025);transition:border-color .15s,box-shadow .15s;margin:0!important}
+.sumda-r5b .sumda-field :is(input,select,textarea):focus{border-color:#6995ce!important;box-shadow:0 0 0 3px var(--sm-ring)}
+.sumda-field input::placeholder,.sumda-field textarea::placeholder{color:#8a9bb0;opacity:1}
+.sumda-r5b .sumda-field select{padding-right:30px!important}
+.sumda-r5b .sumda-field textarea{resize:vertical;min-height:91px}
+.sumda-field-wide{grid-column:1/-1}
+.sumda-classification-help{display:flex;align-items:center;gap:9px;align-self:end;padding:11px 12px;color:#667f9f;background:var(--sm-soft);border-radius:9px;font-size:11px;line-height:1.55}
+.sumda-classification-help svg{flex:none}
+.sumda-dialog-foot{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:16px 28px;border-top:1px solid var(--sm-border);background:var(--sm-surface);flex:none}
+.sumda-dialog-foot>span{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--sm-muted)}
+.sumda-dialog-buttons{display:flex;align-items:center;gap:9px}
+.sumda-button-cancel{min-width:79px}
+.sumda-sr-only{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+:root[data-theme=dark] .sumda-r5b{--sm-brand:#3d659f;--sm-ring:rgba(139,176,237,.18)}
+:root[data-theme=dark] .sumda-r5b :is(.sumda-overview-mark,.sumda-dialog-emblem,.sumda-form-step,.sumda-avatar,.sumda-empty-icon){background:#213555;border-color:#3c5170;color:#acc6f4}
+:root[data-theme=dark] .sumda-r5b .sumda-code{color:#bdd2f0;background:#213655}
+:root[data-theme=dark] .sumda-r5b .sumda-classification{background:#173e32;border-color:#2f5f4b;color:#90dfbc}
+:root[data-theme=dark] .sumda-r5b .sumda-classification.is-important{background:#4d3920;border-color:#755530;color:#e7c486}
+:root[data-theme=dark] .sumda-r5b .sumda-field :is(input,select,textarea){border-color:#465874!important}
+:root[data-theme=dark] .sumda-r5b .sumda-message-success{background:#163d2e;color:#a3e0bd;border-color:#2b694b}
+:root[data-theme=dark] .sumda-r5b .sumda-message-error{background:#4a2328;color:#f9b6b8;border-color:#74383d}
+:root[data-theme=dark] .sumda-r5b .sumda-inline-note{background:#43371f;color:#f1cd80;border-color:#715e31}
+@media(max-width:1050px){.sumda-overview-stats{gap:8px}.sumda-stat{min-width:108px;padding:10px 12px}.sumda-toolbar{flex-wrap:wrap}.sumda-search{max-width:none;flex-basis:100%}.sumda-toolbar-controls{width:100%;justify-content:flex-end}}
+@media(max-width:680px){.sumda-r5b{gap:13px}.sumda-overview{padding:16px;gap:12px;align-items:flex-start;flex-wrap:wrap}.sumda-overview-mark{width:45px;height:45px;flex-basis:45px}.sumda-overview-title{flex-basis:calc(100% - 61px)}.sumda-overview-title h2{font-size:16px}.sumda-overview-stats{width:100%;margin-top:4px}.sumda-stat{flex:1}.sumda-card-head{padding:18px;align-items:stretch}.sumda-card-head>div{flex:1 1 100%}.sumda-card-head>.sumda-button{width:100%}.sumda-toolbar{padding:13px 16px;gap:11px}.sumda-search{min-width:0}.sumda-toolbar-controls{gap:7px}.sumda-table th:first-child,.sumda-table td:first-child{padding-left:17px}.sumda-table th:last-child,.sumda-table td:last-child{padding-right:17px}.sumda-list-footer{padding:13px 16px;flex-wrap:wrap}.sumda-dialog-backdrop{padding:0;align-items:stretch}.sumda-dialog{width:100%;max-height:100vh;max-height:100dvh;border-radius:0}.sumda-dialog-head{padding:17px 18px;gap:11px}.sumda-dialog-head h2{font-size:17px}.sumda-dialog-emblem{width:40px;height:40px}.sumda-dialog-form{padding:0 18px 15px}.sumda-form-grid{grid-template-columns:minmax(0,1fr);gap:14px}.sumda-form-block{padding:20px 0}.sumda-dialog-foot{padding:13px 18px;flex-direction:column;align-items:stretch}.sumda-dialog-buttons{width:100%}.sumda-dialog-buttons>.sumda-button{flex:1}.sumda-dialog-foot>span{justify-content:center}}

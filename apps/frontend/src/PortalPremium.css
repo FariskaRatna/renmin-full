@@ -1,0 +1,391 @@
+/* SIERA DELTA LIMA | R5E UX03 Premium Portal Polish
+   Only premium portal, top navigation and footer styling.
+   No network fonts, no external dependencies, no decorative asset duplication. */
+
+/* Modern premium type stack: uses installed faces, never remote font loading. */
+.portal-refined {
+  --sdl-premium-gold: #d8b576;
+  --sdl-premium-gold-deep: #b48a4e;
+  font-family: "Plus Jakarta Sans", "Inter", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  position: relative;
+  isolation: isolate;
+}
+
+/* Keep the existing spacious landing; soften the large background without noise. */
+.portal-main:has(.portal-refined) {
+  background:
+    radial-gradient(ellipse 680px 430px at 96% 91%, rgba(183, 197, 220, .12), transparent 75%),
+    radial-gradient(ellipse 600px 310px at 4% 9%, rgba(204, 214, 231, .10), transparent 77%),
+    var(--bg);
+}
+.portal-refined .portal-clean__intro {
+  min-height: 256px;
+  border-radius: 16px;
+  padding: clamp(32px, 4vw, 47px);
+  background:
+    radial-gradient(ellipse 490px 300px at 83% 18%, rgba(85, 134, 187, .31), transparent 70%),
+    radial-gradient(ellipse 510px 240px at 75% 120%, rgba(50, 98, 143, .24), transparent 78%),
+    radial-gradient(ellipse 350px 180px at 12% 115%, rgba(202, 159, 101, .09), transparent 80%),
+    linear-gradient(111deg, #0b182c 1%, #152a45 52%, #203b59 78%, #10253d 100%);
+  border: 1px solid rgba(205, 181, 132, .18);
+  box-shadow: 0 18px 44px rgba(22, 42, 71, .14), 0 3px 10px rgba(23, 43, 73, .07);
+  overflow: hidden;
+  isolation: isolate;
+}
+/* A thin architectural mesh: visible only as texture, not an illustration. */
+.portal-refined .portal-clean__intro::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(122deg, transparent 0 79px, rgba(235, 244, 255, .045) 80px, transparent 81px),
+    repeating-linear-gradient(32deg, transparent 0 119px, rgba(235, 244, 255, .026) 120px, transparent 121px);
+  -webkit-mask-image: linear-gradient(90deg, transparent 10%, #000 95%);
+  mask-image: linear-gradient(90deg, transparent 10%, #000 95%);
+}
+.portal-refined .portal-clean__intro::after {
+  content: "";
+  position: absolute;
+  width: clamp(250px, 32vw, 440px);
+  aspect-ratio: 1;
+  right: -64px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 1px solid rgba(231, 210, 177, .12);
+  border-radius: 50%;
+  box-shadow: 0 0 0 49px rgba(217, 230, 249, .035), 0 0 0 108px rgba(217, 230, 249, .018);
+  pointer-events: none;
+  z-index: 0;
+}
+.portal-refined .portal-clean__intro-copy {
+  position: relative;
+  z-index: 3;
+  max-width: min(670px, 70%);
+}
+.portal-refined .portal-clean__eyebrow {
+  color: var(--sdl-premium-gold);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .19em;
+}
+.portal-refined .portal-clean__intro h1 {
+  margin: 15px 0 12px;
+  color: #f8fbff;
+  font-size: clamp(34px, 4.5vw, 54px);
+  font-weight: 850;
+  letter-spacing: -.05em;
+  line-height: 1.115;
+  text-wrap: balance;
+}
+.portal-refined .portal-clean__intro h1 span {
+  color: #e6c58d;
+  background: linear-gradient(110deg, #f2d49a 3%, #ddb46b 64%, #f0cc87);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.portal-refined .portal-clean__intro p {
+  color: #c1cede;
+  font-size: 13px;
+  line-height: 1.8;
+  letter-spacing: .005em;
+}
+/* Official existing logo is a blended watermark, not a sticker in a box. */
+.portal-refined .portal-clean__brand-art {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  right: clamp(36px, 6%, 85px);
+  transform: translateY(-50%);
+  width: clamp(190px, 25%, 290px);
+  height: auto;
+  aspect-ratio: 1;
+  margin: 0;
+  border: 0 !important;
+  border-radius: 0;
+  box-shadow: none !important;
+  background: transparent !important;
+  opacity: .19;
+  overflow: visible;
+  pointer-events: none;
+  filter: saturate(.82);
+}
+.portal-refined .portal-clean__brand-art img {
+  display: block;
+  max-width: none;
+  max-height: none;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border: 0;
+  filter: drop-shadow(0 8px 22px rgba(0,0,0,.10));
+}
+
+/* Four polished cards, a single navy/gold vocabulary instead of pastel tiles. */
+.portal-refined .portal-clean__units { margin-top: 34px; }
+.portal-refined .portal-clean__section-head { margin-bottom: 15px; }
+.portal-refined .portal-clean__section-head .portal-clean__eyebrow { color: #aa7f45; }
+.portal-refined .portal-clean__section-head h2 {
+  font-weight: 800;
+  letter-spacing: -.034em;
+  font-size: 19px;
+  margin-top: 6px;
+}
+.portal-refined .portal-clean__grid { gap: 15px; }
+.portal-refined .portal-clean__unit {
+  position: relative;
+  isolation: isolate;
+  min-height: 158px;
+  padding: 20px 20px 17px;
+  border: 1px solid rgba(202, 213, 227, .78);
+  border-radius: 15px;
+  background: linear-gradient(156deg, rgba(255,255,255,.99), rgba(249,251,254,.97));
+  color: #172b45;
+  box-shadow: 0 12px 34px rgba(20,44,72,.066), 0 2px 5px rgba(20,44,72,.025);
+  overflow: hidden;
+  transition: transform .23s cubic-bezier(.2,.65,.25,1), box-shadow .23s ease, border-color .23s ease, background .23s ease;
+}
+/* Restrained gold glint in place of competing per-unit color stripes. */
+.portal-refined .portal-clean__unit::before {
+  content: "";
+  position: absolute;
+  height: 2px;
+  left: 18px;
+  right: 18px;
+  top: 0;
+  background: linear-gradient(90deg, transparent, rgba(202,160,94,.63), transparent);
+  opacity: .7;
+  pointer-events: none;
+}
+.portal-refined .portal-clean__unit-icon {
+  width: 39px;
+  height: 39px;
+  margin-bottom: 15px;
+  border: 1px solid rgba(194, 166, 119, .23);
+  border-radius: 11px;
+  color: #2d4562;
+  background: linear-gradient(140deg, #f8f5ef, #eef1f5);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.9);
+}
+.portal-refined .portal-clean__unit-icon svg {
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+.portal-refined .portal-clean__unit strong {
+  color: #182d48;
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: .01em;
+}
+.portal-refined .portal-clean__unit-action {
+  color: #55708f;
+  font-weight: 750;
+  margin-top: auto;
+  padding-top: 17px;
+  transition: color .2s ease;
+}
+.portal-refined .portal-clean__unit-action svg { transition: transform .22s ease; }
+@media (hover:hover) and (pointer:fine) {
+  .portal-refined .portal-clean__unit:not(:disabled):hover {
+    transform: translateY(-5px);
+    background: linear-gradient(155deg, #fff, #fafbff);
+    border-color: rgba(188, 149, 92, .43);
+    box-shadow: 0 23px 46px rgba(22, 44, 73, .13), 0 5px 13px rgba(22, 44, 73, .055);
+  }
+  .portal-refined .portal-clean__unit:not(:disabled):hover .portal-clean__unit-action { color: #a87937; }
+  .portal-refined .portal-clean__unit:not(:disabled):hover .portal-clean__unit-action svg { transform: translateX(3px); }
+}
+.portal-refined .portal-clean__unit:focus-visible { outline: 3px solid #c8a36a; outline-offset: 4px; }
+
+/* Premium polish in the shared compact header without changing its structure. */
+.sdl-header .brand-words strong { letter-spacing: .025em; }
+.sdl-nav-clean .header-text-btn,
+.sdl-nav-clean .sdl-nav-menu>summary {
+  transition: background-color .18s ease, color .18s ease;
+}
+.sdl-shell>.sdl-footer {
+  border-top-color: rgba(144,161,182,.16);
+  box-shadow: 0 -3px 15px rgba(34,52,76,.014);
+}
+
+/* Responsive refinements — never overlay text with the watermark. */
+@media (max-width: 1080px) {
+  .portal-refined .portal-clean__grid { gap: 13px; }
+  .portal-refined .portal-clean__intro-copy { max-width: 75%; }
+}
+@media (max-width: 770px) {
+  .portal-refined .portal-clean__intro { min-height: 225px; padding: 30px; }
+  .portal-refined .portal-clean__intro-copy { max-width: 89%; }
+  .portal-refined .portal-clean__brand-art { width: 180px; right: 8px; opacity: .12; }
+  .portal-refined .portal-clean__unit { min-height: 147px; }
+}
+@media (max-width: 520px) {
+  .portal-refined .portal-clean__intro { min-height: 206px; border-radius: 15px; padding: 29px 23px; }
+  .portal-refined .portal-clean__intro h1 { font-size: clamp(31px, 7.8vw, 39px); }
+  .portal-refined .portal-clean__intro-copy { max-width: 100%; }
+  .portal-refined .portal-clean__brand-art { width: 156px; right: -25px; top: 51%; opacity: .08; }
+  .portal-refined .portal-clean__intro::after { right: -165px; }
+  .portal-refined .portal-clean__grid { gap: 10px; }
+  .portal-refined .portal-clean__unit { padding: 16px 14px; min-height: 145px; border-radius: 13px; }
+  .portal-refined .portal-clean__unit-icon { width: 36px; height: 36px; margin-bottom: 13px; }
+  .portal-refined .portal-clean__unit strong { font-size: 11px; }
+  .portal-refined .portal-clean__unit-action { font-size: 10px; }
+}
+/* Dark theme inherits the shared palette with explicit readable premium cards. */
+:root[data-theme="dark"] .portal-refined .portal-clean__intro,
+[data-theme="dark"] .portal-refined .portal-clean__intro {
+  background:
+    radial-gradient(ellipse 490px 300px at 83% 18%, rgba(85,134,187,.29), transparent 70%),
+    radial-gradient(ellipse 510px 240px at 75% 120%, rgba(50,98,143,.23), transparent 78%),
+    linear-gradient(111deg, #081425, #152b46 52%, #1c3856 77%, #0d2139);
+}
+:root[data-theme="dark"] .portal-refined .portal-clean__unit,
+[data-theme="dark"] .portal-refined .portal-clean__unit {
+  background: linear-gradient(145deg, #1c2d42, #172638);
+  color: #e8eff8;
+  border-color: rgba(121, 143, 168, .31);
+  box-shadow: 0 15px 38px rgba(0,0,0,.18);
+}
+:root[data-theme="dark"] .portal-refined .portal-clean__unit strong,
+[data-theme="dark"] .portal-refined .portal-clean__unit strong { color:#eef4fa; }
+:root[data-theme="dark"] .portal-refined .portal-clean__unit-icon,
+[data-theme="dark"] .portal-refined .portal-clean__unit-icon { color:#e1c18c; background:#283950; border-color:#506078; }
+:root[data-theme="dark"] .portal-refined .portal-clean__unit-action,
+[data-theme="dark"] .portal-refined .portal-clean__unit-action { color:#b6c7db; }
+@media (hover:hover) and (pointer:fine) {
+  :root[data-theme="dark"] .portal-refined .portal-clean__unit:not(:disabled):hover,
+  [data-theme="dark"] .portal-refined .portal-clean__unit:not(:disabled):hover {
+    background:linear-gradient(145deg,#233852,#1b2c41);
+    border-color:#9d7a48;
+    box-shadow:0 20px 46px rgba(0,0,0,.24);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .portal-refined .portal-clean__unit,
+  .portal-refined .portal-clean__unit-action,
+  .portal-refined .portal-clean__unit-action svg,
+  .sdl-nav-clean .header-text-btn,
+  .sdl-nav-clean .sdl-nav-menu>summary { transition: none !important; }
+  .portal-refined .portal-clean__unit:not(:disabled):hover,
+  .portal-refined .portal-clean__unit:not(:disabled):hover .portal-clean__unit-action svg { transform: none !important; }
+}
+
+
+/* R5E UX03A — Scale & Color Accents, layered on verified UX03.
+   Retain hero/nav structure; restore four existing inline unit colors.
+   No remote assets, no injected dummy data, no workflow changes. */
+@media (min-width: 1081px) {
+  .portal-refined.portal-clean {
+    width: min(1250px, 100%);
+    padding-top: 44px;
+    padding-bottom: 52px;
+  }
+}
+.portal-refined .portal-clean__intro {
+  min-height: 322px;
+  padding: clamp(42px, 4.2vw, 62px);
+  border-radius: 17px;
+}
+.portal-refined .portal-clean__intro-copy { max-width: min(720px, 72%); }
+.portal-refined .portal-clean__intro h1 {
+  font-size: clamp(39px, 4.25vw, 65px);
+  line-height: 1.10;
+  margin: 17px 0 16px;
+}
+.portal-refined .portal-clean__intro p { font-size: 14px; }
+.portal-refined .portal-clean__brand-art {
+  width: clamp(210px, 28%, 345px);
+  right: clamp(35px, 6%, 91px);
+  opacity: .17;
+}
+.portal-refined .portal-clean__units { margin-top: 42px; }
+.portal-refined .portal-clean__section-head { margin-bottom: 19px; }
+.portal-refined .portal-clean__section-head h2 { font-size: 22px; }
+.portal-refined .portal-clean__grid { gap: clamp(12px, 1.35vw, 19px); }
+.portal-refined .portal-clean__unit {
+  min-height: 213px;
+  padding: 26px 24px 23px;
+  border-top: 3px solid var(--unit, #bc9354);
+  border-radius: 15px;
+  background: radial-gradient(ellipse 240px 150px at 100% 0%, var(--unit-soft, #f9f5ed), transparent 82%),
+              linear-gradient(156deg, #ffffff, #fbfcfe);
+  box-shadow: 0 12px 33px rgba(20, 44, 72, .073), 0 2px 7px rgba(20,44,72,.024);
+}
+/* Per-unit color comes from the existing React unit registry. */
+.portal-refined .portal-clean__unit::before {
+  height: 0;
+  opacity: 0;
+}
+.portal-refined .portal-clean__unit-icon {
+  width: 49px;
+  height: 49px;
+  margin-bottom: 22px;
+  border-radius: 13px;
+  color: var(--unit, #375777);
+  background: var(--unit-soft, #f4f6fa);
+  border-color: transparent;
+}
+.portal-refined .portal-clean__unit-icon svg { width: 23px; height: 23px; stroke-width: 1.75; }
+.portal-refined .portal-clean__unit strong { font-size: 14px; letter-spacing: .005em; }
+.portal-refined .portal-clean__unit-action {
+  color: var(--unit, #536f8c);
+  font-size: 12px;
+  padding-top: 24px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .portal-refined .portal-clean__unit:not(:disabled):hover {
+    transform: translateY(-5px);
+    border-color: var(--unit, #bc9354);
+    background: radial-gradient(ellipse 260px 180px at 100% 0%, var(--unit-soft, #faf8f4), transparent 88%), #fff;
+    box-shadow: 0 22px 48px rgba(22,44,73,.115), 0 5px 13px rgba(22,44,73,.045);
+  }
+  .portal-refined .portal-clean__unit:not(:disabled):hover .portal-clean__unit-action {
+    color: var(--unit, #a87937);
+  }
+}
+.portal-refined .portal-clean__unit:focus-visible { outline-color: var(--unit, #c8a36a); }
+/* Keep per-unit identity against dark-theme overrides in UX03. */
+[data-theme="dark"] .portal-refined .portal-clean__unit {
+  background: radial-gradient(ellipse 200px 140px at 100% 0%, rgba(255,255,255,.047), transparent 92%),
+              linear-gradient(145deg,#1c2d42,#172638);
+  border-top-color: var(--unit, #bc9354);
+}
+[data-theme="dark"] .portal-refined .portal-clean__unit-icon {
+  background: var(--unit-soft, #283950);
+  color: var(--unit, #e1c18c);
+  border-color: transparent;
+}
+[data-theme="dark"] .portal-refined .portal-clean__unit-action { color: var(--unit, #b6c7db); }
+@media (hover: hover) and (pointer: fine) {
+  [data-theme="dark"] .portal-refined .portal-clean__unit:not(:disabled):hover {
+    border-color: var(--unit, #bc9354);
+    background: linear-gradient(145deg,#253950,#1b2c41);
+  }
+}
+@media (max-width: 1080px) {
+  .portal-refined .portal-clean__intro { min-height: 284px; padding: 39px; }
+  .portal-refined .portal-clean__intro h1 { font-size: clamp(36px, 4.5vw, 54px); }
+  .portal-refined .portal-clean__unit { min-height: 185px; padding: 23px 22px; }
+  .portal-refined .portal-clean__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 770px) {
+  .portal-refined .portal-clean__intro { min-height: 248px; padding: 32px; }
+  .portal-refined .portal-clean__intro-copy { max-width: 87%; }
+  .portal-refined .portal-clean__intro h1 { font-size: clamp(35px, 5.4vw, 46px); }
+  .portal-refined .portal-clean__brand-art { width: 175px; right: 2px; opacity: .10; }
+  .portal-refined .portal-clean__units { margin-top: 32px; }
+  .portal-refined .portal-clean__unit { min-height: 170px; padding: 20px; }
+}
+@media (max-width: 520px) {
+  .portal-refined .portal-clean__intro { min-height: 226px; padding: 28px 23px; }
+  .portal-refined .portal-clean__intro-copy { max-width: 100%; }
+  .portal-refined .portal-clean__intro h1 { font-size: clamp(31px, 8vw, 39px); }
+  .portal-refined .portal-clean__brand-art { width: 150px; right: -25px; opacity: .07; }
+  .portal-refined .portal-clean__grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .portal-refined .portal-clean__unit { min-height: 150px; padding: 19px 20px; }
+  .portal-refined .portal-clean__unit-icon { width: 41px; height: 41px; margin-bottom: 12px; }
+  .portal-refined .portal-clean__unit strong { font-size: 13px; }
+  .portal-refined .portal-clean__unit-action { font-size: 11px; padding-top: 14px; }
+}

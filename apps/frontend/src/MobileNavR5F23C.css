@@ -1,0 +1,18 @@
+/* R5F23C. Only rendered when users open the mobile menu on non-workspace pages. */
+.sdl-r5f23c-nav-backdrop,.sdl-r5f23c-nav-drawer{display:none}
+@media(max-width:760px){
+ .sdl-r5f23c-nav-backdrop{display:block;position:fixed;inset:0;z-index:101;border:0;background:rgba(4,12,28,.63);backdrop-filter:blur(2px)}
+ .sdl-r5f23c-nav-drawer{display:flex;flex-direction:column;position:fixed;z-index:102;inset:0 auto 0 0;width:min(82vw,310px);height:100dvh;overflow-y:auto;background:#fff;color:#213852;box-shadow:16px 0 55px rgba(0,0,0,.22);padding:22px 15px calc(22px + env(safe-area-inset-bottom));animation:sdl-drawer-in .16s ease-out}
+ .sdl-shell[data-theme="dark"] .sdl-r5f23c-nav-drawer{background:#1c2e45;color:#eef3fa}
+ .sdl-r5f23c-nav-heading{display:flex;align-items:center;justify-content:space-between;padding:0 8px 16px;border-bottom:1px solid rgba(126,148,176,.23);font-size:15px}
+ .sdl-r5f23c-nav-heading button{height:36px;width:36px;display:grid;place-items:center;border:1px solid rgba(130,152,180,.35);border-radius:9px;background:transparent;color:inherit}
+ .sdl-r5f23c-nav-drawer nav{display:flex;flex-direction:column;gap:5px;margin-top:14px}
+ .sdl-r5f23c-nav-drawer nav>button{appearance:none;display:flex;align-items:center;gap:13px;border:1px solid transparent;background:transparent;border-radius:10px;padding:12px 11px;text-align:left;min-height:44px;color:inherit;font-size:13px;font-weight:730;cursor:pointer}
+ .sdl-r5f23c-nav-drawer nav>button:hover,.sdl-r5f23c-nav-drawer nav>button.is-active{background:#eef2f8;color:#1d3d60}
+ .sdl-shell[data-theme="dark"] .sdl-r5f23c-nav-drawer nav>button:hover,.sdl-shell[data-theme="dark"] .sdl-r5f23c-nav-drawer nav>button.is-active{background:#2b4361;color:#fff}
+ .sdl-r5f23c-nav-divider{height:1px;background:rgba(126,148,176,.22);margin:7px 5px}
+ .sdl-r5f23c-nav-count{margin-left:auto;display:grid;place-items:center;min-width:22px;height:22px;border-radius:10px;background:#c99855;color:#172f47;padding:0 6px;font-size:11px}
+ .sdl-r5f23c-nav-drawer nav>.sdl-r5f23c-nav-logout{color:#b25452}
+ .sdl-r5f23c-nav-drawer button:focus-visible{outline:3px solid #cca76d;outline-offset:2px}
+ @keyframes sdl-drawer-in{from{transform:translateX(-25px);opacity:.6}to{transform:translateX(0);opacity:1}}
+}

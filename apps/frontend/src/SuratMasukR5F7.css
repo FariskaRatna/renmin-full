@@ -1,0 +1,28 @@
+/* R5F7 - flexible intake, reuse R5F6 modal patterns. */
+.sdl-sm-r5f7__dialog{width:min(800px,100%)}
+.sdl-sm-r5f7__fields h3{font-size:13px;color:var(--ink);margin:6px 0 -3px;font-weight:760;border-bottom:1px solid var(--border);padding-bottom:8px}
+.sdl-sm-r5f7__choices{margin:0;padding:12px 14px;border:1px solid var(--border);border-radius:11px;display:grid;gap:12px}
+.sdl-sm-r5f7__choices legend{font-size:12px;font-weight:750;padding:0 6px}
+.sdl-sm-r5f7__choices label{display:flex;align-items:center;gap:10px;cursor:pointer}
+.sdl-sm-r5f7__choices input{accent-color:var(--unit,#2c777b)}
+.sdl-sm-r5f7__next,.sdl-sm-r5f7__summary{border:1px solid var(--border);padding:12px 14px;border-radius:11px;background:var(--subtle);color:var(--ink);font-size:12px;line-height:1.6}
+.sdl-sm-r5f7__summary{display:flex;flex-direction:column;gap:6px;margin:15px 0}
+.sdl-sm-r5f7__summary span{color:var(--muted)}
+.sdl-sm-r5f7__confirm{z-index:370}
+@media(max-width:700px){.sdl-sm-r5f7__dialog{width:100%}.sdl-sm-r5f7__dialog .sdl-sm-r5f6__actions{flex-wrap:wrap}.sdl-sm-r5f7__dialog .sdl-sm-r5f6__actions .btn{flex:1 1 110px}}
+
+/* R5G1 — tag derajat, menempel di samping judul; bukan kolom tersendiri.
+   Ukuran, radius, dan warnanya disamakan dengan badge prioritas Arahan
+   (.sdl-arahan__priority) supaya dua modul tidak terasa dari aplikasi berbeda.
+   Teksnya tetap ditulis, bukan warna saja — warna sendirian tidak terbaca oleh
+   pengguna buta warna. */
+.sm-title-row{display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap;min-width:0}
+.sm-title-row h3{margin:0}
+.sm-derajat{display:inline-flex;border-radius:6px;padding:5px 8px;font-size:9px;font-weight:850;letter-spacing:.5px;white-space:nowrap;background:var(--subtle);color:var(--muted)}
+.sm-derajat.kilat{background:#bb353d;color:#fff}
+
+/* Penanda surat yang ditujukan ke akun ini dan belum dikonfirmasi diterima.
+   Ditaruh di bawah badge status, bukan di sampingnya, supaya kolom Status
+   tidak melebar dan merusak lebar tabel pada layar sempit. */
+.sm-awaiting{display:block;margin-top:5px;font-size:10px;font-weight:800;line-height:1.3;color:#8c651d}
+@media(prefers-color-scheme:dark){.sm-awaiting{color:#e0b964}}

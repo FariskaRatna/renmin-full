@@ -1,0 +1,12 @@
+/* R5F5: scoped URMIN navigation and contextual tabs. */
+.sdl-r5f5-tabs{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin:0 0 22px;padding:5px;border:1px solid var(--border);border-radius:13px;background:var(--subtle);width:fit-content;max-width:100%}
+.sdl-r5f5-tab{min-height:38px;border:1px solid transparent;border-radius:9px;background:transparent;color:var(--muted);font:inherit;font-size:12px;font-weight:750;padding:8px 15px;cursor:pointer;white-space:normal;text-align:center}
+.sdl-r5f5-tab:hover{background:var(--card);color:var(--ink)}
+.sdl-r5f5-tab.is-active{background:var(--card);color:var(--ink);border-color:var(--border);box-shadow:0 2px 8px rgba(14,30,48,.07)}
+.sdl-r5f5-tab:focus-visible{outline:3px solid var(--unit,#4585a5);outline-offset:2px}
+.sdl-r5f5-tabs--detail{margin-top:18px;margin-bottom:0}
+.sdl-r5f5-context{margin:0 0 15px;color:var(--muted);font-size:12px;line-height:1.6}
+.sdl-r5f5-badge{margin-left:auto;padding:3px 7px;border-radius:99px;background:#ffe4b7;color:#815315;font-size:10px;font-weight:850}
+.sdl-r5f5-admin-note{padding:25px}.sdl-r5f5-admin-note h2{font-size:17px;margin:0 0 9px}.sdl-r5f5-admin-note p{max-width:660px;color:var(--muted);line-height:1.7;font-size:13px}.sdl-r5f5-admin-note .btn{margin-top:12px}
+@media(max-width:700px){.sdl-r5f5-tabs{width:100%}.sdl-r5f5-tab{flex:1 1 auto;padding:9px 12px}}
+@media(prefers-reduced-motion:reduce){.sdl-r5f5-tab{transition:none}}

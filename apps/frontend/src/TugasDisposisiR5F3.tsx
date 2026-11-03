@@ -1,0 +1,368 @@
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
+import { confirmDialog, showToast } from './UIFeedback'
+import { LeadershipMonitorR3D3 } from './LeadershipR3D3'
+import { DisposisiAutoCompleteR5F20 } from './DisposisiAutoCompleteR5F20'
+import './TugasDisposisiR5F3.css'
+
+type TaskStatus = 'pending' | 'in_progress' | 'completed'
+type ReviewStatus = 'not_ready' | 'awaiting_review' | 'approved' | 'revision_requested'
+type SLAStatus = 'on_track' | 'overdue' | 'completed_on_time' | 'completed_late' | 'unknown'
+type Task = {
+  id: string; distributionId: string; incomingId: string; letterNumber: string; subject: string
+  classification: string; unit: string; issuerId: string; issuerName: string
+  assigneeId: string; assigneeName: string; instruction: string; dueDate: string
+  status: TaskStatus; completionNote: string | null; createdAt: string; acceptedAt: string | null
+  completedAt: string | null; version: number; reviewStatus: ReviewStatus
+  reviewReason: string | null; reviewerName: string | null; reviewedAt: string | null
+  slaStatus: SLAStatus; parentTaskId: string | null; depth: number
+}
+type Event = { action: string; actor: string; reason: string; at: string }
+type Candidate = { id: string; name: string; unit: string }
+type TaskList = { items: Task[]; pending: number; overdue: number; limited?: boolean }
+// Bentuk baris dari /urmin/distribution-inbox/ — surat yang ditujukan ke akun
+// ini. 'sent' = belum dikonfirmasi diterima, jadi masih menunggu tindakan.
+type IncomingLetter = {
+  id: string; incomingId: string; agendaNo: number; letterNumber: string; subject: string
+  classification: string; unit: string; status: 'sent' | 'received'; sentAt: string; reason: string
+}
+type Detail = { item: Task; events: Event[] }
+type OwnerFilter = 'all' | 'mine' | 'issued'
+type StatusFilter = 'all' | 'pending' | 'in_progress' | 'completed' | 'awaiting_review'
+
+const BASE = '/api/v1/urmin/dispositions'
+const unitNames: Record<string, string> = { urmin: 'Urmin', subbagren: 'Subbagren', subbagsumda: 'Subbagsumda', subbagbinfung: 'Subbagbinfung' }
+const statusNames: Record<TaskStatus, string> = { pending: 'Menunggu Diterima', in_progress: 'Dalam Proses', completed: 'Selesai' }
+const reviewNames: Record<ReviewStatus, string> = { not_ready: 'Belum Direview', awaiting_review: 'Menunggu Review', approved: 'Disetujui', revision_requested: 'Perlu Tindak Lanjut' }
+const slaNames: Record<SLAStatus, string> = { on_track: 'Dalam Target', overdue: 'Terlambat', completed_on_time: 'Tepat Waktu', completed_late: 'Selesai Terlambat', unknown: '—' }
+const errText = (e: unknown) => e instanceof Error ? e.message : 'Gagal memproses permintaan. Silakan coba lagi.'
+function datetime(raw: string | null) {
+  if (!raw) return '—'
+  const date = new Date(raw)
+  return Number.isFinite(date.getTime()) ? date.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'
+}
+function dateOnly(raw: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw
+  const date = new Date(`${raw}T00:00:00Z`)
+  return Number.isFinite(date.getTime()) ? date.toLocaleDateString('id-ID', { timeZone: 'UTC', day: '2-digit', month: 'long', year: 'numeric' }) : raw
+}
+async function api<T>(url: string, method: 'GET' | 'POST' = 'GET', body?: Record<string, unknown>): Promise<T> {
+  const headers: Record<string, string> = {}
+  if (method === 'POST') {
+    const csrf = await fetch('/api/v1/auth/csrf', { credentials: 'same-origin', cache: 'no-store' })
+    if (!csrf.ok) throw new Error('Sesi berakhir. Silakan masuk kembali.')
+    const { csrfToken } = await csrf.json() as { csrfToken: string }
+    if (!csrfToken) throw new Error('Sesi tidak tersedia. Silakan masuk kembali.')
+    headers['Content-Type'] = 'application/json'
+    headers['X-CSRF-Token'] = csrfToken
+  }
+  const response = await fetch(url, { method, credentials: 'same-origin', cache: 'no-store', headers, body: body ? JSON.stringify(body) : undefined })
+  if (!response.ok) {
+    if (response.status === 401) throw new Error('Sesi berakhir. Silakan masuk kembali.')
+    if (response.status === 403 || response.status === 404) throw new Error('Tugas tidak tersedia atau Anda tidak memiliki akses.')
+    if (response.status === 409) throw new Error('Status tugas berubah. Perbarui data sebelum mencoba lagi.')
+    throw new Error('Permintaan belum berhasil. Silakan coba lagi.')
+  }
+  return response.json() as Promise<T>
+}
+function eventLabel(value: string) {
+  const names: Record<string, string> = { issued: 'Diterbitkan', accepted: 'Diterima', completed: 'Diselesaikan', approved: 'Hasil Disetujui', revision_requested: 'Perlu Tindak Lanjut', forwarded: 'Diteruskan' }
+  return names[value] ?? 'Pembaruan'
+}
+
+export default function TugasDisposisiR5F3({ currentUserId, initialID, workspaceTab, onOpenLetter, onOpenInbox }: { currentUserId: string; initialID?: string; workspaceTab?: 'mine'|'issued'|'review'|'history'; onOpenLetter?: (incomingID: string) => void; onOpenInbox?: () => void }) {
+  const [items, setItems] = useState<Task[]>([])
+  // Surat yang ditujukan ke akun ini tapi BELUM menjadi tugas disposisi.
+  // Daftar tugas menyaring assigneeId, jadi surat yang baru tiba tidak pernah
+  // muncul di sana — padahal justru itu yang menunggu tindakan. Keduanya
+  // ditampilkan dalam satu tabel supaya tidak ada dua daftar yang harus dicek.
+  const [incomingLetters, setIncomingLetters] = useState<IncomingLetter[]>([])
+  const [summary, setSummary] = useState({ pending: 0, overdue: 0, limited: false })
+  const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [query, setQuery] = useState('')
+  const [ownerFilter, setOwnerFilter] = useState<OwnerFilter>('all')
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [sortOrder, setSortOrder] = useState<'latest'|'due'>('latest')
+  const [selectedID, setSelectedID] = useState('')
+  const [detail, setDetail] = useState<Detail | null>(null)
+  const [detailState, setDetailState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [reason, setReason] = useState('')
+  const [forwardPeople, setForwardPeople] = useState<Candidate[] | null>(null)
+  const [forwardTo, setForwardTo] = useState('')
+  const [forwardInstruction, setForwardInstruction] = useState('')
+  const [forwardDue, setForwardDue] = useState('')
+  const [busy, setBusy] = useState(false)
+  const listSeq = useRef(0)
+  const detailSeq = useRef(0)
+  const selectedRef = useRef('')
+  const deepLinkHandled = useRef<string | undefined>(undefined)
+  const mounted = useRef(true)
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null)
+  const dialogRef = useRef<HTMLElement | null>(null)
+
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false; listSeq.current += 1; detailSeq.current += 1 }
+  }, [])
+
+  const refreshList = useCallback(async () => {
+    const seq = ++listSeq.current
+    setLoadState('loading')
+    try {
+      const result = await api<TaskList>(`${BASE}/`)
+      if (!mounted.current || seq !== listSeq.current) return
+      setItems(result.items ?? [])
+      setSummary({ pending: result.pending ?? 0, overdue: result.overdue ?? 0, limited: Boolean(result.limited) })
+      setLoadState('ready')
+      // Surat masuk diambil TERPISAH dan kegagalannya tidak menggagalkan daftar
+      // tugas: dua sumber berbeda, dan satu yang kosong tidak boleh membuat
+      // seluruh layar tampil sebagai error.
+      try {
+        const inbox = await api<{ items: IncomingLetter[] }>('/api/v1/urmin/distribution-inbox/')
+        if (!mounted.current || seq !== listSeq.current) return
+        setIncomingLetters(inbox.items ?? [])
+      } catch { if (mounted.current && seq === listSeq.current) setIncomingLetters([]) }
+    } catch (error) {
+      if (!mounted.current || seq !== listSeq.current) return
+      setLoadState('error')
+      showToast(errText(error), 'error')
+    }
+  }, [])
+
+  const clearDetail = useCallback(() => {
+    ++detailSeq.current
+    selectedRef.current = ''
+    setSelectedID('')
+    setDetail(null)
+    setDetailState('idle')
+    setForwardPeople(null)
+    setReason('')
+    setForwardTo('')
+    setForwardDue('')
+    setForwardInstruction('')
+  }, [])
+
+  const openDetail = useCallback(async (id: string, resetForm = true) => {
+    if (!id) return
+    const seq = ++detailSeq.current
+    selectedRef.current = id
+    setSelectedID(id)
+    setDetailState('loading')
+    setDetail(null)
+    setForwardPeople(null)
+    if (resetForm) {
+      setReason(''); setForwardTo(''); setForwardDue(''); setForwardInstruction('')
+    }
+    try {
+      const loaded = await api<Detail>(`${BASE}/${encodeURIComponent(id)}/history`)
+      if (!mounted.current || seq !== detailSeq.current || selectedRef.current !== id) return
+      setDetail(loaded)
+      setDetailState('ready')
+      const task = loaded.item
+      if (task.assigneeId === currentUserId && task.status === 'in_progress' && task.depth < 2) {
+        try {
+          const people = await api<{ items: Candidate[] }>(`${BASE}/${encodeURIComponent(id)}/forward-candidates`)
+          if (mounted.current && seq === detailSeq.current && selectedRef.current === id) setForwardPeople(people.items ?? [])
+        } catch {
+          // Forward is optional and permission-gated; do not expose unauthorized candidates.
+        }
+      }
+    } catch (error) {
+      if (!mounted.current || seq !== detailSeq.current || selectedRef.current !== id) return
+      setDetailState('error')
+      showToast(errText(error), 'error')
+    }
+  }, [currentUserId])
+
+  // Detail is a real modal, not a second full-width card under the table.
+  useEffect(() => {
+    if (!selectedID) return
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    closeButtonRef.current?.focus()
+    return () => {
+      document.body.style.overflow = previousOverflow
+      if (previousFocus?.isConnected) previousFocus.focus()
+    }
+  }, [selectedID])
+  useEffect(() => {
+    if (!selectedID || busy) return
+    const handleModalKey = (event: KeyboardEvent) => {
+      // Global confirmation dialogs take keyboard priority over this detail modal.
+      if (document.querySelectorAll('[aria-modal="true"]').length > 1) return
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        clearDetail()
+        return
+      }
+      if (event.key !== 'Tab' || !dialogRef.current) return
+      const focusable = Array.from(dialogRef.current.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'))
+        .filter(el => el.getClientRects().length > 0)
+      if (!focusable.length) { event.preventDefault(); return }
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && (document.activeElement === first || !dialogRef.current.contains(document.activeElement))) { event.preventDefault(); last.focus() }
+      else if (!event.shiftKey && (document.activeElement === last || !dialogRef.current.contains(document.activeElement))) { event.preventDefault(); first.focus() }
+    }
+    document.addEventListener('keydown', handleModalKey)
+    return () => document.removeEventListener('keydown', handleModalKey)
+  }, [selectedID, busy, clearDetail])
+
+  useEffect(() => { void refreshList() }, [refreshList])
+  useEffect(() => {
+    if (!initialID || deepLinkHandled.current === initialID) return
+    deepLinkHandled.current = initialID
+    void openDetail(initialID)
+  }, [initialID, openDetail])
+
+  async function refresh() {
+    await refreshList()
+    if (selectedRef.current) await openDetail(selectedRef.current, false)
+  }
+  async function action(task: Task, choice: 'accept' | 'complete' | 'approved' | 'revision_requested') {
+    const note = reason.trim()
+    if (busy || note.length < 8 || note.length > 1000 || selectedRef.current !== task.id) return
+    const labels: Record<typeof choice, string> = { accept: 'Terima Tugas', complete: 'Selesaikan Tugas', approved: 'Setujui Hasil', revision_requested: 'Perlu Tindak Lanjut' }
+    const label = labels[choice]
+    const ok = await confirmDialog(`${label} untuk surat ${task.letterNumber}?`, { confirmLabel: label })
+    if (!ok || selectedRef.current !== task.id || !mounted.current) return
+    setBusy(true)
+    try {
+      if (choice === 'accept' || choice === 'complete') await api(`${BASE}/${task.id}/${choice}`, 'POST', { reason: note, version: task.version })
+      else await api(`${BASE}/${task.id}/review`, 'POST', { decision: choice, reason: note, version: task.version })
+      showToast(choice === 'accept' ? 'Tugas berhasil diterima.' : choice === 'complete' ? 'Hasil tugas berhasil dicatat.' : choice === 'approved' ? 'Hasil tugas disetujui.' : 'Review berhasil dicatat.', 'success')
+      setReason('')
+      await refreshList()
+      if (selectedRef.current === task.id) await openDetail(task.id)
+    } catch (error) {
+      showToast(errText(error), 'error')
+      if (selectedRef.current === task.id) await openDetail(task.id, false)
+    } finally { if (mounted.current) setBusy(false) }
+  }
+  async function forward(event: FormEvent, task: Task) {
+    event.preventDefault()
+    if (busy || !forwardTo || forwardInstruction.trim().length < 8 || forwardInstruction.trim().length > 1000 || !forwardDue || forwardDue > task.dueDate || selectedRef.current !== task.id) return
+    const ok = await confirmDialog(`Teruskan disposisi ${task.letterNumber} kepada petugas terpilih?`, { confirmLabel: 'Teruskan Tugas' })
+    if (!ok || selectedRef.current !== task.id || !mounted.current) return
+    setBusy(true)
+    try {
+      await api(`${BASE}/${task.id}/forward`, 'POST', { assigneeId: forwardTo, instruction: forwardInstruction.trim(), dueDate: forwardDue, version: task.version })
+      showToast('Disposisi berhasil diteruskan.', 'success')
+      setForwardTo(''); setForwardDue(''); setForwardInstruction('')
+      await refreshList()
+      if (selectedRef.current === task.id) await openDetail(task.id)
+    } catch (error) {
+      showToast(errText(error), 'error')
+      if (selectedRef.current === task.id) await openDetail(task.id, false)
+    } finally { if (mounted.current) setBusy(false) }
+  }
+
+  const normalQuery = query.trim().toLocaleLowerCase('id-ID')
+  const visible = items.filter(task => {
+    if (workspaceTab === 'mine' && task.assigneeId !== currentUserId) return false
+    if (workspaceTab === 'issued' && task.issuerId !== currentUserId) return false
+    if (workspaceTab === 'review' && (task.issuerId !== currentUserId || task.reviewStatus !== 'awaiting_review')) return false
+    if (workspaceTab === 'history' && (task.status !== 'completed' || task.reviewStatus === 'awaiting_review')) return false
+    if (!workspaceTab && ownerFilter === 'mine' && task.assigneeId !== currentUserId) return false
+    if (!workspaceTab && ownerFilter === 'issued' && task.issuerId !== currentUserId) return false
+    if (workspaceTab !== 'review' && workspaceTab !== 'history' && (statusFilter === 'awaiting_review' ? task.reviewStatus !== 'awaiting_review' : statusFilter !== 'all' && task.status !== statusFilter)) return false
+    if (!normalQuery) return true
+    return [task.letterNumber, task.subject, task.issuerName, task.assigneeName, task.instruction, task.unit].some(value => value.toLocaleLowerCase('id-ID').includes(normalQuery))
+  })
+  const displayed = [...visible].sort((a, b) => {
+    if (sortOrder === 'due') return a.dueDate.localeCompare(b.dueDate) || b.createdAt.localeCompare(a.createdAt)
+    return b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id)
+  })
+  // Hanya di tab "Tugas Saya", dan hanya yang berstatus 'sent' — begitu surat
+  // dikonfirmasi diterima ia berhenti menunggu, dan menampilkannya terus akan
+  // membuat daftar tidak pernah habis. Filter status tugas sengaja tidak
+  // diterapkan ke sini: 'pending'/'in_progress'/'completed' adalah keadaan
+  // tugas, dan surat ini belum punya satu pun di antaranya.
+  const letterQuery = query.trim().toLowerCase()
+  const letterRows = (workspaceTab === 'mine' || !workspaceTab)
+    ? incomingLetters
+        .filter(l => l.status === 'sent')
+        .filter(l => !letterQuery || [l.letterNumber, l.subject, l.unit].some(v => v.toLowerCase().includes(letterQuery)))
+        .sort((a, b) => b.sentAt.localeCompare(a.sentAt))
+    : []
+  const reviewCount = items.filter(t => t.issuerId === currentUserId && t.reviewStatus === 'awaiting_review').length
+  const task = detail?.item ?? null
+  const canAct = task?.assigneeId === currentUserId && (task.status === 'pending' || task.status === 'in_progress')
+  const canReview = task?.issuerId === currentUserId && task.status === 'completed' && task.reviewStatus === 'awaiting_review'
+  const noteValid = reason.trim().length >= 8 && reason.trim().length <= 1000
+
+  return <div className="sdl-tasks-r5f3">
+    {/* R5G2: Monitoring Pimpinan (LeadershipMonitorR3D3) disembunyikan atas
+        permintaan pemilik sistem, 2026-11-02. Komponennya UTUH dan endpoint
+        /dispositions/leadership + /decide-final tetap hidup — hanya tidak
+        dirender. Untuk menampilkan lagi, hapus komentar di bawah.
+
+        Yang hilang selama disembunyikan: satu-satunya tempat Kabagrenmin
+        memberi keputusan final (approved / revision_requested) di UI.
+        Disposisi yang menunggu keputusannya tidak akan bisa diselesaikan. */}
+    {/* <LeadershipMonitorR3D3 /> */}
+    <div className="sdl-tasks-r5f11__overview" aria-label="Ringkasan disposisi">
+      <span><strong>{loadState === 'ready' ? summary.pending : '—'}</strong> Tugas Aktif</span>
+      <span className={summary.overdue > 0 ? 'is-warning' : undefined}><strong>{loadState === 'ready' ? summary.overdue : '—'}</strong> Terlambat</span>
+      <span><strong>{loadState === 'ready' ? reviewCount : '—'}</strong> Perlu Review</span>
+    </div>
+    <section className="panel sdl-tasks-r5f3__panel" aria-label="Daftar tugas disposisi">
+      <div className="sdl-tasks-r5f11__toolbar"><div><strong>{loadState === 'ready' ? `${displayed.length} tugas` : 'Daftar tugas'}</strong><span>{workspaceTab === 'mine' ? 'Ditugaskan kepada Anda' : workspaceTab === 'issued' ? 'Disposisi yang Anda berikan' : workspaceTab === 'review' ? 'Hasil yang memerlukan keputusan Anda' : workspaceTab === 'history' ? 'Tugas selesai dengan review sudah diproses' : 'Tugas yang dapat Anda akses'}</span></div><button type="button" className="btn" disabled={busy || loadState === 'loading'} onClick={() => void refresh()}>{loadState === 'loading' ? 'Memuat...' : 'Perbarui'}</button></div>
+      {summary.limited && <p className="sdl-tasks-r5f3__limit">Menampilkan maksimal 200 tugas terbaru. Ringkasan pencarian dan jumlah review hanya mencakup data yang ditampilkan.</p>}
+      <div className="sdl-tasks-r5f3__filters">
+        <label><span className="sdl-sr-only">Cari tugas</span><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Cari nomor surat, perihal atau petugas" aria-label="Cari tugas" /></label>
+        {!workspaceTab && <label><span className="sdl-sr-only">Kelompok tugas</span><select value={ownerFilter} onChange={e => setOwnerFilter(e.target.value as OwnerFilter)} aria-label="Kelompok tugas"><option value="all">Semua Tugas</option><option value="mine">Ditugaskan ke Saya</option><option value="issued">Saya Terbitkan</option></select></label>}
+        {workspaceTab!=='review'&&workspaceTab!=='history'&&<label><span className="sdl-sr-only">Status tugas</span><select value={statusFilter} onChange={e => setStatusFilter(e.target.value as StatusFilter)} aria-label="Status tugas"><option value="all">Semua Status</option><option value="pending">Menunggu Diterima</option><option value="in_progress">Dalam Proses</option><option value="completed">Selesai</option><option value="awaiting_review">Menunggu Review</option></select></label>}
+        <label><span className="sdl-sr-only">Urutkan tugas</span><select value={sortOrder} onChange={e => setSortOrder(e.target.value as 'latest'|'due')} aria-label="Urutkan tugas"><option value="latest">Terbaru</option><option value="due">Tenggat terdekat</option></select></label>
+      </div>
+      {loadState === 'loading' && !items.length ? <div className="sdl-tasks-r5f3__empty" role="status">Memuat tugas...</div>
+        : loadState === 'error' ? <div className="sdl-tasks-r5f3__empty" role="alert"><strong>Daftar tugas belum tersedia.</strong><p>Periksa sesi dan coba kembali.</p><button type="button" className="btn" onClick={() => void refresh()}>Coba Lagi</button></div>
+        : displayed.length === 0 && letterRows.length === 0 ? <div className="sdl-tasks-r5f3__empty"><strong>{items.length ? 'Tidak ada tugas sesuai filter' : 'Belum ada surat atau tugas disposisi'}</strong><p>{items.length ? 'Coba ubah pencarian atau filter.' : 'Surat yang ditujukan kepada Anda akan muncul di sini begitu didistribusikan.'}</p></div>
+        : <div className="table-scroll"><table className="data-table sdl-tasks-r5f3__table"><thead><tr><th>Surat / Perihal</th><th>Penugasan</th><th>Tenggat</th><th>Status</th><th>Review / Target</th><th>Aksi</th></tr></thead><tbody>
+          {/* Surat yang menunggu tindakan ditaruh PALING ATAS: ia belum jadi
+              tugas, dan justru itu yang perlu dikerjakan lebih dulu. */}
+          {letterRows.map(letter => <tr key={`letter-${letter.id}`} className="sdl-tasks-r5f3__letter-row">
+            <td><strong>{letter.letterNumber}</strong><small>{letter.subject}</small></td>
+            <td><strong>Belum ditugaskan</strong><small>Dari unit {letter.unit}</small></td>
+            <td>—</td>
+            <td><span className="r3c-status pending">Surat Masuk</span></td>
+            <td><span className="r3d-sla unknown">Menunggu tindakan</span><small>{dateOnly(letter.sentAt)}</small></td>
+            <td>{onOpenLetter ? <button type="button" className="btn" onClick={() => onOpenLetter(letter.incomingId)}>Lihat Surat</button> : '—'}</td>
+          </tr>)}
+          {displayed.map(t => <tr key={t.id} className={selectedID === t.id ? 'sdl-tasks-r5f3__active' : undefined}>
+          <td><strong>{t.depth > 0 ? `↳ L${t.depth} · ` : ''}{t.letterNumber}</strong><small>{t.subject}</small></td>
+          <td><strong>{t.assigneeName}</strong><small>Dari {t.issuerName}</small></td>
+          <td>{dateOnly(t.dueDate)}</td>
+          <td><span className={`r3c-status ${t.status}`}>{statusNames[t.status]}</span></td>
+          <td><span className={`r3d-sla ${t.slaStatus}`}>{slaNames[t.slaStatus]}</span><small>{reviewNames[t.reviewStatus]}</small></td>
+          <td><button type="button" className="btn" disabled={busy} onClick={() => void openDetail(t.id)}>Detail</button></td>
+        </tr>)}</tbody></table></div>}
+    </section>
+    {selectedID && <div className="sdl-tasks-r5f11__backdrop" role="presentation">
+      <section ref={dialogRef} className="sdl-tasks-r5f11__dialog" role="dialog" aria-modal="true" aria-labelledby="sdl-tasks-r5f11-title" aria-describedby="sdl-tasks-r5f11-subtitle">
+      <div className="sdl-tasks-r5f11__modal-head"><div><span className="sdl-work-kicker">DETAIL DISPOSISI</span><h2 id="sdl-tasks-r5f11-title">{task ? task.letterNumber : 'Detail Tugas'}</h2><p id="sdl-tasks-r5f11-subtitle">{task?.subject ?? 'Memuat informasi tugas...'}</p></div><button ref={closeButtonRef} type="button" className="btn" onClick={clearDetail} disabled={busy} aria-label="Tutup detail disposisi">Tutup</button></div>
+      <div className="sdl-tasks-r5f11__modal-body">
+      {detailState === 'loading' ? <p role="status" className="sdl-tasks-r5f3__message">Memuat detail dan riwayat...</p>
+        : detailState === 'error' ? <div role="alert" className="sdl-tasks-r5f3__message">Detail tidak tersedia. <button type="button" className="btn" onClick={() => void openDetail(selectedID)}>Coba Lagi</button></div>
+        : task && detail && <>
+          <div className="sdl-tasks-r5f3__facts">
+            <div><span>Dari</span><strong>{task.issuerName}</strong></div><div><span>Ditugaskan Kepada</span><strong>{task.assigneeName}</strong></div>
+            <div><span>Unit</span><strong>{unitNames[task.unit] ?? task.unit}</strong></div><div><span>Tenggat</span><strong>{dateOnly(task.dueDate)}</strong></div>
+            <div><span>Status</span><strong>{statusNames[task.status]}</strong></div><div><span>Review</span><strong>{reviewNames[task.reviewStatus]}</strong></div>
+            <div><span>Target</span><strong>{slaNames[task.slaStatus]}</strong></div><div><span>Hierarki</span><strong>{task.parentTaskId ? `Turunan Level ${task.depth}` : 'Disposisi Utama'}</strong></div>
+          </div>
+          <div className="sdl-tasks-r5f11__detail-actions">{onOpenLetter && <button type="button" className="btn" disabled={busy} onClick={() => onOpenLetter(task.incomingId)}>Buka Surat & Lampiran</button>}{task.parentTaskId && <button type="button" className="btn" disabled={busy} onClick={() => void openDetail(task.parentTaskId!)}>Lihat Tugas Induk</button>}</div>
+          <div className="sdl-tasks-r5f3__section"><h3>Arahan</h3><p className="sdl-tasks-r5f3__copy">{task.instruction}</p></div>
+          {task.completionNote && <div className="sdl-tasks-r5f3__section"><h3>Hasil Tindak Lanjut</h3><p className="sdl-tasks-r5f3__copy">{task.completionNote}</p></div>}
+          {task.reviewReason && <div className="sdl-tasks-r5f3__section"><h3>Catatan Review</h3><p className="sdl-tasks-r5f3__copy">{task.reviewReason}</p></div>}
+          <div className="sdl-tasks-r5f3__section"><h3>Riwayat Disposisi</h3>{detail.events.length === 0 ? <p className="sdl-tasks-r5f3__message">Belum ada riwayat.</p> : <ol className="sdl-tasks-r5f3__events">{detail.events.map((ev, i) => <li key={`${ev.at}-${ev.action}-${i}`}><strong>{eventLabel(ev.action)}</strong><small>{ev.actor} · {datetime(ev.at)}</small><p>{ev.reason}</p></li>)}</ol>}</div>
+          {canAct && <div className="sdl-tasks-r5f3__section"><h3>{task.status === 'pending' ? 'Terima Tugas' : 'Selesaikan Tugas'}</h3><label className="sdl-tasks-r5f3__field">{task.status === 'pending' ? 'Keterangan Penerimaan' : 'Hasil Tindak Lanjut'}<textarea className="rm-input" rows={3} minLength={8} maxLength={1000} value={reason} onChange={e => setReason(e.target.value)} disabled={busy} placeholder="Tuliskan keterangan minimal 8 karakter" /></label><button type="button" className="btn primary" disabled={busy || !noteValid} onClick={() => void action(task, task.status === 'pending' ? 'accept' : 'complete')}>{busy ? 'Memproses...' : task.status === 'pending' ? 'Terima Tugas' : 'Selesaikan Tugas'}</button></div>}
+          {task.assigneeId === currentUserId && task.status === 'in_progress' && task.depth < 2 && forwardPeople !== null && <div className="sdl-tasks-r5f3__section"><h3>Teruskan ke Petugas · Level {task.depth + 1}</h3><form onSubmit={event => void forward(event, task)} className="sdl-tasks-r5f3__forward"><label className="sdl-tasks-r5f3__field">Petugas Tujuan<select className="rm-input" required disabled={busy} value={forwardTo} onChange={e => setForwardTo(e.target.value)}><option value="">Pilih petugas</option>{forwardPeople.map(person => <option key={person.id} value={person.id}>{person.name}</option>)}</select></label><label className="sdl-tasks-r5f3__field">Tenggat<input className="rm-input" type="date" required disabled={busy} max={task.dueDate} value={forwardDue} onChange={e => setForwardDue(e.target.value)} /></label><label className="sdl-tasks-r5f3__field sdl-tasks-r5f3__wide">Arahan untuk Petugas<textarea className="rm-input" required minLength={8} maxLength={1000} rows={3} disabled={busy} value={forwardInstruction} onChange={e => setForwardInstruction(e.target.value)} /></label><button type="submit" className="btn primary" disabled={busy || !forwardTo || forwardInstruction.trim().length < 8 || !forwardDue || forwardDue > task.dueDate}>{busy ? 'Memproses...' : 'Teruskan Tugas'}</button>{forwardPeople.length === 0 && <p className="sdl-tasks-r5f3__message">Belum ada petugas yang dapat dipilih.</p>}</form></div>}
+          {canReview && <div className="sdl-tasks-r5f3__section"><h3>Review Hasil Tugas</h3><label className="sdl-tasks-r5f3__field">Catatan Review<textarea className="rm-input" minLength={8} maxLength={1000} rows={3} disabled={busy} value={reason} onChange={e => setReason(e.target.value)} placeholder="Tuliskan hasil penilaian minimal 8 karakter" /></label><div className="sdl-tasks-r5f3__buttons"><button type="button" className="btn primary" disabled={busy || !noteValid} onClick={() => void action(task, 'approved')}>Setujui Hasil</button><button type="button" className="btn" disabled={busy || !noteValid} onClick={() => void action(task, 'revision_requested')}>Perlu Tindak Lanjut</button></div></div>}
+          {task.depth === 0 && <div className="sdl-tasks-r5f3__section"><DisposisiAutoCompleteR5F20 key={`${task.id}-${task.version}-${task.reviewStatus}`} taskId={task.id} version={task.version} issuerId={task.issuerId} currentUserId={currentUserId} reviewStatus={task.reviewStatus} status={task.status} /></div>}
+        </>}
+      </div>
+      </section>
+    </div>}
+  </div>
+}
