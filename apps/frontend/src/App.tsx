@@ -21,7 +21,7 @@ import BudgetR4A3 from './BudgetR4A3'
 import { InboxDistribusi } from './InboxDistribusiR5F2'
 import TugasDisposisi from './TugasDisposisiR5F3'
 import SeluruhDisposisi from './SeluruhDisposisiR5H5'
-import LocalCaptcha, { type CaptchaProof } from './LocalCaptcha'
+import LocalCaptcha, { solveCaptcha, type CaptchaProof } from './LocalCaptcha'
 import MyProfile from './MyProfile'
 import UnitWorkR5A from './UnitWorkR5A'
 import SumdaR5B from './SumdaR5B'
@@ -31,6 +31,8 @@ import SmartUnitDashboard from './SmartUnitDashboard'
 import UrminCommandDashboard from './UrminCommandDashboard'
 
 type Theme = 'light' | 'dark'
+// Server menolak proof CAPTCHA (captcha_invalid): kedaluwarsa atau sudah dipakai.
+class CaptchaRejected extends Error { constructor(){ super('CAPTCHA kedaluwarsa atau sudah dipakai. Verifikasi lagi.') } }
 type Screen = { view: 'portal' | 'executive' | 'arahan' | 'executive' | 'inbox' | 'tasks' | 'workspace' | 'roadmap' | 'security' | 'roles' | 'users' | 'master' | 'delegations' | 'profile' | 'login-preview'; unit?: UnitKey; menu?: string; tab?: string; recordID?: string; create?: boolean; sub?: RenSub }
 type IconName = 'grid'|'inbox'|'send'|'clipboard'|'calendar'|'archive'|'chart'|'users'|'book'|'file'|'layers'|'target'|'shield'|'folder'|'package'|'wrench'|'graduation'|'search'|'arrow'|'back'|'chevron'|'menu'|'x'|'sun'|'moon'|'bell'|'user'|'lock'|'clock'|'check'|'refresh'|'activity'|'database'|'settings'|'eye'|'list'|'info'|'external'|'key'|'mail'|'plus'
 type UnitKey = 'urmin' | 'ren' | 'sumda' | 'binfung'
@@ -199,7 +201,16 @@ function Authentication({onAuthenticated}:{onAuthenticated:(account:Account)=>vo
     if(!response.ok){
       if(response.status===429)throw new Error('Terlalu banyak percobaan. Coba lagi setelah 15 menit.')
       if(response.status===503)throw new Error('Layanan email OTP belum siap. Hubungi administrator untuk konfigurasi SMTP.')
-      if(response.status===403)throw new Error(path==='login'?'CAPTCHA kedaluwarsa atau sudah dipakai. Verifikasi lagi.':'Sesi verifikasi kedaluwarsa. Ulangi login.')
+      if(response.status===403){
+        // Dua penolakan berbeda memakai status yang sama. Dulu keduanya tampil
+        // sebagai "CAPTCHA kedaluwarsa", padahal csrf_invalid berarti Origin
+        // atau cookie CSRF ditolak (mis. SDL_ALLOWED_ORIGINS) — CLAUDE.md,
+        // batasan keras 2. Kode error dibaca supaya pesannya jujur.
+        const code=await response.json().then((b:{error?:string})=>b.error??'').catch(()=>'')
+        if(code==='csrf_invalid')throw new Error('Sesi keamanan ditolak server. Muat ulang halaman (F5) lalu coba lagi.')
+        if(path==='login'&&code==='captcha_invalid')throw new CaptchaRejected()
+        throw new Error(path==='login'?'Verifikasi keamanan ditolak. Muat ulang halaman lalu coba lagi.':'Sesi verifikasi kedaluwarsa. Ulangi login.')
+      }
       throw new Error(path==='login'?'Username atau password tidak sesuai.':'Kode OTP tidak valid atau kedaluwarsa.')
     }
     return response.json()
@@ -209,7 +220,21 @@ function Authentication({onAuthenticated}:{onAuthenticated:(account:Account)=>vo
     try {
       if(stage==='credentials'){
         if(!captchaProof)throw new Error('Selesaikan verifikasi sebelum masuk.')
-        const res:{challenge?:string;otpRequired?:boolean;authenticated?:boolean}=await post('login',{username,password,captcha:captchaProof})
+        type LoginResult={challenge?:string;otpRequired?:boolean;authenticated?:boolean}
+        let res:LoginResult
+        try {
+          res=await post('login',{username,password,captcha:captchaProof})
+        } catch(err) {
+          // Proof hanya berlaku 2 menit dan sekali pakai. Kalau ditolak (laptop
+          // sempat tidur, tab di latar belakang menunda pembaruan otomatis),
+          // ambil challenge baru dan coba SEKALI lagi — pengguna tidak perlu
+          // tahu ada CAPTCHA. Penolakan CAPTCHA tidak dihitung sebagai gagal
+          // login oleh server (dicek sebelum throttle, service.go:205).
+          if(!(err instanceof CaptchaRejected))throw err
+          const fresh=await solveCaptcha()
+          if(!fresh)throw new Error('Verifikasi keamanan gagal. Coba lagi.')
+          res=await post('login',{username,password,captcha:fresh.proof}).catch(e=>{throw e instanceof CaptchaRejected?new Error('Verifikasi keamanan gagal. Muat ulang halaman lalu coba lagi.'):e})
+        }
         setPassword('');setCaptchaProof(null);setCaptchaKey(k=>k+1)
         if(res.authenticated && res.otpRequired===false){
           const me=await fetch('/api/v1/auth/me',{cache:'no-store',credentials:'same-origin'})
