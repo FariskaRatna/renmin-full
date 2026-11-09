@@ -1426,6 +1426,14 @@ mencoba enam kali per notifikasi ke domain yang dijamin tidak ada.
 
 ## Tahap 6 — Peralihan & pembersihan
 
+> **Diperbarui 2026-11-04: disiapkan dan digladi.** Caddyfile kini memecah per
+> prefix lewat `SDL_EXPRESS_PATHS`; worker email dipindah lewat
+> `infra/compose.email-express.yaml` (service `api` ternyata tidak pernah
+> menerima `SDL_EMAIL_NOTIFICATIONS_ENABLED`). Golden direkam ulang dari Go dan
+> Express cocok 431/431; login HTTPS dan 25 langkah UI lulus lewat Express
+> dengan Go dimatikan. Runbook server: `docs/PERALIHAN-EXPRESS-PRODUKSI.md`.
+> Yang belum: menjalankannya di 172.16.173.34.
+
 **Keadaan 2026-11-01: ini satu-satunya tahap yang belum disentuh.** Seluruh
 prasyaratnya sudah selesai — paritas 142/142, harness 382/382, uji keamanan
 21/21, dan keempat perkakas siklus hidup.

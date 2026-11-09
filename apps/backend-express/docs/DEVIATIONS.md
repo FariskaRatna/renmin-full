@@ -74,6 +74,32 @@ perubahan yang sama**, dan golden direkam ulang dalam satu siklus penuh.
 | C5 | `workflowSince` pada daftar surat masuk | — | field aditif di 97 | **Selesai 2026-11-03** |
 | C6 | Lampiran bukti hasil tindak lanjut pada tugas disposisi | **036** | endpoint **144–146** baru | **Selesai 2026-11-03** |
 | C7 | Arsip dipisah dua kategori: input manual lawan hasil pengarsipan disposisi | — | query param `source` di **43** | **Selesai 2026-11-03** |
+| C8 | Kriteria arsip disposisi: dari umur surat menjadi **status disahkan**; endpoint 120 menulis arsip otomatis | — | arti `window` di 116 berubah; 143 `still_active` → `not_approved` | **Selesai 2026-11-03** |
+| C9 | Field surat keluar: `jenisSurat` + `kodeArsip` ditambah, Tujuan→Kepada, Sifat→Derajat, Keterangan disembunyikan | — | dua kunci baru di allowlist 43–47 | **Selesai 2026-11-03** |
+| C10 | Master kode arsip untuk penomoran surat | **037** | endpoint **147** baru | **Selesai 2026-11-03** |
+| C11 | Master data persuratan dikelola Superadmin: jenis surat + kode arsip | **038** | endpoint **148–152** baru | **Selesai 2026-11-03** |
+| C12 | Nomor surat keluar dirakit sistem saat draf dibuat | **039** | `nomorSurat` tidak lagi diisi pemanggil di 44; empat field wajib baru | **Selesai 2026-11-03** · lihat `PENOMORAN-SURAT-KELUAR.md` |
+
+### C12 — `nomorSurat` berhenti menjadi isian pemanggil
+
+Sebelum R5G13, `fields.nomorSurat` adalah teks bebas yang diketik petugas
+("Nomor Surat (jika sudah resmi)"). Sejak R5G13 ia **dirakit backend** saat draf
+dibuat, dan apa pun yang dikirim pemanggil **ditimpa**.
+
+Endpoint 44 karena itu menuntut empat field yang sebelumnya opsional, masing-
+masing dengan kode errornya sendiri: `derajat_required`,
+`jenis_surat_required`, `kode_arsip_required`, `unit_nomor_required`. Pemanggil
+lama yang hanya mengirim `tujuan` dan `perihal` kini mendapat 400.
+
+Dua hal yang perlu diingat:
+
+- **Deretnya tidak dijamin rapat.** Nomor diberikan saat draf dibuat atas
+  keputusan pemilik sistem, jadi draf yang dibatalkan meninggalkan lubang.
+  Mengisi ulang lubang itu akan merusak sifat sekali-pakai nomor surat dinas.
+- **Surat keluar lama tidak bernomor sistem.** Baris yang sudah ada sebelum
+  R5G13 tetap memegang apa pun yang dulu diketik, termasuk kosong. Tidak ada
+  backfill — nomor yang dirakit hari ini untuk surat tahun lalu akan salah
+  bulan dan salah urutan.
 
 ### C3 — satu-satunya perubahan yang mengubah hasil BAWAAN
 

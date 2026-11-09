@@ -54,9 +54,16 @@ docker compose --env-file .env \
 # 4. Bandingkan Express terhadap baseline itu
 SDL_HARNESS_TARGET=express \
 docker compose --env-file .env \
-  -f infra/compose.dev.yaml -f infra/compose.harness.yaml \
-  run --rm harness compare
+  -f infra/compose.dev.yaml -f infra/compose.express.yaml -f infra/compose.harness.yaml \
+  run --rm -e SDL_HARNESS_API_BASE=http://api-express:8080 harness compare
 ```
+
+> **`SDL_HARNESS_TARGET` hanya label.** URL yang benar-benar dipanggil adalah
+> `SDL_HARNESS_API_BASE`, dan `compose.harness.yaml` mematoknya ke
+> `http://api:8080` (Go). Tanpa `-e SDL_HARNESS_API_BASE=...` di atas, compare
+> membandingkan Go dengan dirinya sendiri dan selalu "cocok". Periksa baris
+> `Target :` di awal keluaran: harus `http://api-express:8080`. (Ditemukan
+> 2026-11-06.)
 
 Langkah 3 bukan kehati-hatian berlebihan. Kasus mutating mengubah baris, jadi
 tanpa reset kedua, Express berangkat dari keadaan yang ditinggalkan Go dan
