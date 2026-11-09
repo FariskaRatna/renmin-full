@@ -1,0 +1,99 @@
+# CI/CD SIERA DELTA LIMA — panduan: docs/CICD.md
+#
+#   push ke main ──► cek (GitHub-hosted, paralel) ──► deploy (runner di server,
+#                                                     menunggu tombol Approve)
+#
+# Pull request hanya menjalankan cek. Deploy hanya dari main.
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      migrate:
+        description: "Izinkan migrasi database (ada berkas SQL baru). Backup DB dibuat otomatis lebih dulu."
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  # ── Cek: jalan di mesin GitHub, tidak menyentuh server ─────────────────────
+  frontend:
+    name: Cek frontend (tsc + vite build)
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: apps/frontend } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/frontend/package-lock.json
+      - run: npm ci
+      - run: npm run build
+
+  backend-go:
+    name: Cek backend Go (build + go test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Dockerfile Go menjalankan `go test ./...` saat build; build gagal kalau test merah.
+      - run: docker build -q -t sdl-ci-api apps/backend
+
+  backend-express:
+    name: Cek backend Express (build image)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: >
+          docker buildx build --load -q -t sdl-ci-api-express
+          --build-context migrations=apps/backend/internal/migrations/sql
+          apps/backend-express
+
+  security:
+    name: Uji keamanan ${{ matrix.suite }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [r2d5, express]
+    steps:
+      - uses: actions/checkout@v4
+      # Kedua suite wajib selama dua backend hidup (CLAUDE.md). Masing-masing
+      # memakai Postgres sementara di jaringan terisolasi.
+      - run: bash scripts/security-test-${{ matrix.suite }}.sh
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: laporan-keamanan-${{ matrix.suite }}
+          path: 0.sekerips/reports/
+          if-no-files-found: ignore
+
+  # ── Deploy: runner di 172.16.173.34 ────────────────────────────────────────
+  deploy:
+    name: Deploy ke 172.16.173.34
+    needs: [frontend, backend-go, backend-express, security]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: [self-hosted, sdl-prod]
+    # Environment "production" diatur di Settings → Environments dengan
+    # Required reviewers, sehingga deploy menunggu tombol Approve.
+    environment: production
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Deploy
+        env:
+          SDL_APP: ${{ vars.SDL_APP || '/home/devops/renmin/1.siera-delta-lima' }}
+          SDL_SOURCE: ${{ github.workspace }}
+          SDL_MIGRATE: ${{ inputs.migrate && 'yes' || 'no' }}
+          SDL_COMPOSE_EXTRA: ${{ vars.SDL_COMPOSE_EXTRA }}
+        run: bash scripts/deploy.sh
