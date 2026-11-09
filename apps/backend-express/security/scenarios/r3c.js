@@ -38,8 +38,8 @@ export async function verifyR3CDisposition({ env, op, sa }) {
     {
       letterNumber: 'R3C-SECURITY-001',
       sender: 'Internal security test',
-      letterDate: '2026-10-19',
-      receivedDate: '2026-10-19',
+      letterDate: new Date().toISOString().slice(0, 10), // R5H5: relatif, daftar aktif kini ±15 hari
+      receivedDate: new Date().toISOString().slice(0, 10),
       subject: 'Disposition scope and history verification',
       classification: 'biasa',
       reason: 'Isolated R3C test-only incoming document',

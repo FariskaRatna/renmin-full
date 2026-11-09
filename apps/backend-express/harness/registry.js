@@ -1,8 +1,8 @@
 /**
- * Registry 143 endpoint, bernomor sesuai docs/API-CONTRACT.md 5.
+ * Registry 152 endpoint, bernomor sesuai docs/API-CONTRACT.md 5.
  *
  * Bentuk tiap entri:
- *   n        nomor di kontrak, 1..143
+ *   n        nomor di kontrak, 1..152
  *   mount    grup, menentukan subfolder golden
  *   method   GET | POST | PUT | PATCH | DELETE
  *   path     template; {name} diisi dari fixture atau daftar enumerasi
@@ -315,6 +315,26 @@ export const REGISTRY = [
   { n: 144, mount: 'dispositions', method: 'POST', path: '/api/v1/urmin/dispositions/{taskId}/attachments', params: { taskId: 'dispositionTaskId' }, actors: ['kasubbagren'] },
   { n: 145, mount: 'dispositions', method: 'GET', path: '/api/v1/urmin/dispositions/{taskId}/attachments', params: { taskId: 'dispositionTaskId' }, actors: ['kasubbagren', 'kaUrmin'] },
   { n: 146, mount: 'dispositions', method: 'GET', path: '/api/v1/urmin/dispositions/{taskId}/attachments/{fileId}/download', params: { taskId: 'dispositionTaskId', fileId: 'dispositionFileId' }, actors: ['kasubbagren'] },
+  // R5G10: master kode arsip. Data referensi, jadi aktornya sengaja operator
+  // biasa — endpoint ini memang tidak memakai Engine A maupun B.
+  { n: 147, mount: 'kode-arsip', method: 'GET', path: '/api/v1/urmin/kode-arsip/', actors: ['opUrmin', 'kaUrmin'] },
+  // R5G12: daftar jenis surat, guard operasional seperti kode arsip.
+  { n: 148, mount: 'jenis-surat', method: 'GET', path: '/api/v1/urmin/jenis-surat/', actors: ['opUrmin'] },
+  // ---- 149-152. Master data, guard Superadmin ----
+  //
+  // Aktornya DUA: superadmin yang berhak, dan kaUrmin yang tidak. Pasangan itu
+  // yang membuktikan master data benar-benar di balik guard Superadmin dan
+  // bukan sekadar guard operasional yang kebetulan lolos.
+  { n: 149, mount: 'admin-master', method: 'GET', path: '/api/v1/admin/master/jenis-surat', actors: ['superadmin', 'kaUrmin'] },
+  // Ketiga probe ini menyasar kode yang SENGAJA tidak ada (`ZZ`), bukan ND.
+  // Probe pertama versi ini memakai fixture kode asli dan DELETE-nya berhasil —
+  // ia menghapus satu-satunya jenis surat yang ada, dan karena tabel master
+  // tidak ikut di-TRUNCATE seed-docs, data itu hilang permanen. Probe tidak
+  // boleh merusak; jalur suksesnya diuji variant di bawah yang bersih-bersih
+  // setelah dirinya sendiri.
+  { n: 150, mount: 'admin-master', method: 'POST', path: '/api/v1/admin/master/jenis-surat', actors: ['superadmin'] },
+  { n: 151, mount: 'admin-master', method: 'PATCH', path: '/api/v1/admin/master/jenis-surat/ZZ', actors: ['superadmin'] },
+  { n: 152, mount: 'admin-master', method: 'DELETE', path: '/api/v1/admin/master/jenis-surat/ZZ', actors: ['superadmin'] },
   { n: 117, mount: 'dispositions', method: 'GET', path: '/api/v1/urmin/dispositions/{taskId}/history', params: { taskId: 'dispositionTaskId' }, actors: ['kaUrmin'] },
   { n: 118, mount: 'dispositions', method: 'POST', path: '/api/v1/urmin/dispositions/{taskId}/accept', params: { taskId: 'dispositionTaskId' }, actors: ['opSubbagren'] },
   { n: 119, mount: 'dispositions', method: 'POST', path: '/api/v1/urmin/dispositions/{taskId}/complete', params: { taskId: 'dispositionTaskId' }, actors: ['opSubbagren'] },
@@ -377,7 +397,7 @@ export const REGISTRY = [
 
 /**
  * Varian jalur sukses. Sengaja dipisah dari REGISTRY, bukan disisipkan ke
- * dalamnya: REGISTRY harus tetap berisi persis 143 entri yang memetakan
+ * dalamnya: REGISTRY harus tetap berisi persis 152 entri yang memetakan
  * API-CONTRACT.md satu lawan satu, dan pemeriksaan itu adalah satu-satunya
  * pengaman bahwa tidak ada endpoint yang terlupakan.
  *
@@ -1051,16 +1071,20 @@ export const VARIANTS = [
       title: 'Surat keluar baru hasil uji jalur tulis',
       classification: 'biasa',
       fields: {
-        nomorSurat: 'SK/920/XI/2026',
+        // R5G13: `nomorSurat` SENGAJA tidak dikirim. Backend merakitnya sendiri
+        // saat draf dibuat, dan apa pun yang dikirim pemanggil akan ditimpa.
         tujuan: 'Kepala Bagian Perencanaan Polda',
         tanggalSurat: '2026-10-01',
         perihal: 'Permohonan data dukung perencanaan',
         sifatSurat: 'Biasa',
         statusAdministrasi: 'Draft',
         keterangan: 'Dibuat lewat jalur tulis harness.',
+        jenisSurat: 'ND',
+        kodeArsip: 'HUM.1.2.',
+        unitNomor: 'Bagrenmin',
       },
     },
-    note: 'SATU transaksi menulis tiga tabel: work record, register, dan baris workflow surat keluar. Kode ganda menjadi 409 duplicate_code lewat pemetaan SQLSTATE 23505',
+    note: 'SATU transaksi menulis tiga tabel plus mengambil satu nomor dari deret tahunan. Kode ganda menjadi 409 duplicate_code lewat pemetaan SQLSTATE 23505',
   },
   {
     n: 46, variant: 'sunting-register', mount: 'urmin-registry', method: 'PATCH',
@@ -1183,13 +1207,13 @@ export const VARIANTS = [
   // API-CONTRACT.md §5.15.
   {
     n: 143, variant: 'arsipkan-disposisi', mount: 'dispositions', method: 'POST',
-    path: '/api/v1/urmin/dispositions/{taskId}/archive', params: { taskId: 'dispositionTaskId' },
+    path: '/api/v1/urmin/dispositions/{taskId}/archive', params: { taskId: 'dispositionHistoryId' },
     actors: ['kaUrmin'],
-    note: 'surat fixture bertanggal 2026-09-20, jauh di luar rentang 30 hari; menulis dua baris sekaligus',
+    note: 'R5G8: sasarannya tugas yang seed-nya SUDAH approved tanpa entri arsip — persis kasus tugas lama yang membuat tombol manual tetap diperlukan',
   },
   {
     n: 143, variant: 'arsipkan-dua-kali', mount: 'dispositions', method: 'POST',
-    path: '/api/v1/urmin/dispositions/{taskId}/archive', params: { taskId: 'dispositionTaskId' },
+    path: '/api/v1/urmin/dispositions/{taskId}/archive', params: { taskId: 'dispositionHistoryId' },
     actors: ['kaUrmin'],
     note: 'ref_code deterministik membuat percobaan kedua bertabrakan di UNIQUE: 409 already_archived, bukan entri ganda',
   },
@@ -1217,11 +1241,105 @@ export const VARIANTS = [
     actors: ['kaUrmin'],
     note: 'nilai di luar manual/disposisi ditolak 400 invalid_source, bukan didiamkan jatuh ke semua',
   },
+
+  // ---- R5G13: nomor surat yang tidak dapat dirakit ----
+  //
+  // Empat bagian wajib, dan tiap kekurangannya punya kode errornya sendiri.
+  // Varian ini memastikan backend menolak di DEPAN, sebelum transaksi dibuka —
+  // kalau tidak, draf tanpa nomor akan tersimpan dan deret ikut terbakar.
+  {
+    n: 44, variant: 'nomor-tanpa-jenis-surat', mount: 'urmin-registry', method: 'POST',
+    path: '/api/v1/urmin/registry/',
+    actors: ['kaUrmin'],
+    body: {
+      kind: 'surat_keluar',
+      code: 'SK-2026-921',
+      title: 'Surat keluar tanpa jenis surat',
+      classification: 'biasa',
+      fields: { sifatSurat: 'Biasa', kodeArsip: 'HUM.1.2.', unitNomor: 'Bagrenmin' },
+    },
+    note: '400 jenis_surat_required; tidak ada baris tersimpan dan tidak ada nomor yang terbakar',
+  },
+  {
+    n: 44, variant: 'nomor-lingkup-ngawur', mount: 'urmin-registry', method: 'POST',
+    path: '/api/v1/urmin/registry/',
+    actors: ['kaUrmin'],
+    body: {
+      kind: 'surat_keluar',
+      code: 'SK-2026-922',
+      title: 'Surat keluar dengan lingkup di luar daftar',
+      classification: 'biasa',
+      fields: { sifatSurat: 'Biasa', jenisSurat: 'ND', kodeArsip: 'HUM.1.2.', unitNomor: 'Polda' },
+    },
+    note: '400 unit_nomor_required; akhiran unit hanya boleh Bagrenmin atau salah satu dari empat unit terdaftar',
+  },
+
+  // ---- R5G12: siklus penuh master data, dan ia membersihkan dirinya ----
+  //
+  // Tambah -> sunting -> hapus atas kode buatan sendiri (`ZX`), sehingga tabel
+  // master kembali persis seperti semula begitu rangkaian ini selesai. Itu
+  // syaratnya: master data TIDAK ikut di-TRUNCATE seed-docs, jadi apa pun yang
+  // ditinggalkan di sini akan menumpuk antar-run.
+  {
+    n: 150, variant: 'tambah-jenis-surat', mount: 'admin-master', method: 'POST',
+    path: '/api/v1/admin/master/jenis-surat',
+    actors: ['superadmin'],
+    body: { code: 'ZX', name: 'Jenis Uji Harness' },
+    note: 'kode dinormalkan ke huruf besar dan nama dirapatkan spasinya sebelum disimpan',
+  },
+  {
+    n: 151, variant: 'sunting-nama-jenis', mount: 'admin-master', method: 'PATCH',
+    path: '/api/v1/admin/master/jenis-surat/ZX',
+    actors: ['superadmin'],
+    body: { code: 'ZX', name: 'Jenis Uji Harness Disunting' },
+    note: 'hanya nama yang boleh berubah; kode adalah kunci primer yang sudah tercetak di nomor surat',
+  },
+  {
+    n: 151, variant: 'kode-tidak-boleh-diganti', mount: 'admin-master', method: 'PATCH',
+    path: '/api/v1/admin/master/jenis-surat/ZX',
+    actors: ['superadmin'],
+    body: { code: 'ZY', name: 'Jenis Uji Harness' },
+    note: 'kode di body berbeda dari kode di path: 400 code_immutable',
+  },
+  {
+    n: 152, variant: 'hapus-jenis-surat', mount: 'admin-master', method: 'DELETE',
+    path: '/api/v1/admin/master/jenis-surat/ZX',
+    actors: ['superadmin'],
+    note: 'menutup siklus; tabel master kembali seperti sebelum rangkaian ini',
+  },
+
+  // ---- R5G10: pencarian master kode arsip ----
+  //
+  // Read-only sepenuhnya; data referensi tidak disentuh varian mana pun.
+  {
+    n: 147, variant: 'cari-nama-perkara', mount: 'kode-arsip', method: 'GET',
+    path: '/api/v1/urmin/kode-arsip/?q=buku%20tamu',
+    actors: ['opUrmin'],
+    note: 'alur utamanya NAMA -> KODE: mengetik "buku tamu" menghasilkan HUM.1.2.',
+  },
+  {
+    n: 147, variant: 'cari-kode-langsung', mount: 'kode-arsip', method: 'GET',
+    path: '/api/v1/urmin/kode-arsip/?q=HUM.1.',
+    actors: ['opUrmin'],
+    note: 'kode tetap bisa dicari langsung untuk yang sudah hafal',
+  },
+  {
+    n: 147, variant: 'saring-prefiks', mount: 'kode-arsip', method: 'GET',
+    path: '/api/v1/urmin/kode-arsip/?prefix=bin',
+    actors: ['opUrmin'],
+    note: 'prefiks dinormalkan ke huruf besar sebelum dicocokkan',
+  },
+  {
+    n: 147, variant: 'prefiks-tidak-sah', mount: 'kode-arsip', method: 'GET',
+    path: '/api/v1/urmin/kode-arsip/?prefix=12345678',
+    actors: ['opUrmin'],
+    note: 'prefiks di luar pola 2-5 huruf ditolak 400 invalid_prefix',
+  },
 ]
 
 const VARIANT_NAME_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/
 
-/** Pemeriksaan integritas: nomor harus unik dan lengkap 1..143. */
+/** Pemeriksaan integritas: nomor harus unik dan lengkap 1..152. */
 export function assertRegistryComplete() {
   const seen = new Set()
   for (const endpoint of REGISTRY) {
@@ -1234,7 +1352,7 @@ export function assertRegistryComplete() {
   // 143 sejak R5G3 (arsip disposisi). Penomorannya MELANJUTKAN, bukan
   // menyisip, supaya nomor yang sudah dirujuk golden file dan dokumen lain
   // tidak bergeser.
-  const TOTAL = 146
+  const TOTAL = 152
   const missing = []
   for (let n = 1; n <= TOTAL; n++) if (!seen.has(n)) missing.push(n)
   if (missing.length > 0) {

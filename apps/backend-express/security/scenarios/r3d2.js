@@ -43,8 +43,8 @@ export async function verifyR3D2Hierarchy({ env, op, sa }) {
     {
       letterNumber: 'R3D2-HIERARCHY-001',
       sender: 'Test-only unit',
-      letterDate: '2026-10-19',
-      receivedDate: '2026-10-19',
+      letterDate: new Date().toISOString().slice(0, 10), // R5H5: relatif, daftar aktif kini ±15 hari
+      receivedDate: new Date().toISOString().slice(0, 10),
       subject: 'R3D2 parent child chain security validation',
       classification: 'biasa',
       reason: 'Register ephemeral document for R3D2 security checks',

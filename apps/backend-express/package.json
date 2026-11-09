@@ -17,6 +17,8 @@
     "verify:email": "node verify/email-parity.js",
     "verify:emailworker": "node verify/email-worker.js",
     "verify:timestamp": "node verify/timestamp-parity.js",
+    "verify:r5h1": "node verify/r5h1-flow.js",
+    "verify:r5h2": "node verify/r5h2-sheet-parity.js",
     "verify": "npm run verify:crypto && npm run verify:gojson && npm run verify:email"
   },
   "author": "",

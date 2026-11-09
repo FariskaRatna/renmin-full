@@ -12,7 +12,7 @@ const CASE_ID_SEPARATOR = '__'
  * Hanya dipakai oleh aktor anonim. Tanpa sesi, kedua guard menolak di gerbang
  * autentikasi SEBELUM handler sempat mencari record, jadi ID-nya tidak perlu
  * nyata — yang diukur adalah gerbangnya, bukan datanya. Ini membuat baseline
- * anonim mencakup seluruh 143 endpoint walau database masih kosong.
+ * anonim mencakup seluruh 152 endpoint walau database masih kosong.
  *
  * Aktor bersesi tetap dilewati kalau fixture tidak ada: bagi mereka ID palsu
  * hanya akan menghasilkan 404 yang tidak mewakili apa pun.
@@ -83,7 +83,7 @@ function expandLiterals(path, expand) {
 function casesForEndpoint(endpoint, fixtures, actors, config, cases, skipped) {
   const safety = classify(endpoint)
   // Anonim selalu ikut pada entri dasar: ia memetakan gerbang autentikasi untuk
-  // seluruh 143 endpoint tanpa menyentuh data, dan itu baseline paling berharga.
+  // seluruh 152 endpoint tanpa menyentuh data, dan itu baseline paling berharga.
   // Varian tidak — tanpa sesi hasilnya identik dengan entri dasarnya.
   const actorKeys = endpoint.variant ? [...endpoint.actors] : ['anon', ...endpoint.actors]
 

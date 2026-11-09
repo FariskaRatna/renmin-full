@@ -270,6 +270,11 @@ const DOCUMENT_TABLES = [
   'sdl_outgoing_events',
   'sdl_outgoing_workflows',
   'sdl_urmin_registry',
+  // R5G13. WAJIB dikosongkan: tanpa ini deret nomor surat terus menanjak
+  // antar-run, sehingga capture memperoleh 1 dan compare memperoleh 2 untuk
+  // surat yang sama. Berbeda dari master jenis surat dan kode arsip yang justru
+  // DIPULIHKAN — deret bukan data referensi, ia penghitung milik run ini.
+  'sdl_surat_nomor_urut',
   'sdl_sumda_registry',
   'sdl_binfung_registry',
   'sdl_unit_work_events',
@@ -510,6 +515,23 @@ export async function seedDocuments(databaseUrl, evidenceKey) {
       [ID.workTask, ID.workUrmin, u['ka-urmin'], u['staf-urmin'],
         'Mohon tindak lanjuti berkas kerja persuratan ini.', at(5)],
     )
+
+    // ---- R5G12: master data persuratan, dipulihkan bukan dikosongkan ----
+    //
+    // `sdl_surat_jenis` dan `sdl_surat_kode_arsip` SENGAJA tidak masuk daftar
+    // TRUNCATE: isinya datang dari migrasi 037/038, bukan dari seed ini, dan
+    // mengosongkannya berarti menghapus data yang tidak bisa dipulihkan karena
+    // migrasinya sudah tercatat diterapkan.
+    //
+    // Yang dilakukan di sini kebalikannya: memastikan baris yang seharusnya ada
+    // memang ada, dan membuang sisa kode uji yang mungkin tertinggal kalau satu
+    // rangkaian varian gagal di tengah jalan. Itu membuat harness tidak bisa
+    // merusak master data secara permanen — pelajaran dari probe DELETE yang
+    // sempat menghapus satu-satunya jenis surat.
+    await client.query(
+      "INSERT INTO sdl_surat_jenis(code,name) VALUES('ND','Nota Dinas') ON CONFLICT(code) DO NOTHING",
+    )
+    await client.query("DELETE FROM sdl_surat_jenis WHERE code IN ('ZX','ZY','ZZ')")
 
     // ---- registry per unit ----
     for (const [id, kind, ref, title, work, owner, minute] of [

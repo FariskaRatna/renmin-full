@@ -202,6 +202,12 @@ export class HarnessDb {
         'SELECT id::text AS v FROM sdl_urmin_distributions WHERE reason=$1 LIMIT 1',
         ['Diteruskan ke Kasubbagren untuk uji rantai kotak masuk.']],
 
+      // R5G12: satu jenis surat yang ditanam migrasi 038. Dicari lewat nama
+      // supaya fixture tidak menebak kodenya.
+      ['jenisSuratCode',
+        'SELECT code AS v FROM sdl_surat_jenis WHERE lower(name)=$1 LIMIT 1',
+        ['nota dinas']],
+
       // R5G6: bukti hasil tindak lanjut yang sudah terunggah. Dicari lewat
       // nama berkas, kolom yang tidak pernah berubah sesudah unggah.
       ['dispositionFileId',
