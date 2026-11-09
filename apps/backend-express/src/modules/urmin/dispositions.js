@@ -7,6 +7,7 @@ import { withTransaction } from '../../db.js'
 import { contentDisposition, readSingleFile } from '../../http/multipart.js'
 import { BODY_LIMITS, rawBody } from '../../http/payload.js'
 import { goTime } from '../../time.js'
+import { permit } from '../unitwork/permit.js'
 import {
   audit,
   AuthzUnavailable,
@@ -109,17 +110,26 @@ async function data(fn) {
 }
 
 /**
- * Padanan dispositionWindow (r3c.go:364).
+ * Padanan dispositionWindow (r3c.go:364), diperbarui R5G8.
  *
- * Daftar aktif dibatasi pada surat bertanggal dalam ±30 hari. 'archive' adalah
- * komplemen PERSIS dari 'active', dan 'all' mengembalikan perilaku sebelum
- * R5G3 — jadi tidak ada satu baris pun yang menjadi tak terjangkau lewat
- * endpoint ini; ia hanya berpindah tampilan.
+ * Yang memisahkan aktif dari arsip adalah STATUS, bukan umur surat. Sebuah
+ * disposisi masuk arsip ketika pekerjaannya selesai DAN disahkan penerbit
+ * (`rev.decision='approved'`). Rentang ±15 hari (R5H5; dulu ±30) tetap ada, tapi perannya
+ * berubah: ia menjaga daftar aktif tidak membengkak, bukan menentukan
+ * keanggotaan arsip.
+ *
+ *   active  = surat dalam ±15 hari DAN belum disahkan
+ *   archive = sudah disahkan, tanpa memandang tanggal
+ *   all     = perilaku sebelum R5G3
+ *
+ * Keduanya tetap saling melengkapi dalam arti yang penting: disposisi yang
+ * sudah disahkan selalu terjangkau lewat 'archive' berapa pun umurnya, dan
+ * yang belum selalu terjangkau lewat 'active' selama suratnya masih baru.
+ * 'all' tetap menjadi jalan keluar yang menampilkan semuanya.
  *
  * Rentang from/to eksplisit menimpa `window` sepenuhnya. Keduanya wajib
  * berpasangan: rentang setengah terbuka terbaca sebagai "sejak tanggal ini
- * seterusnya" oleh pemanggil, padahal diam-diam tetap kena batas ±30 hari —
- * dan itu lebih buruk daripada menolaknya.
+ * seterusnya" oleh pemanggil, padahal diam-diam tetap kena batas ±15 hari.
  *
  * @returns {{clause: string, args: string[]} | undefined} undefined = 400.
  */
@@ -133,9 +143,13 @@ export function dispositionWindow(req) {
   switch ((req.query.window ?? '').toString()) {
     case '':
     case 'active':
-      return { clause: ' AND i.letter_date BETWEEN CURRENT_DATE - 30 AND CURRENT_DATE + 30', args: [] }
+      return {
+        clause: " AND i.letter_date BETWEEN CURRENT_DATE - 15 AND CURRENT_DATE + 15"
+          + " AND COALESCE(rev.decision,'')<>'approved'",
+        args: [],
+      }
     case 'archive':
-      return { clause: ' AND i.letter_date NOT BETWEEN CURRENT_DATE - 30 AND CURRENT_DATE + 30', args: [] }
+      return { clause: " AND COALESCE(rev.decision,'')='approved'", args: [] }
     case 'all':
       return { clause: '', args: [] }
     default:
@@ -155,12 +169,23 @@ const ARCHIVE_CODE_UNSAFE = /[^A-Za-z0-9]+/g
  *
  * Dibatasi 64 karakter karena ref_code VARCHAR(64); yang dipangkas selalu nomor
  * suratnya, tidak pernah akhiran id tugas yang membuat kodenya unik.
+ *
+ * Akhirannya UUID tugas SELURUHNYA, bukan potongan depannya. Versi sebelumnya
+ * mengambil 8 karakter pertama dan itu salah dua kali: UUID yang dialokasikan
+ * dalam satu blok berbagi karakter awal, sehingga dua tugas berbeda pada surat
+ * yang SAMA menghasilkan kode yang SAMA — dan karena kode ini adalah kunci
+ * idempotensi, tugas kedua diam-diam dijawab "already_archived" lalu tidak
+ * pernah terarsip sama sekali. Kunci yang dipotong tidak bisa mengerjakan
+ * satu-satunya tugasnya.
+ *
+ * 9 (prefiks) + 32 (uuid) + 1 (pemisah) = 42, menyisakan 22 karakter untuk
+ * nomor suratnya.
  */
 export function archiveRefCode(letterNumber, taskId) {
   let number = letterNumber.replace(ARCHIVE_CODE_UNSAFE, '-').replace(/^-+|-+$/g, '')
-  const suffix = taskId.replace(/-/g, '').slice(0, 8)
+  const suffix = taskId.replace(/-/g, '')
   const prefix = 'ARS-DISP-'
-  const room = 64 - prefix.length - suffix.length - 1
+  const room = Math.max(0, 64 - prefix.length - suffix.length - 1)
   if (number.length > room) number = number.slice(0, room).replace(/^-+|-+$/g, '')
   if (number === '') number = 'TANPA-NOMOR'
   return `${prefix}${number}-${suffix}`.toUpperCase()
@@ -187,6 +212,62 @@ export async function archiveRegisterAllowed(pool, userId, classification) {
     [userId, classification],
   )
   return rows[0].ok === true
+}
+
+/**
+ * Padanan writeDispositionArchive (r5g3.go). Penulis entri arsip, dipakai DUA
+ * jalur: telaah yang menyetujui (endpoint 120, otomatis) dan tombol Arsipkan
+ * (endpoint 143, manual).
+ *
+ * Mengembalikan `existed: true` kalau kodenya sudah ada. Keberadaan itu
+ * diperiksa LEBIH DULU, bukan diserahkan ke ON CONFLICT, karena baris register
+ * selalu berpasangan dengan satu berkas kerja: menyisipkan berkas kerjanya dulu
+ * lalu membiarkan register-nya bentrok akan meninggalkan berkas kerja yatim
+ * pada transaksi yang tetap di-commit — dan transaksi telaah memang harus tetap
+ * di-commit walau arsipnya dilewati.
+ */
+export async function writeDispositionArchive(client, actor, task) {
+  const refCode = archiveRefCode(task.letterNumber, task.id)
+  const taken = await client.query(
+    `SELECT EXISTS(SELECT 1 FROM sdl_urmin_registry
+       WHERE kind='arsip' AND lower(ref_code)=lower($1) AND deleted_at IS NULL) AS ok`,
+    [refCode],
+  )
+  if (taken.rows[0].ok === true) return { existed: true, refCode }
+
+  const letter = await client.query(
+    'SELECT i.letter_date::text AS letter_date FROM sdl_urmin_incoming i WHERE i.id=$1',
+    [task.incomingId],
+  )
+
+  let title = task.subject === ''
+    ? `Arsip disposisi ${task.letterNumber}`
+    : `Arsip disposisi ${task.letterNumber} - ${task.subject}`
+  if ([...title].length > 200) title = [...title].slice(0, 200).join('')
+  const fields = JSON.stringify({
+    sumber: 'disposisi',
+    dispositionId: task.id,
+    incomingId: task.incomingId,
+    letterNumber: task.letterNumber,
+    letterDate: letter.rows[0].letter_date,
+    unit: task.unit,
+  })
+
+  // Bentuk dua baris yang sama dengan endpoint 44: tiap entri register memiliki
+  // tepat satu berkas kerja (work_record_id NOT NULL UNIQUE).
+  const work = await client.query(
+    `INSERT INTO sdl_unit_work_records(unit_key,category,title,description,classification,created_by,updated_by)
+     VALUES('urmin','Register Urmin arsip',$1,'',$2,$3::uuid,$3::uuid) RETURNING id::text AS id`,
+    [title, task.classification, actor],
+  )
+  const workId = work.rows[0].id
+  const registry = await client.query(
+    `INSERT INTO sdl_urmin_registry(kind,ref_code,title,fields,work_record_id,created_by,updated_by)
+     VALUES('arsip',$1,$2,$3::jsonb,$4::uuid,$5::uuid,$5::uuid) RETURNING id::text AS id`,
+    [refCode, title, fields, workId, actor],
+  )
+  await audit(client, actor, 'urmin.disposisi.archived', task.id)
+  return { existed: false, id: registry.rows[0].id, workId, refCode }
 }
 
 export function createDispositionsRouter({ pool }) {
@@ -569,6 +650,21 @@ export function createDispositionsRouter({ pool }) {
       await data(() => audit(client, req.actor, `urmin.disposisi.review.${p.decision}`, id))
       const event = p.decision === 'revision_requested' ? 'review_revision' : 'review_approved'
       await data(() => enqueueUrminEmail(client, id, task.assigneeId, event))
+      // R5G8: pekerjaan yang disahkan langsung masuk register Arsip Urmin, di
+      // transaksi yang sama dengan telaahnya. Yang diminta diperbaiki tidak.
+      //
+      // SENGAJA TIDAK digerbangi archiveRegisterAllowed, berbeda dari endpoint
+      // 143. Penerbit yang menelaah hampir selalu berada di subbagren/sumda/
+      // binfung dan tidak punya grant di unit 'urmin', jadi menggerbanginya
+      // akan membuat pengarsipan otomatis ini tidak pernah berjalan untuk
+      // kasus yang paling lazim — bentuk kegagalan B9 lagi. Di sini entri
+      // arsip adalah AKIBAT dari aksi yang sudah berwenang (telaahnya), bukan
+      // aksi tersendiri, persis seperti antrean email di atasnya yang juga
+      // tidak digerbangi. Siapa yang boleh MEMBACA entri itu tetap ditentukan
+      // Engine B seperti biasa.
+      if (p.decision === 'approved') {
+        await data(() => writeDispositionArchive(client, req.actor, task))
+      }
       return { status: 200 }
     })
 
@@ -789,68 +885,27 @@ export function createDispositionsRouter({ pool }) {
       return
     }
 
-    // letterNumber dan subject sudah ikut bersama task; tinggal tanggalnya dan
-    // putusan rentangnya yang perlu dibaca.
-    const letter = await data(() =>
-      pool.query(
-        `SELECT i.letter_date::text AS letter_date,
-           (i.letter_date NOT BETWEEN CURRENT_DATE - 30 AND CURRENT_DATE + 30) AS outside
-           FROM sdl_urmin_incoming i WHERE i.id=$1`,
-        [task.incomingId],
-      ),
-    )
-    // Rentangnya ditegakkan DI SINI, bukan hanya di UI. Klien yang sekadar
-    // menembak path ini tidak boleh bisa mengarsipkan disposisi yang masih aktif.
-    if (letter.rows[0].outside !== true) {
-      fail(res, 409, 'still_active')
+    // R5G8: kriterianya status, bukan umur surat. Sebuah disposisi diarsipkan
+    // ketika pekerjaannya SELESAI dan sudah disahkan penerbit — bukan ketika
+    // suratnya kebetulan sudah tua.
+    if (task.reviewStatus !== 'approved') {
+      fail(res, 409, 'not_approved')
       return
     }
 
-    const code = archiveRefCode(task.letterNumber, task.id)
-    let title = task.subject === ''
-      ? `Arsip disposisi ${task.letterNumber}`
-      : `Arsip disposisi ${task.letterNumber} - ${task.subject}`
-    if ([...title].length > 200) title = [...title].slice(0, 200).join('')
-    const fields = JSON.stringify({
-      sumber: 'disposisi',
-      dispositionId: task.id,
-      incomingId: task.incomingId,
-      letterNumber: task.letterNumber,
-      letterDate: letter.rows[0].letter_date,
-      unit: task.unit,
-    })
-
     const outcome = await withTransaction(pool, async (client) => {
-      // Bentuk dua baris yang sama dengan endpoint 44: tiap entri register
-      // memiliki tepat satu berkas kerja (work_record_id NOT NULL UNIQUE).
-      const work = await data(() =>
-        client.query(
-          `INSERT INTO sdl_unit_work_records(unit_key,category,title,description,classification,created_by,updated_by)
-           VALUES('urmin','Register Urmin arsip',$1,'',$2,$3::uuid,$3::uuid) RETURNING id::text AS id`,
-          [title, task.classification, req.actor],
-        ),
-      )
-      const workId = work.rows[0].id
-      const registry = await data(() =>
-        client.query(
-          `INSERT INTO sdl_urmin_registry(kind,ref_code,title,fields,work_record_id,created_by,updated_by)
-           VALUES('arsip',$1,$2,$3::jsonb,$4::uuid,$5::uuid,$5::uuid)
-           ON CONFLICT DO NOTHING RETURNING id::text AS id`,
-          [code, title, fields, workId, req.actor],
-        ),
-      )
-      // Nol baris berarti kodenya sudah ada: disposisi ini pernah diarsipkan.
-      // 409, bukan entri kedua yang diam-diam.
-      if (registry.rows.length === 0) return { status: 409, code: 'already_archived' }
-      await data(() => audit(client, req.actor, 'urmin.disposisi.archived', task.id))
-      return { status: 201, id: registry.rows[0].id, workId }
+      const written = await writeDispositionArchive(client, req.actor, task)
+      // Sudah pernah diarsipkan — lewat telaah yang menyetujuinya, atau lewat
+      // penekanan tombol sebelumnya. 409, bukan entri kedua yang diam-diam.
+      if (written.existed) return { status: 409, code: 'already_archived' }
+      return { status: 201, id: written.id, workId: written.workId, refCode: written.refCode }
     })
 
     if (outcome.status !== 201) {
       fail(res, outcome.status, outcome.code)
       return
     }
-    respond(res, 201, { id: outcome.id, refCode: code, workRecordId: outcome.workId })
+    respond(res, 201, { id: outcome.id, refCode: outcome.refCode, workRecordId: outcome.workId })
   }))
 
   // ---- 144-146. Lampiran hasil tindak lanjut ----
@@ -868,7 +923,31 @@ export function createDispositionsRouter({ pool }) {
   //
   // URUTAN PENDAFTARAN WAJIB: `/attachments` dulu, baru
   // `/attachments/:fileId/download`. Express mencocokkan berurutan.
-  async function fileParty(req, res) {
+  /**
+   * R5H5: padanan archiveReader (r5g6.go). Bukan pihak tugas, tetapi boleh
+   * membaca entri arsip disposisinya (Engine B atas berkas kerja entri itu),
+   * dan hanya untuk tugas yang sudah disetujui.
+   */
+  async function archiveReader(actorId, taskId) {
+    const { rows } = await pool.query(
+      `SELECT w.classification,w.created_by::text AS owner,w.id::text AS record_id
+         FROM sdl_urmin_registry s JOIN sdl_unit_work_records w ON w.id=s.work_record_id
+        WHERE s.kind='arsip' AND s.deleted_at IS NULL AND w.deleted_at IS NULL AND w.unit_key='urmin'
+          AND s.fields->>'sumber'='disposisi' AND s.fields->>'dispositionId'=$1
+          AND EXISTS(SELECT 1 FROM sdl_urmin_disposition_reviews rv WHERE rv.disposition_id::text=$1 AND rv.decision='approved')`,
+      [taskId],
+    )
+    for (const row of rows) {
+      const ok = await permit(pool, actorId, {
+        unit: 'urmin', classification: row.classification, owner: row.owner, recordId: row.record_id, action: 'read',
+      })
+      if (ok) return true
+    }
+    return false
+  }
+
+  /** readOnly=true juga menerima pembaca arsip (R5H5); unggah tidak. */
+  async function fileParty(req, res, readOnly = false) {
     const id = req.params.taskId
     if (!UUID_RE.test(id)) {
       fail(res, 404, 'not_found')
@@ -881,7 +960,9 @@ export function createDispositionsRouter({ pool }) {
     }
     // 404 dan bukan 403 saat bukan pihak: bentuk yang sama dengan endpoint 117,
     // supaya keberadaan sebuah tugas tidak bisa diselidiki lewat kode status.
-    if (!(await authz(() => taskParty(pool, req.actor, task)))) {
+    let party = await authz(() => taskParty(pool, req.actor, task))
+    if (!party && readOnly) party = await authz(() => archiveReader(req.actor, task.id))
+    if (!party) {
       fail(res, 404, 'not_found')
       return undefined
     }
@@ -980,7 +1061,7 @@ export function createDispositionsRouter({ pool }) {
 
   // ---- 145. GET /:taskId/attachments ----
   router.get('/:taskId/attachments', handle(async (req, res) => {
-    const task = await fileParty(req, res)
+    const task = await fileParty(req, res, true)
     if (!task) return
 
     const { rows } = await data(() =>
@@ -1010,7 +1091,7 @@ export function createDispositionsRouter({ pool }) {
 
   // ---- 146. GET /:taskId/attachments/:fileId/download ----
   router.get('/:taskId/attachments/:fileId/download', handle(async (req, res) => {
-    const task = await fileParty(req, res)
+    const task = await fileParty(req, res, true)
     if (!task) return
     const fileId = req.params.fileId
     if (!UUID_RE.test(fileId)) {

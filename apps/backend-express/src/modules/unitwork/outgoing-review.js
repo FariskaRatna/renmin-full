@@ -77,7 +77,8 @@ async function contentHash(client, registerId, workRecordId) {
   const { ref_code: code, title, fields } = registry.rows[0]
 
   const files = await client.query(
-    'SELECT id::text AS id,sha256 FROM sdl_unit_work_files WHERE record_id::text=$1 AND removed_at IS NULL ORDER BY id',
+    // R5H5: hanya lampiran; berkas pendukung tidak ikut ditinjau.
+    "SELECT id::text AS id,sha256 FROM sdl_unit_work_files WHERE record_id::text=$1 AND removed_at IS NULL AND purpose='lampiran' ORDER BY id",
     [workRecordId],
   )
 
@@ -226,7 +227,7 @@ export function registerOutgoingRoutes(router, { pool, json, handle, loadOwned }
         // Surat keluar tidak boleh disubmit tanpa lampiran PDF.
         const pdf = await client.query(
           `SELECT count(*)::int AS n FROM sdl_unit_work_files
-            WHERE record_id::text=$1 AND removed_at IS NULL AND media_type='application/pdf'`,
+            WHERE record_id::text=$1 AND removed_at IS NULL AND media_type='application/pdf' AND purpose='lampiran'`,
           [record.workRecordId],
         )
         if (pdf.rows[0].n === 0) return { kind: 'pdf_required_before_submit' }

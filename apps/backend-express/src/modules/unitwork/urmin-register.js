@@ -2,6 +2,7 @@ import { Router } from 'express'
 
 import { isUniqueViolation, withTransaction } from '../../db.js'
 import { BODY_LIMITS, parsePayload, rawBody } from '../../http/payload.js'
+import { nomorSuratKurang, rakitNomorSurat } from './nomor-surat.js'
 import { permit } from './permit.js'
 import { registerOutgoingRoutes } from './outgoing-review.js'
 import {
@@ -33,7 +34,12 @@ import {
 const UNIT = 'urmin'
 
 const FIELDS_BY_KIND = Object.freeze({
-  surat_keluar: ['nomorSurat', 'tujuan', 'tanggalSurat', 'perihal', 'sifatSurat', 'statusAdministrasi', 'keterangan'],
+  // R5G9 menambah 'jenisSurat'. 'keterangan' berhenti ditampilkan di UI tapi
+  // TETAP di sini — daftar ini allowlist, dan mencabutnya akan membuat setiap
+  // surat keluar LAMA gagal disunting dengan 400 karena form mengirim balik
+  // kunci yang sudah tersimpan di JSONB-nya.
+  // R5H3: delapan kunci isian dropdown, padanan urmin_register.go.
+  surat_keluar: ['nomorSurat', 'tujuan', 'tanggalSurat', 'perihal', 'sifatSurat', 'statusAdministrasi', 'keterangan', 'jenisSurat', 'kodeArsip', 'unitNomor', 'rujukanSurat', 'rujukanArahan', 'jalurSurat', 'penandatangan', 'pemberiNomor', 'verifikator', 'tembusan', 'tipeSurat', 'rujukanArahanId'],
   // R5G4 menambah 'pimpinan' dan BERHENTI menampilkan jenisAgenda, hasil, dan
   // statusAgenda di UI. Ketiganya sengaja TETAP di sini: daftar ini allowlist,
   // dan payload yang memuat kunci di luarnya ditolak. Mencabutnya akan membuat
@@ -90,9 +96,14 @@ function validInput(input) {
     if ([...value.trim()].length > 200) return false
     if (DATE_FIELDS.has(key) && value !== '' && !isIsoDate(value)) return false
     if (key === 'waktu' && value !== '' && !isTimeOfDay(value)) return false
+    // R5H5: padanan rujukanArahanIDPattern (urmin_register.go). Kosong atau
+    // UUID kanonik huruf kecil; TIDAK di-trim, sama seperti Go.
+    if (key === 'rujukanArahanId' && value !== '' && !RUJUKAN_ARAHAN_ID_RE.test(value)) return false
   }
   return true
 }
+
+const RUJUKAN_ARAHAN_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 /**
  * Status administrasi surat keluar hanya boleh kosong atau "Draft" lewat jalur
@@ -261,8 +272,27 @@ export function createUrminRegisterRouter({ pool }) {
       return
     }
 
+    // R5G13: surat keluar menerima nomornya di sini, saat draf dibuat.
+    // Keputusan pemilik sistem, berikut konsekuensinya: draf yang batal
+    // meninggalkan lubang pada deret, dan lubang itu tidak diisi ulang.
+    if (input.kind === 'surat_keluar') {
+      const kurang = nomorSuratKurang(input.fields)
+      if (kurang !== '') {
+        fail(res, 400, kurang)
+        return
+      }
+    }
+
     try {
       const created = await withTransaction(pool, async (client) => {
+        // Perakitan berada DI DALAM transaksi: kalau penyimpanan suratnya
+        // gagal, nomor yang terlanjur diambil ikut dibatalkan. Tanpa itu setiap
+        // kegagalan penyimpanan akan membakar satu nomor.
+        const fields = { ...input.fields }
+        if (input.kind === 'surat_keluar') {
+          fields.nomorSurat = await rakitNomorSurat(client, fields, new Date())
+        }
+
         const work = await client.query(
           `INSERT INTO sdl_unit_work_records(unit_key,category,title,description,classification,created_by,updated_by)
            VALUES('${UNIT}',$1,$2,'',$3,$4::uuid,$4::uuid) RETURNING id::text AS id`,
@@ -273,7 +303,7 @@ export function createUrminRegisterRouter({ pool }) {
         const registry = await client.query(
           `INSERT INTO sdl_urmin_registry(kind,ref_code,title,fields,work_record_id,created_by,updated_by)
            VALUES($1,$2,$3,$4::jsonb,$5::uuid,$6::uuid,$6::uuid) RETURNING id::text AS id`,
-          [input.kind, input.code.trim(), input.title.trim(), JSON.stringify(input.fields), workId, req.actor],
+          [input.kind, input.code.trim(), input.title.trim(), JSON.stringify(fields), workId, req.actor],
         )
         const id = registry.rows[0].id
 

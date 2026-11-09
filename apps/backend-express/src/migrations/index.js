@@ -85,6 +85,14 @@ export const MANIFEST = [
   'sql/034_urmin_derajat_doc_kind.sql',
   'sql/035_directive_incoming_link.sql',
   'sql/036_disposition_files.sql',
+  'sql/037_surat_kode_arsip.sql',
+  'sql/038_surat_jenis.sql',
+  'sql/039_surat_nomor_urut.sql',
+  'sql/040_arahan_bagian.sql',
+  'sql/041_arahan_lembar_disposisi.sql',
+  'sql/042_surat_keluar_opsi.sql',
+  'sql/043_arahan_paur.sql',
+  'sql/044_berkas_pendukung.sql',
 ]
 
 /**

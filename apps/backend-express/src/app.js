@@ -8,6 +8,9 @@ import { writeJson } from './http/respond.js'
 import { createAdminRouter } from './modules/admin/index.js'
 import { createBinfungRouter } from './modules/unitwork/binfung.js'
 import { createSumdaRouter } from './modules/unitwork/sumda.js'
+import { createKodeArsipRouter, createJenisSuratRouter } from './modules/unitwork/kode-arsip.js'
+import { createSuratOpsiRouter } from './modules/unitwork/surat-opsi.js'
+import { createMasterDataRouter } from './modules/unitwork/master-data.js'
 import { createUrminRegisterRouter } from './modules/unitwork/urmin-register.js'
 import { createUnitWorkRouter } from './modules/unitwork/work.js'
 import { createPortalRouter } from './modules/portal/index.js'
@@ -66,12 +69,22 @@ export function createApp({ pool, config, mailer: injectedMailer }) {
 
   // Modul identitas: Superadmin + identity.roles.manage.
   v1.use('/admin', requireRoleEditor(pool, config), createAdminRouter({ pool, config }))
+  // R5G12: master data persuratan. Guard Superadmin yang sama dengan /admin
+  // lainnya — ini konfigurasi, bukan pekerjaan unit. Mount terpisah supaya
+  // /master/:set tidak bersaing dengan route ber-parameter di createAdminRouter.
+  v1.use('/admin', requireRoleEditor(pool, config), createMasterDataRouter({ pool }))
 
   // Modul operasional: Superadmin justru DITOLAK di sini.
   const operational = requireOperational(pool, config)
   v1.use('/subbagsumda/registry', operational, createSumdaRouter({ pool, config }))
   v1.use('/subbagbinfung/registry', operational, createBinfungRouter({ pool, config }))
   v1.use('/urmin/registry', operational, createUrminRegisterRouter({ pool, config }))
+  // R5G10: master kode arsip. Mount sendiri, BUKAN sub-path /urmin/registry —
+  // di sana ia akan bersaing dengan /:id, dan Express mencocokkan route secara
+  // berurutan sehingga segmen statis tidak otomatis menang.
+  v1.use('/urmin/kode-arsip', operational, createKodeArsipRouter({ pool }))
+  v1.use('/urmin/jenis-surat', operational, createJenisSuratRouter({ pool }))
+  v1.use('/urmin/surat-opsi', operational, createSuratOpsiRouter({ pool }))
   v1.use('/unit-work', operational, createUnitWorkRouter({ pool, config }))
   v1.use('/subbagren/usulan', operational, createUsulanRouter({ pool, config }))
   v1.use('/subbagren/budget', operational, createBudgetRouter({ pool, config }))

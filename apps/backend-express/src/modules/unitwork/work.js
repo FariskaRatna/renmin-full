@@ -283,7 +283,7 @@ export function createUnitWorkRouter({ pool }) {
 
     try {
       const files = await pool.query(
-        `SELECT id::text AS id,file_name,media_type,byte_size,created_at
+        `SELECT id::text AS id,file_name,media_type,byte_size,created_at,purpose
            FROM sdl_unit_work_files WHERE record_id::text=$1 AND removed_at IS NULL
           ORDER BY created_at DESC`,
         [id],
@@ -313,6 +313,9 @@ export function createUnitWorkRouter({ pool }) {
           mediaType: row.media_type,
           size: row.byte_size,
           createdAt: row.created_at,
+          // R5H5: padanan `purpose,omitempty` (work.go). Hanya berkas
+          // pendukung yang membawa kunci ini; lampiran tetap seperti dulu.
+          ...(row.purpose === 'pendukung' ? { purpose: 'pendukung' } : {}),
         })),
         tasks: tasks.rows.map((row) => ({
           id: row.id,
@@ -457,6 +460,16 @@ export function createUnitWorkRouter({ pool }) {
     }
   }))
 
+  /**
+   * R5H5: padanan filePurpose (work.go). Kosong berarti lampiran supaya
+   * pemanggil lama tidak berubah; nilai tak dikenal mengembalikan ''.
+   */
+  function filePurpose(raw) {
+    if (raw === '' || raw === 'lampiran') return 'lampiran'
+    if (raw === 'pendukung') return 'pendukung'
+    return ''
+  }
+
   // ---- POST /:unit/records/:id/files ----
   router.post('/:unit/records/:id/files', handle(async (req, res) => {
     const unit = routeUnit(req, res)
@@ -484,11 +497,17 @@ export function createUnitWorkRouter({ pool }) {
       fail(res, 400, 'unsupported_file_type')
       return
     }
+    const purpose = filePurpose(upload.fields?.purpose ?? '')
+    if (purpose === '') {
+      fail(res, 400, 'invalid_purpose')
+      return
+    }
 
     try {
+      // Batas 10 dihitung per jenis, padanan work.go.
       const count = await pool.query(
-        'SELECT count(*)::int AS n FROM sdl_unit_work_files WHERE record_id::text=$1 AND removed_at IS NULL',
-        [id],
+        'SELECT count(*)::int AS n FROM sdl_unit_work_files WHERE record_id::text=$1 AND removed_at IS NULL AND purpose=$2',
+        [id, purpose],
       )
       if (count.rows[0].n >= MAX_FILES_PER_RECORD) {
         fail(res, 409, 'max_10_files')
@@ -499,12 +518,13 @@ export function createUnitWorkRouter({ pool }) {
       const digest = createHash('sha256').update(upload.file.buffer).digest('hex')
 
       const fileId = await withTransaction(pool, async (client) => {
-        if (unit === 'urmin') await lockOutgoingEditing(client, id)
+        // Berkas pendukung tidak dikunci alur surat keluar (R5H5).
+        if (unit === 'urmin' && purpose === 'lampiran') await lockOutgoingEditing(client, id)
 
         const { rows } = await client.query(
-          `INSERT INTO sdl_unit_work_files(record_id,file_name,media_type,byte_size,sha256,file_data,uploaded_by)
-           VALUES($1::uuid,$2,$3,$4,$5,$6,$7::uuid) RETURNING id::text AS id`,
-          [id, name, media, upload.file.buffer.length, digest, upload.file.buffer, req.actor],
+          `INSERT INTO sdl_unit_work_files(record_id,file_name,media_type,byte_size,sha256,file_data,uploaded_by,purpose)
+           VALUES($1::uuid,$2,$3,$4,$5,$6,$7::uuid,$8) RETURNING id::text AS id`,
+          [id, name, media, upload.file.buffer.length, digest, upload.file.buffer, req.actor, purpose],
         )
         await client.query(
           `INSERT INTO sdl_unit_work_events(record_id,actor_id,action,note)
@@ -569,7 +589,15 @@ export function createUnitWorkRouter({ pool }) {
 
     try {
       const outcome = await withTransaction(pool, async (client) => {
-        if (unit === 'urmin') await lockOutgoingEditing(client, id)
+        // R5H5: berkas pendukung boleh dihapus kapan saja. Berkas yang tidak
+        // ditemukan diperlakukan sebagai lampiran, supaya urutannya tetap
+        // seperti Go: kunci dulu, baru 404.
+        const kind = await client.query(
+          'SELECT purpose FROM sdl_unit_work_files WHERE id::text=$1 AND record_id::text=$2 AND removed_at IS NULL',
+          [req.params.fileID, id],
+        )
+        const purpose = kind.rows.length > 0 ? kind.rows[0].purpose : 'lampiran'
+        if (unit === 'urmin' && purpose === 'lampiran') await lockOutgoingEditing(client, id)
 
         // Berkas hanya ditandai terhapus; datanya dipertahankan.
         const removed = await client.query(
