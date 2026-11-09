@@ -1,0 +1,42 @@
+# Overlay reverse proxy TLS. Dipakai BERSAMA compose.dev.yaml, bukan sendirian:
+#   docker compose --env-file .env -f infra/compose.dev.yaml -f infra/compose.proxy.yaml up -d --wait
+#
+# Tujuannya memenuhi syarat secure context: tanpa HTTPS, CAPTCHA login
+# (LocalCaptcha.tsx:24) tidak bisa dilewati karena crypto.subtle tidak tersedia.
+name: sdl-foundation-r1
+services:
+  frontend:
+    # Klien HMR harus menyambung ke port publik proxy, bukan 5173.
+    environment:
+      SDL_HMR_CLIENT_PORT: ${SDL_PROXY_HTTPS_PORT:-443}
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      SDL_PUBLIC_ORIGIN: ${SDL_PUBLIC_ORIGIN:?define SDL_PUBLIC_ORIGIN, mis. https://172.16.173.34}
+      # Host telanjang tanpa skema, dipakai Caddyfile untuk default_sni.
+      SDL_PUBLIC_HOST: ${SDL_PUBLIC_HOST:?define SDL_PUBLIC_HOST, mis. 172.16.173.34}
+      # Tahap 6: prefix yang dilayani Express (lihat Caddyfile). Sentinel bawaan
+      # tidak pernah cocok dengan path nyata, jadi tanpa variabel ini SEMUA
+      # trafik tetap ke Go -- default yang aman. Ubah di .env, lalu
+      # `docker compose ... up -d --force-recreate caddy`.
+      SDL_EXPRESS_PATHS: ${SDL_EXPRESS_PATHS:-/__sdl_express_belum_dialihkan__}
+    ports:
+      - "${SDL_PROXY_HTTP_PORT:-80}:80"
+      - "${SDL_PROXY_HTTPS_PORT:-443}:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Sertifikat self-signed ber-IP-SAN. Dibuat sekali dengan openssl;
+      # tidak ikut repo karena berisi private key.
+      - ./certs:/etc/caddy/certs:ro
+      - sdl_caddy_data:/data
+      - sdl_caddy_config:/config
+    depends_on:
+      frontend:
+        condition: service_healthy
+    # Sengaja tanpa healthcheck: situs hanya melayani host SDL_PUBLIC_ORIGIN,
+    # sehingga probe ke 127.0.0.1 selalu 404 dan `up --wait` akan macet.
+    networks: [internal]
+volumes:
+  sdl_caddy_data:
+  sdl_caddy_config:

@@ -1,0 +1,13 @@
+# Dockerfile memakai `COPY . .`, jadi semua yang tidak dicoret di sini ikut
+# masuk image. node_modules dibangun ulang oleh `npm ci` di dalam image.
+node_modules
+dist
+.git
+.gitignore
+.claude
+.env
+.env.*
+*.log
+.DS_Store
+Dockerfile
+.dockerignore

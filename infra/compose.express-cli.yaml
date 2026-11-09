@@ -1,0 +1,84 @@
+# Perkakas siklus hidup backend Express, padanan
+# compose.seed-bagrenmin.yaml dan Dockerfile.reset-all-passwords milik Go.
+#
+# Ketiganya memakai image `api-express` yang SAMA dengan server — bukan image
+# tersendiri. Di Go tiap perkakas adalah biner terpisah karena memang begitu
+# cara Go dipaketkan; di Node seluruh `src/` sudah ada di dalam satu image,
+# jadi membuat image kedua hanya menambah hal yang bisa tertinggal versinya.
+#
+# Dipakai BERSAMA compose.dev.yaml dan compose.express.yaml:
+#
+#   # terapkan skema (database baru)
+#   docker compose --env-file .env -f infra/compose.dev.yaml \
+#     -f infra/compose.express.yaml -f infra/compose.express-cli.yaml \
+#     run --rm --no-deps migrate-express
+#
+#   # Superadmin pertama — kredensial lewat stdin SAJA
+#   printf 'user\nemail\nNama\nPassword\n' | docker compose ... \
+#     run --rm --no-deps -T bootstrap-express
+#
+#   # 13 akun operasional (3 baris stdin: password SA, password awal, ulangi)
+#   SDL_SEED_SUPERADMIN_USERNAME=sasdl docker compose ... \
+#     run --rm --no-deps -T seed-bagrenmin-express
+#
+# `reset-all-passwords-express` SENGAJA tidak diberi contoh perintah di sini.
+# Ia merotasi SELURUH password dan tidak bisa dibatalkan (batasan keras #6);
+# jalankan lewat pembungkus interaktif, bukan dengan menyalin baris perintah.
+name: sdl-foundation-r1
+services:
+  migrate-express:
+    extends:
+      file: compose.express.yaml
+      service: api-express
+    restart: "no"
+    command: ["--migrate"]
+    healthcheck:
+      disable: true
+    profiles: ["cli"]
+
+  bootstrap-express:
+    extends:
+      file: compose.express.yaml
+      service: api-express
+    restart: "no"
+    command: ["--bootstrap-superadmin"]
+    stdin_open: true
+    healthcheck:
+      disable: true
+    profiles: ["cli"]
+
+  seed-bagrenmin-express:
+    extends:
+      file: compose.express.yaml
+      service: api-express
+    restart: "no"
+    entrypoint: ["node", "src/cli/seed-bagrenmin.js"]
+    command: ["-apply"]
+    stdin_open: true
+    healthcheck:
+      disable: true
+    environment:
+      # Dua penjaga alat ini membaca keduanya; keliru di salah satunya membuat
+      # provisioning ditolak, bukan dijalankan sebagian.
+      SDL_ENV: "development"
+      # TANPA penjaga `:?`. Compose menginterpolasi SELURUH service di berkas
+      # ini meski hanya satu yang dijalankan, jadi `:?` di sini akan membuat
+      # `migrate-express` menolak jalan karena variabel yang tidak ada
+      # hubungannya dengannya. Penjaga yang sebenarnya ada di dalam alatnya
+      # ("Superadmin username is required"), dan di situlah tempatnya.
+      SDL_SEED_SUPERADMIN_USERNAME: ${SDL_SEED_SUPERADMIN_USERNAME:-}
+    profiles: ["cli"]
+
+  reset-all-passwords-express:
+    extends:
+      file: compose.express.yaml
+      service: api-express
+    restart: "no"
+    entrypoint: ["node", "src/cli/reset-all-passwords.js"]
+    command: ["-apply"]
+    stdin_open: true
+    healthcheck:
+      disable: true
+    environment:
+      SDL_ENV: "development"
+    profiles: ["cli"]

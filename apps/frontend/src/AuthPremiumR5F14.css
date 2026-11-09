@@ -1,0 +1,116 @@
+/* SIERA DELTA LIMA | R5F14 institutional sign-in. Visual layer only. */
+.auth-shell {
+  --auth-ink:#142941;
+  --auth-muted:#65778b;
+  --auth-accent:#c5a56a;
+  display:grid;
+  grid-template-columns:minmax(0,1.08fr) minmax(420px,.92fr);
+  width:100%; min-height:100vh;
+  background:#f5f7fb;
+  color:var(--auth-ink);
+  font-family:inherit;
+}
+.auth-shell .auth-hero {
+  min-height:100vh;
+  overflow:hidden;
+  position:relative;
+  isolation:isolate;
+  display:flex;
+  flex-direction:column;
+  justify-content:space-between;
+  background:radial-gradient(circle at 92% 18%,rgba(125,173,196,.20),transparent 32%),
+    radial-gradient(circle at 15% 76%,rgba(51,106,136,.22),transparent 36%),
+    linear-gradient(147deg,#101e31 0%,#152f48 54%,#0c2338 100%);
+  color:#f7f9fd;
+  padding:clamp(30px,4.3vw,68px) clamp(30px,5vw,84px) clamp(28px,3.4vw,54px);
+  border:0; border-radius:0; box-shadow:none;
+}
+.auth-shell .auth-hero::before {
+  content:""; position:absolute; z-index:-1;
+  width:min(66vw,670px); aspect-ratio:1; border-radius:50%;
+  top:19%; right:-31%; border:1px solid rgba(231,226,211,.10);
+  box-shadow:0 0 0 77px rgba(230,228,216,.035),0 0 0 166px rgba(230,228,216,.023),0 0 0 267px rgba(230,228,216,.012);
+  pointer-events:none;
+}
+.auth-shell .auth-hero::after {
+  content:"";position:absolute;inset:0;z-index:-1;opacity:.16;
+  background-image:linear-gradient(rgba(214,229,240,.15) 1px,transparent 1px),linear-gradient(90deg,rgba(214,229,240,.15) 1px,transparent 1px);
+  background-size:75px 75px;mask-image:linear-gradient(90deg,transparent,black);
+  pointer-events:none;
+}
+.auth-shell .auth-hero-top {display:flex; align-items:center;justify-content:space-between;gap:20px;position:relative;z-index:1;}
+.auth-shell .auth-hero .brand {display:flex; align-items:center;gap:14px;color:#fff;}
+.auth-shell .auth-hero .brand strong {color:#fff;font-size:clamp(18px,1.35vw,23px);letter-spacing:.035em;}
+.auth-shell .auth-hero .brand strong em {font-style:normal;color:#e1c58d;}
+.auth-shell .auth-hero .brand small {color:#bbcbdc;display:block;margin-top:4px;font-size:12px;letter-spacing:.01em;}
+.auth-shell .auth-hero .brand-symbol {background:rgba(255,255,255,.95);border-radius:13px;padding:6px;box-shadow:0 9px 30px rgba(0,0,0,.1);}
+.auth-shell .auth-unit-mark {border:1px solid rgba(222,232,242,.20);border-radius:999px;color:#e6d6b6;font-weight:700;font-size:10px;letter-spacing:.16em;white-space:nowrap;padding:10px 14px;}
+.auth-shell .auth-hero-content {max-width:640px;position:relative;z-index:1;margin:auto 0;padding:68px 0;}
+.auth-shell .auth-hero-content .hero-eyebrow {display:block;color:#d7c08e!important;font-weight:700;font-size:12px;letter-spacing:.17em;line-height:1.5;text-transform:uppercase;margin-bottom:24px;}
+.auth-shell .auth-hero-content h1 {font-size:clamp(39px,4.3vw,69px);letter-spacing:-.047em;line-height:1.12;margin:0;color:#fff;font-weight:730;}
+.auth-shell .auth-hero-content h1 em {font-style:normal;color:#e6d19f;}
+.auth-shell .auth-hero-content p {max-width:480px;font-size:clamp(15px,1.2vw,18px);line-height:1.85;color:#bacbda;margin:24px 0 0;}
+.auth-shell .auth-feature-trail {display:flex;flex-wrap:wrap;gap:9px;margin-top:35px;}
+.auth-shell .auth-feature-trail span {display:inline-flex;border-radius:999px;border:1px solid rgba(223,233,241,.17);background:rgba(255,255,255,.055);color:#d6e2ea;padding:9px 15px;font-size:12px;font-weight:600;}
+.auth-shell .auth-hero-foot {display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;border-top:1px solid rgba(222,232,242,.16);padding-top:22px;color:#a8bdce;font-size:11px;letter-spacing:.02em;}
+.auth-shell .auth-hero-foot span:first-child {font-weight:800;letter-spacing:.1em;color:#d7c08e;}
+.auth-shell .auth-pane {min-height:100vh;display:flex;justify-content:center;align-items:center;padding:clamp(28px,5vw,76px) clamp(22px,5vw,78px);background:#f5f7fb;}
+.auth-shell .auth-form {width:100%;max-width:438px;background:#fff;border:1px solid #e6ebf2;box-shadow:0 24px 90px rgba(24,45,67,.065);border-radius:22px;padding:clamp(25px,3.25vw,44px);box-sizing:border-box;}
+.auth-shell .auth-form-eyebrow {display:inline-flex;font-size:11px;letter-spacing:.15em;color:#4c718d;font-weight:800;text-transform:uppercase;margin-bottom:15px;}
+.auth-shell .auth-form h2 {color:#162a40;font-weight:740;font-size:clamp(26px,2.35vw,34px);letter-spacing:-.04em;line-height:1.2;margin:0 0 10px;}
+.auth-shell .auth-form > p {color:#65778b;font-size:14px;line-height:1.72;margin:0 0 30px;}
+.auth-shell .auth-form form {display:flex;flex-direction:column;gap:0;}
+.auth-shell .auth-form form label {display:block;color:#334961;font-size:13px;font-weight:700;margin:16px 0 8px;}
+.auth-shell .auth-form form input {display:block;box-sizing:border-box;width:100%;min-height:50px;border-radius:10px;border:1px solid #d8e1ea;background:#fdfefe;outline:none;color:#162a40;padding:12px 14px;font-size:15px;box-shadow:none;transition:border-color .18s,box-shadow .18s;}
+.auth-shell .auth-form form input::placeholder {color:#9aa8b6;}
+.auth-shell .auth-form form input:focus-visible {border-color:#527e9f;box-shadow:0 0 0 4px rgba(59,117,154,.12);}
+.auth-shell .auth-form form input.otp-code {font-size:24px;letter-spacing:.22em;text-align:center;font-variant-numeric:tabular-nums;}
+.auth-shell .auth-form .btn.primary.full {width:100%;min-height:51px;border:0;border-radius:11px;margin-top:22px;background:#183d58;color:#fff;justify-content:center;font-weight:700;box-shadow:0 9px 20px rgba(24,61,88,.13);}
+.auth-shell .auth-form .btn.primary.full:enabled:hover {background:#215372;transform:translateY(-1px);}
+.auth-shell .auth-form .btn.primary.full:focus-visible,.auth-shell .auth-form .text-link:focus-visible {outline:3px solid #96bed9;outline-offset:3px;}
+.auth-shell .auth-form .btn.primary.full:disabled {opacity:.62;box-shadow:none;cursor:not-allowed;}
+.auth-shell .auth-form .auth-preview-info {padding:12px 14px;border-radius:9px;font-size:13px;line-height:1.55;}
+.auth-shell .auth-form .auth-error {border-radius:10px;margin-bottom:12px;padding:12px 14px;}
+.auth-shell .auth-form .text-link {display:inline-flex;align-items:center;justify-content:center;gap:7px;margin-top:18px;}
+/* Keep challenge functional, only change its engineering-facing text in the component. */
+@media (max-width:980px){
+  .auth-shell {grid-template-columns:minmax(0,1fr);}
+  .auth-shell .auth-hero {min-height:auto;padding:28px clamp(22px,5vw,48px) 32px;gap:0;}
+  .auth-shell .auth-hero-content {padding:38px 0 24px;margin:0;}
+  .auth-shell .auth-hero-content h1 {font-size:clamp(32px,6vw,47px);}
+  .auth-shell .auth-feature-trail {margin-top:20px;}
+  .auth-shell .auth-pane {min-height:auto;padding:26px 18px 60px;align-items:flex-start;}
+  .auth-shell .auth-form {max-width:560px;padding:clamp(24px,4.2vw,37px);}
+}
+@media (max-width:540px){
+  .auth-shell .auth-hero-top {align-items:flex-start;}
+  .auth-shell .auth-unit-mark {display:none;}
+  .auth-shell .auth-hero-content {padding:30px 0 20px;}
+  .auth-shell .auth-hero-content h1 {font-size:34px;}
+  .auth-shell .auth-hero-content p {font-size:14px;margin-top:15px;line-height:1.6;}
+  .auth-shell .auth-hero-foot {font-size:10px;}
+  .auth-shell .auth-feature-trail {display:none;}
+  .auth-shell .auth-form {border-radius:16px;padding:25px 23px;}
+  .auth-shell .auth-pane {padding:18px 12px 30px;}
+}
+@media (prefers-reduced-motion:reduce){.auth-shell *{transition:none!important;animation:none!important}}
+
+/* SIERA DELTA LIMA R5F15B | clean One Workspace login hero only */
+.auth-shell .auth-hero-content { max-width:620px; }
+.auth-shell .auth-hero-content h1 {
+  font-size:clamp(36px,3.65vw,58px);
+  line-height:1.14;
+  letter-spacing:-.043em;
+  max-width:610px;
+}
+.auth-shell .auth-hero-content p {
+  max-width:450px;
+  line-height:1.68;
+  margin-top:22px;
+}
+@media (max-width:980px) {
+  .auth-shell .auth-hero-content h1 {font-size:clamp(33px,5.2vw,47px);}
+}
+@media (max-width:540px) {
+  .auth-shell .auth-hero-content h1 {font-size:34px;}
+}

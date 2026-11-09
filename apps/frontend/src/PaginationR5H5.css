@@ -1,0 +1,8 @@
+/* R5H5: paginasi bersama — gaya mengikuti .sdl-tasks-r5f3__pager (Disposisi). */
+.sdl-pager-r5h5{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 14px;margin-top:14px;padding:4px 2px;color:var(--muted);font-size:12px}
+.sdl-pager-r5h5__info{flex:1 1 auto;min-width:0}
+.sdl-pager-r5h5__size select{font:inherit;font-size:12px;padding:6px 9px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--ink)}
+.sdl-pager-r5h5__nav{display:flex;align-items:center;gap:10px}
+.sdl-pager-r5h5__nav .btn{padding:7px 12px;font-size:12px}
+.sdl-pager-r5h5__sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
+@media(max-width:640px){.sdl-pager-r5h5{justify-content:center}.sdl-pager-r5h5__info{flex-basis:100%;text-align:center}}

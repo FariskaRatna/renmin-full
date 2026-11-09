@@ -1,0 +1,51 @@
+# SDL monorepo — apa yang TIDAK boleh masuk GitHub.
+# Daftar ini sengaja sama dengan --exclude di scripts/package-release.sh:
+# apa pun yang tidak dikirim ke server lewat tarball, juga tidak lewat git.
+
+# ── Secret ────────────────────────────────────────────────────────────────
+# .env berisi SDL_AUTH_SECRET, SDL_EVIDENCE_KEY, password DB & SMTP.
+# Di server .env ditaruh manual (mode 600), tidak pernah lewat repo.
+.env
+.env.*
+!.env.example
+infra/certs/
+*.pem
+*.key
+*.p12
+
+# ── Config Docker lokal (token & state buildx di laptop Windows) ─────────
+# README-nya tetap ikut supaya alasan folder ini ada tidak hilang.
+infra/docker-config/*
+!infra/docker-config/README.md
+
+# ── Hasil build & dependensi (dibangun ulang di image) ───────────────────
+node_modules/
+dist/
+*.tsbuildinfo
+
+# ── Artefak rilis & cadangan ──────────────────────────────────────────────
+release/
+sdl.tar.gz
+RELEASE-MANIFEST.txt
+golden.backup-*/
+apps/backend-express/harness/golden/
+
+# ── Laporan uji & log ─────────────────────────────────────────────────────
+0.sekerips/reports/
+*.log
+
+# ── Sampah OS / editor / tool lokal ───────────────────────────────────────
+__MACOSX/
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
+.claude/settings.local.json
+
+# Folder kosong sisa salah ketik path Windows
+apps/backend;C
+
+# Repo terpisah (github.com/FariskaRatna/mockup-renmin), tidak dipakai di server
+mockup/

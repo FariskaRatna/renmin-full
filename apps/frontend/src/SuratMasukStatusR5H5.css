@@ -1,0 +1,61 @@
+/* R5H5: sel Status di daftar Surat Masuk.
+ *
+ * Sebelumnya satu kotak hijau yang sama untuk semua surat terdaftar (termasuk
+ * yang masih menunggu Kabagrenmin), kotak inline yang bingkainya patah saat
+ * label panjang turun baris, dan dua keterangan teks polos bertumpuk.
+ * Sekarang: badge berwarna menurut TAHAP alur, lalu satu baris keterangan
+ * kecil dengan titik warna yang konsisten.
+ */
+/* Tabel .data-table tidak memberi padding pada td, jadi jarak ke baris atas
+ * dan bawah dipegang sel ini sendiri. */
+.sm-status{display:flex;flex-direction:column;align-items:flex-start;gap:5px;padding:10px 0}
+
+.sm-badge{
+  --tone-bg:#eef2f7;--tone-ink:#4a5a70;--tone-dot:#8a98ab;--tone-line:#dde4ee;
+  display:inline-flex;align-items:center;gap:7px;white-space:nowrap;
+  padding:5px 10px 5px 8px;border-radius:999px;border:1px solid var(--tone-line);
+  background:var(--tone-bg);color:var(--tone-ink);
+  font-size:11px;font-weight:750;line-height:1.3;
+}
+.sm-badge::before{content:"";width:7px;height:7px;border-radius:50%;flex:none;background:var(--tone-dot)}
+.sm-badge.tone-warn{--tone-bg:#fff5e3;--tone-ink:#8a5a12;--tone-dot:#e0a02e;--tone-line:#f4dfb6}
+.sm-badge.tone-info{--tone-bg:#eaf2fd;--tone-ink:#24538f;--tone-dot:#4a86d6;--tone-line:#cfe0f6}
+.sm-badge.tone-ok{--tone-bg:#e7f7f1;--tone-ink:#187c61;--tone-dot:#2aa57f;--tone-line:#bce6d7}
+.sm-badge.tone-review{--tone-bg:#f2edfc;--tone-ink:#5b3d98;--tone-dot:#8a63d2;--tone-line:#ddd2f4}
+.sm-badge.tone-danger{--tone-bg:#fdeceb;--tone-ink:#a23b33;--tone-dot:#d9574c;--tone-line:#f5cfcb}
+
+/* padding-left menyejajarkan titik keterangan dengan titik di badge. */
+.sm-meta{display:inline-flex;align-items:center;gap:6px;padding-left:9px;white-space:nowrap;font-size:10.5px;font-weight:700;line-height:1.3;color:var(--muted)}
+.sm-meta::before{content:"";width:5px;height:5px;border-radius:50%;flex:none;background:currentColor;opacity:.75}
+.sm-meta.is-overdue{color:#b4471f}
+
+[data-theme=dark] .sm-badge{--tone-bg:#1e2c40;--tone-ink:#c3cfdf;--tone-dot:#8193ab;--tone-line:#2f4058}
+[data-theme=dark] .sm-badge.tone-warn{--tone-bg:#3a2d16;--tone-ink:#f0c877;--tone-dot:#e6a93c;--tone-line:#56421f}
+[data-theme=dark] .sm-badge.tone-info{--tone-bg:#17304f;--tone-ink:#9cc4f3;--tone-dot:#5f9be6;--tone-line:#244672}
+[data-theme=dark] .sm-badge.tone-ok{--tone-bg:#123a30;--tone-ink:#7fd6b6;--tone-dot:#3cbf93;--tone-line:#1e5446}
+[data-theme=dark] .sm-badge.tone-review{--tone-bg:#2c2347;--tone-ink:#c6b2f2;--tone-dot:#9b7be0;--tone-line:#40336a}
+[data-theme=dark] .sm-badge.tone-danger{--tone-bg:#3d1f1d;--tone-ink:#f4aaa3;--tone-dot:#e2685d;--tone-line:#5a2c29}
+[data-theme=dark] .sm-meta.is-overdue{color:#f09272}
+
+@media(max-width:640px){.sm-badge{white-space:normal}}
+
+/* R5H5: tombol aksi baris Surat Masuk, disamakan dengan .sumda-action di
+ * daftar Surat Keluar (ukuran, bingkai, ikon + label, warna). */
+.sm-row-actions{flex-wrap:nowrap!important;gap:6px!important}
+.sm-row-action{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;padding:6px 9px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--ink-2,var(--ink));font:inherit;font-size:12px;font-weight:400;white-space:nowrap;cursor:pointer}
+.sm-row-action:hover:not(:disabled){background:var(--subtle);border-color:#afbed1}
+.sm-row-action--file{color:#245487}
+[data-theme=dark] .sm-row-action--file{color:#9cc4f3}
+
+/* R5H5: sel daftar Surat Masuk diberi jarak yang sama dengan judul kolomnya
+ * (.data-table th: 14px 18px), supaya isi sejajar dengan judul. Jarak atas-
+ * bawah kini dipegang sel, jadi .sm-status tidak perlu padding sendiri. */
+/* R5H5: tipografi & jarak disamakan dengan tabel Surat Keluar (.sumda-table),
+ * diukur dari gaya terhitung keduanya: isi 12px, judul kolom berjarak huruf
+ * .6px, sel 15px dengan tepi kiri/kanan 24px, kolom tanggal berwarna sekunder. */
+.data-table.sm-table th{padding:14px 15px;letter-spacing:.6px}
+.data-table.sm-table th:first-child,.data-table.sm-table td:first-child{padding-left:24px}
+.data-table.sm-table th:last-child,.data-table.sm-table td:last-child{padding-right:24px}
+.sm-table td{padding:15px;font-size:12px;vertical-align:middle}
+.sm-table td:nth-child(4){color:var(--ink-2,var(--ink))}
+.sm-table .sm-status{padding:0}

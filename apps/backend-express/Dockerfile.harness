@@ -1,0 +1,24 @@
+# Image untuk harness golden-file. Memakai proyek npm yang sama dengan backend
+# Express — satu package.json, satu node_modules, tanpa proyek bersarang.
+FROM node:24.22.0-alpine3.24
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci --no-audit --no-fund
+
+COPY harness ./harness
+# seed-docs menanam bukti keuangan terenkripsi dan memakai sealEvidence milik
+# backend, bukan salinan. Dua implementasi AES-GCM adalah satu implementasi
+# terlalu banyak.
+COPY src ./src
+# Alat verifikasi yang butuh database ikut dibawa: service `db` tidak pernah
+# diekspos ke host, jadi image inilah satu-satunya tempat Node bisa
+# menjangkaunya. Dijalankan lewat --entrypoint node, bukan lewat harness/index.js.
+COPY verify ./verify
+
+RUN addgroup -S harness && adduser -S -G harness harness \
+ && mkdir -p /app/harness/golden && chown -R harness:harness /app
+USER harness
+
+ENTRYPOINT ["node", "harness/index.js"]
+CMD ["list"]

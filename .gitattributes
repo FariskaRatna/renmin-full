@@ -1,0 +1,25 @@
+# Semua file teks disimpan dan di-checkout dengan LF, termasuk di Windows.
+# Script .sh dengan CRLF gagal di server Linux ("bash\r: not found"), dan
+# image Docker yang di-build dari laptop Windows ikut membawa CRLF.
+* text=auto eol=lf
+
+# Batch Windows wajib CRLF.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Biner
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.xlsx binary
+*.docx binary
+*.woff binary
+*.woff2 binary
+*.tar.gz binary
+
+# usulan.js memakai byte NUL sebagai pemisah kunci (meniru Go), jadi git
+# mendeteksinya sebagai biner. Disimpan apa adanya; isinya sudah LF.
+apps/backend-express/src/modules/subbagren/usulan.js -text

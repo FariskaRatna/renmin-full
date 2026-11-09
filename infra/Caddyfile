@@ -1,0 +1,54 @@
+{
+	admin off
+
+	# WAJIB untuk situs beralamat IP. Browser dan curl tidak mengirim SNI saat
+	# tujuannya IP literal, sehingga Caddy tidak punya nama untuk mencocokkan
+	# sertifikat dan menutup handshake dengan "tlsv1 alert internal error".
+	# default_sni memberi nama cadangan itu. Terbukti: handshake dengan
+	# `openssl -servername` sukses, tanpa SNI gagal.
+	default_sni {$SDL_PUBLIC_HOST}
+}
+
+# Alamat situs diambil dari env SDL_PUBLIC_ORIGIN, mis. https://172.16.173.34
+# Caddy otomatis menyiapkan redirect dari http:// ke https:// pada port 80.
+{$SDL_PUBLIC_ORIGIN} {
+	# Sertifikat self-signed ber-IP-SAN, dibuat manual di infra/certs/.
+	# `tls internal` TIDAK bisa dipakai untuk alamat IP: sertifikatnya terbit
+	# dengan DNS SAN, sementara ClientHello dari browser/curl ke IP literal
+	# tidak mengirim SNI sama sekali. Caddy lalu mencocokkan berdasarkan IP
+	# koneksi, tidak menemukan kandidat, dan menutup handshake dengan
+	# "tlsv1 alert internal error".
+	tls /etc/caddy/certs/sdl.crt /etc/caddy/certs/sdl.key
+
+	encode zstd gzip
+
+	# Tahap 6 migrasi Go -> Express: peralihan PER PREFIX, di sini, bukan di
+	# kode (aturan 5 CLAUDE.md). SDL_EXPRESS_PATHS berisi daftar pola path yang
+	# dipisah spasi, mis. "/api/v1/portal/* /api/v1/executive/*". Yang cocok
+	# langsung ke api-express; sisanya tetap lewat Vite ke Go seperti sebelumnya.
+	#
+	# Tidak diisi = sentinel yang tidak pernah cocok (compose.proxy.yaml), jadi
+	# perilakunya identik dengan sebelum Tahap 6. Rollback = kosongkan
+	# variabelnya di .env lalu restart container caddy (admin off -> tidak ada
+	# reload panas).
+	#
+	# Jalur Express melewati Vite, sehingga Host yang diterima backend adalah
+	# host publik, bukan api:8080. Origin tidak berubah -- yang diperiksa CSRF
+	# hanyalah Origin (SDL_ALLOWED_ORIGINS), dan backend memakai IP socket,
+	# bukan X-Forwarded-For, untuk pembatasan login.
+	@express path {$SDL_EXPRESS_PATHS}
+	handle @express {
+		reverse_proxy api-express:8080
+	}
+
+	# Sisanya: satu upstream, Vite, yang mem-proxy /api ke api:8080 (Go).
+	# reverse_proxy meneruskan Upgrade: websocket (HMR) secara otomatis.
+	handle {
+		reverse_proxy frontend:5173
+	}
+
+	log {
+		output stderr
+		format console
+	}
+}

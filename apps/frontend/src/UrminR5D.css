@@ -1,0 +1,68 @@
+.urmin-r5d .sumda-overview-mark {background:#e0f2ed;color:#18735e}
+.urmin-r5d .sumda-button-primary {background:#235c63}
+.urmin-r5d .sumda-button-primary:hover:not(:disabled){background:#17464b}
+/* R5D UX02 — Surat Keluar: single-screen file upload and authentic previews. */
+.urmin-r5d .urmin-attachment-block{padding-bottom:26px}
+.urmin-r5d .urmin-upload-zone{display:flex;position:relative;flex-direction:column;justify-content:center;align-items:center;gap:7px;min-height:145px;padding:22px 18px;border:2px dashed #aec4d7;border-radius:15px;background:#f3f9fc;text-align:center;color:#235c63;cursor:pointer;transition:border-color .15s,background .15s;margin:16px 0 0}
+.urmin-r5d .urmin-upload-zone strong{font-size:13px;font-weight:850;color:#20445c}
+.urmin-r5d .urmin-upload-zone span{font-size:11px;color:#59758c;line-height:1.5}
+.urmin-r5d .urmin-upload-zone:hover{border-color:#388c91;background:#edf8f9}
+.urmin-r5d .urmin-upload-zone:focus-within{outline:3px solid rgba(45,116,143,.22);outline-offset:2px}
+.urmin-r5d .urmin-upload-zone input[type=file]{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;padding:0;border:0}
+.urmin-r5d .urmin-upload-zone:has(input:disabled){opacity:.6;cursor:not-allowed}
+.urmin-file-section{margin-top:18px}
+.urmin-file-section>strong{display:block;color:#29425b;font-size:12px;margin:0 0 11px}
+.urmin-file-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:11px}
+.urmin-file-card{border:1px solid #dce6ef;border-radius:12px;background:#fff;padding:9px;min-width:0;overflow:hidden}
+.urmin-file-thumb{height:98px;background:#f0f5fa;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#4b6b8c;gap:3px;overflow:hidden}
+.urmin-file-thumb img{width:100%;height:100%;object-fit:cover}
+.urmin-file-thumb span{font-size:9px;font-weight:900;letter-spacing:.7px}
+.urmin-file-name{margin-top:8px;color:#223b53;font-weight:800;font-size:11px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+.urmin-file-card small{color:#75859b;display:block;margin-top:3px;font-size:10px;line-height:1.45}
+.urmin-file-actions{display:flex;gap:5px;flex-wrap:wrap;margin-top:9px}
+.urmin-file-actions button,.urmin-file-actions a{display:inline-flex;align-items:center;justify-content:center;gap:4px;padding:6px 8px;border:1px solid #dce6ef;border-radius:7px;color:#2a5472;background:#f8fbff;font-weight:750;font-size:10px;text-decoration:none;min-height:31px}
+.urmin-file-actions button:hover,.urmin-file-actions a:hover{border-color:#9eb8d1;background:#eef5fb}
+.urmin-file-actions button:disabled{opacity:.5;cursor:not-allowed}
+.urmin-file-hint{color:#75859b;font-size:11px;margin:13px 0 0;line-height:1.6}
+.urmin-upload-error{color:#a33c3c;background:#fff0f0;border:1px solid #e9caca;border-radius:9px;padding:10px 12px;font-size:11px;line-height:1.65;overflow-wrap:anywhere}
+.urmin-file-progress{color:#1f5f64;background:#e9f8f6;border:1px solid #c6e7e0;border-radius:9px;padding:10px 12px;font-size:11px;font-weight:750;overflow-wrap:anywhere}
+.urmin-preview-backdrop{position:fixed;z-index:401;inset:0;background:rgba(10,20,36,.82);display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(4px)}
+.urmin-preview-dialog{width:min(1020px,100%);height:min(820px,93dvh);display:flex;flex-direction:column;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 24px 90px rgba(0,0,0,.38)}
+.urmin-preview-dialog header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 17px;border-bottom:1px solid #dce6ef;background:#fff;color:#23394e}
+.urmin-preview-dialog header strong{font-size:13px;overflow-wrap:anywhere}
+.urmin-preview-dialog header button{flex:none;display:grid;place-items:center;width:36px;height:36px;color:#284d68;border:1px solid #dbe5ee;border-radius:9px;background:#f8fbff}
+.urmin-preview-dialog iframe{border:0;background:#edf1f4;width:100%;height:100%;flex:1;min-height:0}
+.urmin-preview-image{background:#1e2733;flex:1;display:flex;align-items:center;justify-content:center;min-height:0;overflow:auto;padding:15px}
+.urmin-preview-image img{max-height:100%;max-width:100%;object-fit:contain}
+@media(max-width:680px){.urmin-file-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.urmin-preview-backdrop{padding:0}.urmin-preview-dialog{width:100%;height:100dvh;border-radius:0}}
+@media(max-width:370px){.urmin-file-grid{grid-template-columns:1fr}}
+
+/* R5G4: pemilih "Yang Menghadiri". Chip, bukan <select multiple> — pilihan
+   ganda lewat ctrl+klik tidak terbaca sebagai "boleh lebih dari satu", dan di
+   layar sentuh praktis tidak bisa dipakai. */
+.sdl-multipick{display:flex;flex-wrap:wrap;gap:8px}
+.sdl-multipick__chip{display:inline-flex;align-items:center;gap:6px;padding:9px 13px;border:1px solid var(--border,#d6dce5);border-radius:999px;background:var(--card,#fff);color:var(--ink,#1d2531);font:inherit;font-size:12px;font-weight:700;cursor:pointer;transition:background .15s,border-color .15s,color .15s}
+.sdl-multipick__chip:hover{border-color:#2b9a80}
+.sdl-multipick__chip.is-on{background:#2b9a80;border-color:#2b9a80;color:#fff}
+.sdl-multipick__chip:focus-visible{outline:2px solid #2b9a80;outline-offset:2px}
+.sdl-multipick__hint{color:var(--muted,#64708a);font-size:11px;font-weight:600;line-height:1.5}
+
+/* R5G7: penanda kategori arsip pada baris daftar. */
+.sdl-arsip-source{display:inline-block;margin-top:4px;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:800;line-height:1.5;background:var(--subtle,#eef1f6);color:var(--muted,#64708a);border:1px solid var(--border,#d6dce5)}
+.sdl-arsip-source.is-disposisi{background:#e7f7f1;color:#1f6f5a;border-color:#9fd9c7}
+@media(prefers-color-scheme:dark){.sdl-arsip-source.is-disposisi{background:#15372f;color:#6ac4a4;border-color:#2b6a58}}
+
+/* R5G10: pemilih kode arsip untuk nomor surat. */
+.sdl-kodearsip__picked{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border,#d6dce5);border-radius:9px;background:var(--subtle,#eef1f6)}
+.sdl-kodearsip__picked strong{font-size:13px;letter-spacing:.3px;color:var(--ink,#1d2531)}
+.sdl-kodearsip__hits{display:flex;flex-direction:column;gap:2px;margin-top:6px;max-height:230px;overflow-y:auto;border:1px solid var(--border,#d6dce5);border-radius:9px;background:var(--card,#fff);padding:5px}
+.sdl-kodearsip__hits small{padding:9px 10px;color:var(--muted,#64708a);font-size:11px}
+.sdl-kodearsip__hits button{display:flex;flex-direction:column;gap:2px;text-align:left;padding:8px 10px;border:0;border-radius:7px;background:transparent;font:inherit;cursor:pointer}
+.sdl-kodearsip__hits button:hover,.sdl-kodearsip__hits button:focus-visible{background:var(--subtle,#eef1f6)}
+.sdl-kodearsip__hits button strong{font-size:12px;color:#2b9a80;letter-spacing:.3px}
+.sdl-kodearsip__hits button span{font-size:11px;color:var(--muted,#64708a);line-height:1.45}
+.sdl-kodearsip__hint{display:block;margin-top:5px;color:var(--muted,#64708a);font-size:11px;font-weight:600;line-height:1.5}
+
+/* R5G13: nomor surat yang dibangkitkan backend. Teks, bukan input terkunci. */
+.sdl-nomorsurat{display:block;padding:11px 12px;border:1px dashed var(--border,#d6dce5);border-radius:9px;background:var(--subtle,#eef1f6);color:var(--ink,#1d2531);font-size:13px;font-weight:800;letter-spacing:.3px;overflow-wrap:anywhere}
+.sdl-nomorsurat:empty::before{content:'Terbit otomatis setelah disimpan';color:var(--muted,#64708a);font-weight:600}

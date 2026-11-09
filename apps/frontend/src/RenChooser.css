@@ -1,0 +1,21 @@
+/* SUBBAGREN: halaman pilihan Progar / Pagu Anggaran sebelum masuk workspace. */
+.sdl-ren-chooser{width:100%;max-width:860px;margin:0 auto;padding-top:clamp(28px,5vh,56px)}
+.sdl-ren-chooser .breadcrumb{margin-bottom:6px}
+.sdl-ren-chooser__grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+.sdl-ren-chooser__grid .unit-card{min-height:210px;cursor:pointer;font:inherit;transition:transform .15s,border-color .15s,box-shadow .15s}
+.sdl-ren-chooser__grid .unit-card strong{font-size:17px}
+.sdl-ren-chooser__grid .unit-card p{font-size:13px}
+.sdl-ren-chooser__grid .unit-card:focus-visible{outline:2px solid var(--unit);outline-offset:3px}
+:root[data-theme=dark] .sdl-ren-chooser__grid .unit-icon{background:#253d63;color:#b5cff6}
+@media(max-width:650px){.sdl-ren-chooser__grid{grid-template-columns:1fr}.sdl-ren-chooser__grid .unit-card{min-height:0}}
+
+/* Tombol kembali ke halaman pilihan Progar / Pagu Anggaran. */
+.sdl-ren-back{display:inline-flex;align-items:center;gap:7px;margin-bottom:12px;padding:8px 13px;border:1px solid var(--border);border-radius:10px;background:var(--card);color:var(--ink-2);font:inherit;font-size:12px;font-weight:750;cursor:pointer}
+.sdl-ren-back:hover{border-color:#4b78ba;color:var(--ink)}
+
+/* Scrollbar sidebar: tipis dan menyatu dengan latar navy, bukan scrollbar putih bawaan. */
+.work-sidebar .sidebar-scroll{scrollbar-width:thin;scrollbar-color:#ffffff30 transparent;overscroll-behavior:contain}
+.work-sidebar .sidebar-scroll::-webkit-scrollbar{width:6px}
+.work-sidebar .sidebar-scroll::-webkit-scrollbar-track{background:transparent}
+.work-sidebar .sidebar-scroll::-webkit-scrollbar-thumb{background:#ffffff30;border-radius:6px}
+.sdl-ren-chooser__footer{display:flex;justify-content:center;margin-top:24px}.sdl-ren-chooser__footer .sdl-ren-back{margin:0}

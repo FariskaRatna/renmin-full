@@ -1,0 +1,30 @@
+# Overlay Tahap 6: worker email pindah dari Go ke Express (aturan 7 CLAUDE.md).
+#
+# Kenapa file tersendiri, bukan variabel di .env: service `api` di
+# compose.dev.yaml TIDAK meneruskan SDL_EMAIL_NOTIFICATIONS_ENABLED, jadi worker
+# Go selalu menyala. Sebaliknya api-express MEMBACA variabel itu dan mematikan
+# workernya sendiri bila nilainya "false". Mengisi SDL_EMAIL_NOTIFICATIONS_ENABLED
+# =false di .env karena itu mematikan worker YANG SALAH dan membiarkan Go jalan.
+# Overlay ini memasang nilainya per service.
+#
+# URUTAN WAJIB, dua perintah terpisah -- matikan Go dulu, baru nyalakan Express:
+#
+#   CF="--env-file .env -f infra/compose.dev.yaml -f infra/compose.proxy.yaml \
+#       -f infra/compose.express.yaml -f infra/compose.email-express.yaml"
+#   docker compose $CF up -d --no-deps --wait api           # 1. Go berhenti mengirim
+#   docker compose $CF up -d --no-deps --wait api-express   # 2. Express mulai
+#
+# Rollback (kebalikannya): jalankan perintah yang sama TANPA overlay ini,
+# api-express lebih dulu, baru api.
+#
+# Log start memastikannya: api-express mencatat "urmin email notification
+# worker enabled"; tanpa SMTP ia mencatat reason "smtp_not_configured".
+name: sdl-foundation-r1
+services:
+  api:
+    environment:
+      SDL_EMAIL_NOTIFICATIONS_ENABLED: "false"
+  api-express:
+    environment:
+      SDL_EMAIL_NOTIFICATIONS_ENABLED: "true"
+      SDL_EMAIL_WORKER_ENABLED: "true"

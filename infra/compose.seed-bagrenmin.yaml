@@ -1,0 +1,16 @@
+# Overrides the existing SDL development Compose project. Does not publish database ports.
+services:
+  seed-bagrenmin:
+    build:
+      context: ../apps/backend
+      dockerfile: Dockerfile.seed-bagrenmin
+    environment:
+      DATABASE_URL: "postgres://${SDL_DB_USER}:${SDL_DB_PASSWORD}@db:5432/${SDL_DB_NAME}?sslmode=disable"
+      SDL_ENV: "development"
+      SDL_SEED_SUPERADMIN_USERNAME: ${SDL_SEED_SUPERADMIN_USERNAME:?Set Superadmin username}
+    stdin_open: true
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=16m"]
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    networks: [internal]

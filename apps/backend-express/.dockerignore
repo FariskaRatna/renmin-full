@@ -1,0 +1,13 @@
+# Dockerfile hanya meng-COPY src (+ harness, verify, security untuk image uji),
+# tapi seluruh konteks tetap dikirim ke daemon saat build. Yang besar atau
+# rahasia dicoret di sini.
+node_modules
+harness/golden
+docs
+README.md
+.git
+.gitignore
+.env
+.env.*
+*.log
+.DS_Store

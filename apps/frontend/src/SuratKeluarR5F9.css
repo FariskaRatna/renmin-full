@@ -1,0 +1,60 @@
+/* R5F9 – outgoing-letter register ergonomics, isolated from Agenda/Arsip. */
+.urmin-r5d .sdl-outgoing-tabs{display:flex;gap:7px;flex-wrap:wrap;padding:0 19px 13px;align-items:center}
+.urmin-r5d .sdl-outgoing-tabs button{border:1px solid var(--border,#d7e2eb);border-radius:999px;background:var(--card,#fff);color:var(--ink,#385269);padding:7px 12px;display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:700;cursor:pointer;min-height:36px}
+.urmin-r5d .sdl-outgoing-tabs button span{font-size:11px;border-radius:20px;background:var(--subtle,#eef3f7);padding:2px 7px}
+.urmin-r5d .sdl-outgoing-tabs button:hover{border-color:#4b9a91}
+.urmin-r5d .sdl-outgoing-tabs button:focus-visible{outline:3px solid rgba(37,142,133,.35);outline-offset:2px}
+.urmin-r5d .sdl-outgoing-tabs button.is-active{background:#166a66;color:#fff;border-color:#166a66}
+.urmin-r5d .sdl-outgoing-tabs button.is-active span{background:rgba(255,255,255,.20);color:#fff}
+.urmin-r5d .sdl-outgoing-note{display:flex;align-items:flex-start;gap:8px;margin:0 19px 13px;font-size:11px;line-height:1.5;color:var(--muted,#607184)}
+.urmin-r5d .sdl-outgoing-note svg{flex-shrink:0;margin-top:1px}
+.urmin-r5d .sdl-outgoing-title{font-size:12px;color:var(--ink,#243f57);display:block;line-height:1.4;max-width:310px;overflow-wrap:anywhere}
+.urmin-r5d .sdl-outgoing-secondary{display:block;margin-top:6px;color:var(--muted,#728395);font-size:11px;line-height:1.45}
+.urmin-r5d .sdl-outgoing-important{display:inline-flex;margin-top:5px;font-size:10px;background:#fff2da;color:#98651e;border-radius:5px;padding:3px 6px}
+.urmin-r5d .sdl-outgoing-status{display:inline-block;padding:6px 9px;border-radius:8px;background:var(--subtle,#edf2f6);color:var(--ink,#3b566d);font-weight:750;font-size:11px;line-height:1.35;white-space:normal;max-width:180px}
+.urmin-r5d .sdl-outgoing-status.is-registered{background:#e1f3f0;color:#096a5b}
+.urmin-r5d .sdl-outgoing-status.is-pending{background:#fff1d8;color:#945f17}
+.urmin-r5d .sdl-outgoing-status.is-manual{background:#e6f0ff;color:#235b91}
+.urmin-r5d .sdl-outgoing-form-note{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--border,#d8e5eb);background:var(--subtle,#f5f8fa);color:var(--ink,#40576d);border-radius:11px;padding:12px 14px;margin:9px 0 0;font-size:12px;line-height:1.65}
+.urmin-r5d .sdl-outgoing-form-note svg{flex:none;margin-top:1px}
+[data-theme='dark'] .urmin-r5d .sdl-outgoing-tabs button.is-active{background:#1d8881;border-color:#1d8881}
+[data-theme='dark'] .urmin-r5d .sdl-outgoing-status.is-pending{background:#554222;color:#ffe6ae}
+[data-theme='dark'] .urmin-r5d .sdl-outgoing-status.is-registered{background:#1a4b43;color:#abf0dd}
+[data-theme='dark'] .urmin-r5d .sdl-outgoing-status.is-manual{background:#244866;color:#b9dfff}
+[data-theme='dark'] .urmin-r5d .sdl-outgoing-important{background:#574323;color:#ffe0a2}
+@media(max-width:680px){.urmin-r5d .sdl-outgoing-tabs{padding:0 13px 12px}.urmin-r5d .sdl-outgoing-tabs button{font-size:11px;padding:7px 10px}.urmin-r5d .sdl-outgoing-note{margin:0 13px 13px}.urmin-r5d .sdl-outgoing-title{max-width:200px}}
+
+/* R5F10: breathing room between toolbar and rounded status pills. */
+.urmin-r5d .sdl-outgoing-tabs{padding-top:16px;padding-bottom:15px;row-gap:9px}
+.urmin-r5d .sdl-outgoing-workflow-modal{max-width:740px}
+.urmin-r5d .sdl-outgoing-workflow-content{padding:22px;display:grid;gap:18px;overflow:auto;max-height:65vh}
+.urmin-r5d .sdl-outgoing-workflow-status{background:var(--subtle,#f4f7fa);border:1px solid var(--border,#dce5ee);padding:16px;border-radius:12px;display:grid;gap:5px}
+.urmin-r5d .sdl-outgoing-workflow-status strong{font-size:14px;color:var(--ink,#213a54)}
+.urmin-r5d .sdl-outgoing-workflow-status span,.urmin-r5d .sdl-outgoing-workflow-empty{color:var(--muted,#718196);font-size:12px;line-height:1.6}
+.urmin-r5d .sdl-outgoing-workflow-actions{display:flex;flex-wrap:wrap;gap:10px}
+.urmin-r5d .sdl-outgoing-workflow-subtitle{margin:0;font-size:14px}
+.urmin-r5d .sdl-outgoing-workflow-timeline{display:grid;gap:12px}
+.urmin-r5d .sdl-outgoing-workflow-timeline>div{border-left:2px solid #7caba6;padding:3px 13px;display:grid;gap:3px}
+.urmin-r5d .sdl-outgoing-workflow-timeline strong{font-size:13px}
+.urmin-r5d .sdl-outgoing-workflow-timeline small{font-size:11px;color:var(--muted,#718196)}
+.urmin-r5d .sdl-outgoing-workflow-timeline p{margin:2px 0 0;font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere}
+@media(max-width:680px){.urmin-r5d .sdl-outgoing-tabs{padding-top:14px}.urmin-r5d .sdl-outgoing-workflow-content{padding:14px}}
+
+/* R5H5: semua kolom daftar Surat Keluar rata kiri, termasuk Aksi, supaya judul
+ * kolom sejajar dengan isinya. Sebelumnya Aksi rata kanan sendirian. */
+.urmin-r5d .sumda-table th,.urmin-r5d .sumda-table td{text-align:left}
+.urmin-r5d .sumda-table .sumda-actions-title{text-align:left!important}
+.urmin-r5d .sumda-table .sumda-actions{justify-content:flex-start}
+.urmin-r5d .sumda-table .sm-status{padding:0}
+
+/* R5H5: jendela Berkas surat keluar. */
+.urmin-r5d .urmin-berkas-panel{display:grid;gap:12px}
+.urmin-r5d .urmin-berkas-panel .urmin-file-section{margin-top:4px}
+.urmin-r5d .urmin-berkas-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:18px;padding-top:14px;border-top:1px solid var(--border,#e5eaf1);font-size:11px;color:var(--muted,#75859b)}
+
+/* R5H5: paginasi di register Urmin sejajar dengan isi tabel. */
+.urmin-r5d .sdl-pager-r5h5{padding:0 24px 6px}
+
+/* R5H5: nomor urut dan nomor surat berdampingan dalam satu baris. */
+.urmin-r5d .sdl-outgoing-nomor{display:flex;align-items:center;gap:8px;white-space:nowrap}
+.urmin-r5d .sdl-outgoing-nomor .sdl-outgoing-secondary{display:inline;margin-top:0;white-space:nowrap}

@@ -1,0 +1,7 @@
+# Dockerfile memakai `COPY . .` dan menjalankan `go test ./...` saat build,
+# jadi file *_test.go WAJIB tetap ikut. Jangan tambahkan pola *_test.go.
+.git
+.env
+.env.*
+*.log
+.DS_Store

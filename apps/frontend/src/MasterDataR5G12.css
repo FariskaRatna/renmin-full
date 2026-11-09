@@ -1,0 +1,32 @@
+/* R5G12: pengelolaan master data persuratan oleh Superadmin. */
+.sdl-master__wrap{display:grid;gap:18px;min-width:0}
+.sdl-master__intro{padding:20px}
+.sdl-master__intro h2{margin:0 0 8px;font-size:18px;color:var(--ink)}
+.sdl-master__intro p{margin:0 0 8px;font-size:12px;line-height:1.7;color:var(--muted)}
+.sdl-master__note{background:var(--subtle);border:1px solid var(--border);border-radius:9px;padding:11px 13px;margin:4px 0 0!important}
+.sdl-master__note strong{color:var(--ink)}
+
+.sdl-master{padding:20px;min-width:0}
+.sdl-master__head{display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:14px;margin-bottom:16px}
+.sdl-master__head h3{margin:0 0 5px;font-size:15px;color:var(--ink)}
+.sdl-master__head p{margin:0;font-size:12px;color:var(--muted);line-height:1.6;max-width:62ch}
+.sdl-master__search{display:flex;gap:8px;flex-wrap:wrap}
+.sdl-master__search input{min-width:200px;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:9px 12px;color:var(--ink);font:inherit;font-size:12px}
+
+.sdl-master__add{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px;padding:14px;border:1px solid var(--border);border-radius:11px;background:var(--subtle);margin-bottom:15px}
+.sdl-master__add label{display:grid;gap:6px;flex:1 1 220px;min-width:0;font-size:11px;font-weight:800;color:var(--ink)}
+.sdl-master__add input{width:100%;min-width:0;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 12px;color:var(--ink);font:inherit;font-size:12px}
+.sdl-master__add .btn{flex:0 0 auto}
+
+.sdl-master__limit{background:var(--subtle);border:1px solid var(--border);border-radius:9px;padding:10px 13px;color:var(--muted);font-size:11px;line-height:1.5;margin:0 0 13px}
+.sdl-master__empty{padding:30px 14px;text-align:center;color:var(--muted);font-size:12px;line-height:1.7}
+.sdl-master__table td{padding:11px;vertical-align:middle;font-size:12px}
+.sdl-master__table code{font-size:12px;font-weight:800;color:#2b9a80;letter-spacing:.3px;overflow-wrap:anywhere}
+.sdl-master__inline{width:100%;min-width:0;background:var(--card);border:1px solid var(--border);border-radius:7px;padding:7px 9px;color:var(--ink);font:inherit;font-size:12px}
+.sdl-master__actions{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end}
+.sdl-master__actions-head{text-align:right}
+
+@media(max-width:620px){
+  .sdl-master__search input{min-width:0;flex:1 1 140px}
+  .sdl-master__actions{justify-content:flex-start}
+}

@@ -1,0 +1,6 @@
+/* R5C inherits the validated R5B UX01 responsive form design, with a Binfung accent. */
+.binfung-r5c{--sm-brand:#926a38;--sm-ring:rgba(191,144,74,.16)}
+.binfung-r5c .sumda-overview-mark,.binfung-r5c .sumda-dialog-emblem,.binfung-r5c .sumda-form-step,.binfung-r5c .sumda-avatar,.binfung-r5c .sumda-empty-icon{background:#fff4e5;color:#936632;border-color:#f2dfc4}
+.binfung-r5c .sumda-button-primary{background:#815b35;color:#fff;border-color:#815b35}
+.binfung-r5c .sumda-button-primary:hover{background:#6d492c}
+:root[data-theme=dark] .binfung-r5c .sumda-overview-mark,:root[data-theme=dark] .binfung-r5c .sumda-dialog-emblem{background:#443729;color:#e8c798;border-color:#60503b}

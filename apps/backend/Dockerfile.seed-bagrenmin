@@ -1,0 +1,11 @@
+FROM golang:1.27.2-alpine3.24 AS builder
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go test ./cmd/seed-bagrenmin && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags='-s -w' -o /out/seed ./cmd/seed-bagrenmin
+FROM alpine:3.24
+RUN addgroup -S sdlseed && adduser -S -G sdlseed sdlseed
+COPY --from=builder /out/seed /usr/local/bin/sdlseed
+USER sdlseed
+ENTRYPOINT ["/usr/local/bin/sdlseed"]

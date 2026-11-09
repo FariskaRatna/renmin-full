@@ -1,0 +1,78 @@
+name: sdl-foundation-r1
+services:
+  db:
+    image: postgres:18.6-alpine3.24
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${SDL_DB_NAME:?define SDL_DB_NAME}
+      POSTGRES_USER: ${SDL_DB_USER:?define SDL_DB_USER}
+      POSTGRES_PASSWORD: ${SDL_DB_PASSWORD:?define SDL_DB_PASSWORD}
+    volumes:
+      - sdl_root_r1_pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    networks: [internal]
+  api:
+    build:
+      context: ../apps/backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      HTTP_ADDR: ":8080"
+      DATABASE_URL: "postgres://${SDL_DB_USER}:${SDL_DB_PASSWORD}@db:5432/${SDL_DB_NAME}?sslmode=disable"
+      SDL_ENV: "development"
+      SDL_DEV_SUPERADMIN_WORKSPACE: ${SDL_DEV_SUPERADMIN_WORKSPACE:-false}
+      SDL_AUTH_SECRET: ${SDL_AUTH_SECRET:?Define SDL_AUTH_SECRET from installer}
+      SDL_EVIDENCE_KEY: ${SDL_EVIDENCE_KEY:?Define dedicated 32-byte hex evidence encryption key}
+      SDL_COOKIE_SECURE: ${SDL_COOKIE_SECURE:-false}
+      # Wajib diisi saat dilayani lewat reverse proxy HTTPS; kosong = hanya
+      # http://127.0.0.1:5174 dan http://localhost:5174 yang diterima.
+      SDL_ALLOWED_ORIGINS: ${SDL_ALLOWED_ORIGINS:-}
+      SDL_SMTP_HOST: ${SDL_SMTP_HOST:-}
+      SDL_SMTP_PORT: ${SDL_SMTP_PORT:-587}
+      SDL_SMTP_USER: ${SDL_SMTP_USER:-}
+      SDL_SMTP_PASSWORD: ${SDL_SMTP_PASSWORD:-}
+      SDL_SMTP_FROM: ${SDL_SMTP_FROM:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/api", "-healthcheck"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=16m"]
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    networks: [internal]
+  frontend:
+    build:
+      context: ../apps/frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      SDL_ALLOWED_HOSTS: ${SDL_ALLOWED_HOSTS:-}
+      SDL_HMR_CLIENT_PORT: ${SDL_HMR_CLIENT_PORT:-}
+      # Kosong = backend Go. Isi http://api-express:8080 untuk mencoba Express.
+      SDL_API_UPSTREAM: ${SDL_API_UPSTREAM:-}
+    ports:
+      - "${SDL_BIND_ADDR:-127.0.0.1}:${SDL_FRONTEND_PORT:-5174}:5173"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5173/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 4s
+      retries: 15
+    networks: [internal]
+networks:
+  internal:
+    driver: bridge
+volumes:
+  sdl_root_r1_pgdata:

@@ -1,0 +1,43 @@
+# Overlay harness golden-file. Dipakai BERSAMA compose.dev.yaml:
+#
+#   docker compose --env-file .env \
+#     -f infra/compose.dev.yaml -f infra/compose.harness.yaml \
+#     run --rm --build harness capture
+#
+# Harness harus berada di dalam network `internal` karena service `api` tidak
+# pernah diekspos ke host — dari luar, satu-satunya jalur adalah proxy Vite di
+# port 5174, dan itu tidak melayani /healthz maupun /readyz yang berada di luar
+# prefix /api.
+#
+# Service ini memakai profile sehingga `docker compose up -d` tidak ikut
+# menjalankannya; ia hanya hidup saat dipanggil lewat `run`.
+name: sdl-foundation-r1
+services:
+  harness:
+    profiles: ["harness"]
+    build:
+      context: ../apps/backend-express
+      dockerfile: Dockerfile.harness
+    environment:
+      DATABASE_URL: "postgres://${SDL_DB_USER}:${SDL_DB_PASSWORD}@db:5432/${SDL_DB_NAME}?sslmode=disable"
+      SDL_HARNESS_API_BASE: "http://api:8080"
+      # Harus cocok dengan allowlist backend. Kalau SDL_ALLOWED_ORIGINS diisi,
+      # nilai di sini wajib salah satu anggotanya — kalau tidak, setiap mutation
+      # ditolak 403 csrf_invalid dan golden file merekam kondisi yang salah.
+      SDL_HARNESS_ORIGIN: "${SDL_HARNESS_ORIGIN:-http://127.0.0.1:5174}"
+      SDL_HARNESS_TARGET: "${SDL_HARNESS_TARGET:-go}"
+      # Default mati. Nyalakan HANYA terhadap database sekali pakai.
+      SDL_HARNESS_ALLOW_MUTATIONS: "${SDL_HARNESS_ALLOW_MUTATIONS:-false}"
+      SDL_HARNESS_GOLDEN_DIR: "/app/harness/golden"
+      # Dipakai seed-docs untuk menyegel bukti keuangan. Harus kunci yang SAMA
+      # dengan yang dipakai api dan api-express, kalau tidak bukti hasil seed
+      # tidak bisa dibuka backend mana pun dan uji integritas gagal semu.
+      SDL_EVIDENCE_KEY: "${SDL_EVIDENCE_KEY:-}"
+    volumes:
+      # Hanya direktori hasil yang di-mount, supaya golden file mendarat di repo.
+      # Kode harness ikut image; pakai `run --build` setelah mengubah registry.
+      - ../apps/backend-express/harness/golden:/app/harness/golden
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [internal]

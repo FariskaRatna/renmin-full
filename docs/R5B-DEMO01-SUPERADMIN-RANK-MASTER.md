@@ -1,0 +1,11 @@
+# R5B-DEMO01 — Superadmin workspace & pangkat Polri (LOCAL DEVELOPMENT)
+
+- Scope: four-unit operational access for one logged-in Superadmin **only in local development**, controlled by `SDL_DEV_SUPERADMIN_WORKSPACE=true` and `SDL_ENV=development` and DB name `sdl_root_dev`. Production and security isolated-test compose retain default denied behavior.
+- This intentionally changes the SA01 Superadmin separation model for demos, **not** a production authorization policy. Never migrate flag to staging/public infrastructure. Disabled by removing `SDL_DEV_SUPERADMIN_WORKSPACE` from `.env` and restarting API.
+- CSRF, login/OTP, session, first password rotation and application business invariants are still enforced. For R5A unit tasks only, Superadmin can demo Receive/Complete/Cancel on behalf of recipients; audit events identify the actual admin and are marked [DEMO SUPERADMIN]. R3 Urmin addressed disposition and financial maker-checker still require their workflow constraints and do not impersonate assignees or permit self-approval.
+- Migration 021 creates master `sdl_polri_rank_master` containing 22 Police ranks (Bharada–Jenderal Polisi) without touching existing personnel rows.
+- Endpoint `GET /api/v1/subbagsumda/registry/ranks` requires operational authentication and serves ordered active ranks; personel `fields.pangkat` stores code (e.g. `BRIPDA`, `AKP`, `JENDERAL`). Input checked server-side; blank is allowed. Existing historical free-text values are displayed for correction, but cannot be re-saved unchanged.
+- Role Editor and User Management remain Superadmin-only. Dev mode is clearly visible on Portal.
+- Browser smoke: log in Superadmin, open Subbagsumda→Personel, create/edit with rank dropdown; refresh and confirm persistence, then test file & disposition. Test another unit via its workspace. Do not use sensitive real-world data for the demo.
+- This patch does **not** implement CRUD for menu placeholders (Surat Keluar, Data SOP, etc.); those require their own functional modules.
+- Disabling demonstration mode: in project `.env`, change `SDL_DEV_SUPERADMIN_WORKSPACE=true` to `SDL_DEV_SUPERADMIN_WORKSPACE=false`, run `./sdl-run.sh`; Superadmin operational endpoints return 403 again.

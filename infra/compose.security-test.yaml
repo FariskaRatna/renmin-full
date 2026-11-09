@@ -1,0 +1,36 @@
+# Dedicated ephemeral R2D5 security test stack. Never attaches to SDL production volumes.
+services:
+  db:
+    image: postgres:18.6-alpine3.24
+    environment:
+      POSTGRES_DB: sdl_security_test
+      POSTGRES_USER: sdl_security
+      POSTGRES_PASSWORD: ${SDL_SECURITY_DB_PASSWORD:?generated password required}
+    tmpfs:
+      - /var/lib/postgresql:rw,nosuid,nodev,size=256m
+    healthcheck:
+      test: ["CMD-SHELL", 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+    networks: [security_isolated]
+  test:
+    build:
+      context: ../apps/backend
+      dockerfile: Dockerfile.security-test
+    environment:
+      SDL_SECURITY_TEST_CONFIRM: R2D5_EPHEMERAL_ONLY
+      SDL_SECURITY_TEST_DATABASE_URL: postgres://sdl_security:${SDL_SECURITY_DB_PASSWORD}@db:5432/sdl_security_test?sslmode=disable
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [security_isolated]
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=128m
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+networks:
+  security_isolated:
+    internal: true

@@ -1,0 +1,17 @@
+# Buka Postgres HANYA di loopback VM, untuk DBeaver lewat SSH tunnel.
+#
+# Port ini tidak terjangkau dari LAN: hanya proses di VM itu sendiri (termasuk
+# tunnel SSH) yang bisa menyambung ke 127.0.0.1:5432. JANGAN ganti menjadi
+# "5432:5432" atau "0.0.0.0:5432:5432" — itu membuka database produksi ke
+# seluruh jaringan dengan sslmode=disable.
+#
+# Begitu dipakai, file ini HARUS selalu ikut di $CF. Deploy berikutnya yang
+# lupa menyertakannya akan membuat ulang container db tanpa port, dan DBeaver
+# berhenti tersambung (aplikasi tidak terpengaruh).
+#
+# Port host bisa diganti lewat SDL_DB_LOCAL_PORT kalau 5432 di VM sudah
+# terpakai (misalnya ada Postgres native).
+services:
+  db:
+    ports:
+      - "127.0.0.1:${SDL_DB_LOCAL_PORT:-5432}:5432"

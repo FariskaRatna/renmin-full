@@ -1,0 +1,14 @@
+FROM golang:1.27.2-alpine3.24 AS builder
+WORKDIR /src
+ENV GOTOOLCHAIN=local
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go test -c -tags=r2d5integration -o /out/sdl-r2d5-test ./internal/securitytest
+
+FROM alpine:3.24
+RUN addgroup -S sdltest && adduser -S -G sdltest sdltest
+COPY --from=builder /out/sdl-r2d5-test /usr/local/bin/sdl-r2d5-test
+USER sdltest
+ENTRYPOINT ["/usr/local/bin/sdl-r2d5-test"]
+CMD ["-test.v", "-test.timeout=180s"]
