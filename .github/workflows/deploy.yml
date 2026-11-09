@@ -1,14 +1,15 @@
 # CI/CD SIERA DELTA LIMA — panduan: docs/CICD.md
 #
-#   push ke main ──► cek (GitHub-hosted, paralel) ──► deploy (runner di server,
-#                                                     menunggu tombol Approve)
+#   push ke staging ──► cek (GitHub-hosted, paralel) ──► deploy (runner di server,
+#                                                        menunggu tombol Approve)
 #
-# Pull request hanya menjalankan cek. Deploy hanya dari main.
+# Push ke main dan pull request hanya menjalankan cek. Deploy hanya dari branch
+# staging ke environment staging (server 172.16.173.34).
 name: CI/CD
 
 on:
   push:
-    branches: [main]
+    branches: [main, staging]
   pull_request:
   workflow_dispatch:
     inputs:
@@ -75,15 +76,15 @@ jobs:
 
   # ── Deploy: runner di 172.16.173.34 ────────────────────────────────────────
   deploy:
-    name: Deploy ke 172.16.173.34
+    name: Deploy staging (172.16.173.34)
     needs: [frontend, backend-go, backend-express, security]
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    runs-on: [self-hosted, sdl-prod]
-    # Environment "production" diatur di Settings → Environments dengan
+    if: github.ref == 'refs/heads/staging' && github.event_name != 'pull_request'
+    runs-on: [self-hosted, sdl-staging]
+    # Environment "staging" diatur di Settings → Environments dengan
     # Required reviewers, sehingga deploy menunggu tombol Approve.
-    environment: production
+    environment: staging
     concurrency:
-      group: deploy-production
+      group: deploy-staging
       cancel-in-progress: false
     timeout-minutes: 60
     steps:

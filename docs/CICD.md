@@ -5,7 +5,7 @@ Mengganti alur lama (tarball → scp → ekstrak → tukar folder) di
 GitHub atau runner bermasalah.
 
 ```
-push ke main
+push ke staging
   │
   ├─ Cek di mesin GitHub (paralel, ±10 menit)
   │    frontend: tsc + vite build
@@ -14,7 +14,7 @@ push ke main
   │    uji keamanan r2d5 + express (Postgres sementara)
   │    → satu merah = berhenti, server tidak disentuh
   │
-  └─ Deploy (runner di 172.16.173.34, menunggu tombol Approve)
+  └─ Deploy ke environment staging (runner di 172.16.173.34, menunggu Approve)
        scripts/deploy.sh:
        1 periksa  2 migrasi tertunda?  3 backup  4 ganti kode
        5 server-check pre  6 build  7 -migrate (kalau diizinkan)
@@ -22,13 +22,16 @@ push ke main
        → gagal di langkah 5–9 = rollback otomatis ke commit & image sebelumnya
 ```
 
-Pull request hanya menjalankan cek. Deploy hanya dari `main`.
+Push ke `main` dan pull request hanya menjalankan cek. Deploy hanya dari
+branch `staging`, ke environment GitHub `staging` = server 172.16.173.34
+(server yang dipakai pengguna nyata — nama environment tidak mengubah itu).
 
 ## Aturan yang tetap berlaku
 
 - **Migrasi tidak pernah otomatis.** Kalau commit membawa SQL baru, deploy
   berhenti di langkah 2 *sebelum menyentuh apa pun*. Untuk menjalankannya:
-  Actions → **CI/CD** → **Run workflow** → centang **Izinkan migrasi database**.
+  Actions → **CI/CD** → **Run workflow** → branch `staging` → centang
+  **Izinkan migrasi database**.
 - **`.env` dan `infra/certs/` tidak pernah lewat GitHub.** Keduanya tetap di
   server; git mengabaikannya, jadi deploy tidak menimpanya.
 - **Database tidak ikut di-rollback.** Migrasi hanya menambah; backend lama
@@ -39,12 +42,12 @@ Pull request hanya menjalankan cek. Deploy hanya dari `main`.
 
 ## Pemasangan (sekali saja)
 
-### 1. GitHub: environment "production"
+### 1. GitHub: environment "staging"
 
-Repo → **Settings** → **Environments** → **New environment** → `production`:
+Repo → **Settings** → **Environments** → **New environment** → `staging`:
 
 - **Required reviewers**: centang, tambahkan `FariskaRatna`
-- **Deployment branches and tags**: *Selected branches* → `main`
+- **Deployment branches and tags**: *Selected branches* → `staging`
 
 Opsional, **Settings → Secrets and variables → Actions → Variables**:
 `SDL_APP` kalau folder instalasi bukan `/home/devops/renmin/1.siera-delta-lima`.
@@ -59,10 +62,10 @@ Jalankan sebagai `devops`, dengan **satu perubahan** di langkah `config.sh`:
 mkdir -p ~/actions-runner && cd ~/actions-runner
 # curl -o ... && tar xzf ...      ← salin dari halaman GitHub
 ./config.sh --url https://github.com/FariskaRatna/renmin-full --token <TOKEN> \
-  --name sdl-prod --labels sdl-prod --unattended
+  --name sdl-staging --labels sdl-staging --unattended
 ```
 
-`--labels sdl-prod` wajib: workflow hanya mau jalan di runner berlabel itu.
+`--labels sdl-staging` wajib: workflow hanya mau jalan di runner berlabel itu.
 
 Jadikan service supaya hidup lagi setelah server reboot:
 
@@ -72,7 +75,7 @@ sudo ./svc.sh start
 sudo ./svc.sh status        # harus: active (running)
 ```
 
-Cek di GitHub → Settings → Actions → Runners: `sdl-prod` berstatus **Idle**.
+Cek di GitHub → Settings → Actions → Runners: `sdl-staging` berstatus **Idle**.
 
 Runner berjalan sebagai `devops`, user yang sama yang selama ini menjalankan
 `docker compose` — tidak butuh sudo untuk deploy.
@@ -86,20 +89,23 @@ dibiarkan (dicetak di log). Backup folder lengkap dibuat lebih dulu.
 
 Pilih jam di luar kerja (container dibuat ulang, jeda ±1 menit). Lalu:
 
-1. Actions → **CI/CD** → **Run workflow** → branch `main`, centang
+1. Actions → **CI/CD** → **Run workflow** → branch `staging`, centang
    **Izinkan migrasi database** → **Run workflow**.
    (Repo saat ini membawa `044_berkas_pendukung.sql` yang belum ada di server.)
 2. Tunggu cek hijau → job **Deploy** menunggu → **Review deployments** →
-   centang `production` → **Approve and deploy**.
+   centang `staging` → **Approve and deploy**.
 3. Baca log job Deploy sampai `SELESAI`.
 
-Push ke `main` sebelum langkah ini juga memicu deploy; kalau di-approve, ia
+Push ke `staging` sebelum langkah ini juga memicu deploy; kalau di-approve, ia
 berhenti aman di langkah 2 karena migrasi belum diizinkan. Boleh di-*Reject*.
 
 ## Sehari-hari
 
+Kerja di `main`, lalu bawa ke staging untuk deploy:
+
 ```bash
-git add ... && git commit -m "..." && git push
+git add ... && git commit -m "..." && git push            # main: cek saja
+git checkout staging && git merge --ff-only main && git push && git checkout main
 ```
 
 Lalu GitHub → Actions → run terbaru → **Review deployments** → Approve.
@@ -109,7 +115,7 @@ Pengguna perlu F5 untuk tampilan baru.
 
 Rollback otomatis menangani deploy yang gagal. Untuk mundur dari deploy yang
 *berhasil* tapi ternyata bermasalah, cara paling bersih: `git revert` commit-nya
-di laptop lalu push — deploy berikutnya memasang keadaan sebelumnya.
+di laptop lalu bawa ke `staging` — deploy berikutnya memasang keadaan sebelumnya.
 
 Darurat tanpa GitHub, di server:
 
