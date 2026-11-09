@@ -10,6 +10,8 @@ import {
   validKind,
   validPriority,
 } from './shared.js'
+import { uniqueDraftSections } from './sections.js'
+import { decodeSheet, normalizeSheet, sheetArg, validSheet } from './sheet.js'
 
 /**
  * Draf arahan pimpinan, port dari internal/directives/draft.go.
@@ -27,8 +29,11 @@ const DRAFT_SCHEMA = {
   priority: 'string',
   dueAt: 'string',
   recipients: 'string[]',
+  sections: 'string[]',
   revision: 'int',
   incomingId: 'string?',
+  // R5H2. Bentuk saja; master disposisi baru diperiksa saat kirim.
+  sheet: 'sheet',
 }
 
 const DELETE_SCHEMA = { revision: 'int' }
@@ -65,12 +70,17 @@ function validDraft(d) {
   if ([...d.body].length > 4000) return false
   if (!validKind(d.kind) || !validPriority(d.priority)) return false
   if (!uniqueDraftRecipients(d.recipients ?? [])) return false
+  // R5H1. Bentuk saja: kunci harus dikenal dan tidak berulang. Kombinasi
+  // 'sections' DAN 'recipients' terisi bersamaan DITERIMA di sini walau ditolak
+  // saat kirim — autosave tidak boleh mulai gagal saat penulisnya sedang
+  // berpindah dari satu cara menunjuk ke cara yang lain.
+  if (!uniqueDraftSections(d.sections ?? [])) return false
   if (d.dueAt !== '' && !validLocalDateTime(d.dueAt)) return false
   // Bentuk saja, SENGAJA bukan LETTER_LINK_SQL. Draf adalah kertas buram privat
   // yang tidak pernah dikirim, dan autosave tidak boleh mulai gagal selagi
   // penulisnya masih memilih. Gerbang sesungguhnya berjalan saat kirim.
   if (d.incomingId !== undefined && !UUID_RE.test(d.incomingId)) return false
-  return true
+  return validSheet(d.sheet)
 }
 
 /** GET /draft — endpoint 80. */
@@ -81,8 +91,8 @@ export function getDraft({ pool }) {
     let rows
     try {
       ;({ rows } = await pool.query(
-        `SELECT title,body,kind,priority,due_at_local,recipient_ids,incoming_id::text AS incoming_id,
-           revision,updated_at
+        `SELECT title,body,kind,priority,due_at_local,recipient_ids,section_keys,
+           incoming_id::text AS incoming_id,sheet,revision,updated_at
            FROM sdl_leadership_directive_drafts WHERE issuer_id=$1::uuid`,
         [req.actor],
       ))
@@ -103,23 +113,43 @@ export function getDraft({ pool }) {
     // Keduanya harus menghasilkan array yang sama; bentuk lain berarti baris
     // rusak, dan Go menjawab 503 untuk itu — bukan mengarang array kosong.
     const recipients = Array.isArray(row.recipient_ids) ? row.recipient_ids : undefined
-    if (!recipients) {
+    // section_keys NOT NULL DEFAULT '[]' sejak migrasi 040, jadi tidak ada
+    // baris sah yang bisa memberi bentuk lain. Diperiksa dengan ukuran yang
+    // sama seperti recipient_ids: bentuk lain berarti baris rusak, dan itu 503.
+    const sectionKeys = Array.isArray(row.section_keys) ? row.section_keys : undefined
+    if (!recipients || !sectionKeys) {
+      deny(res, 503)
+      return
+    }
+    // R5H2: lembar yang tidak bisa di-unmarshal adalah baris rusak -> 503.
+    let sheet
+    try {
+      sheet = decodeSheet(row.sheet)
+    } catch {
       deny(res, 503)
       return
     }
 
+    const draft = {
+      title: row.title,
+      body: row.body,
+      kind: row.kind,
+      priority: row.priority,
+      dueAt: row.due_at_local,
+      recipients,
+      // Urutan kunci mengikuti urutan deklarasi struct directiveDraft di Go:
+      // sections DI ANTARA recipients dan incomingId, bukan di akhir.
+      sections: sectionKeys,
+      // TANPA omitempty di Go, berbeda dari summary: field draf lainnya pun
+      // selalu hadir, jadi di sini null ditulis apa adanya.
+      incomingId: row.incoming_id ?? null,
+    }
+    // R5H2. omitempty, BERBEDA dengan incomingId: draf tanpa lembar (dan draf
+    // sebelum 041) harus tetap terbaca byte-identik. Kunci terakhir di struct.
+    if (sheet !== undefined) draft.sheet = sheet
+
     respond(res, 200, {
-      draft: {
-        title: row.title,
-        body: row.body,
-        kind: row.kind,
-        priority: row.priority,
-        dueAt: row.due_at_local,
-        recipients,
-        // TANPA omitempty di Go, berbeda dari summary: field draf lainnya pun
-        // selalu hadir, jadi di sini null ditulis apa adanya.
-        incomingId: row.incoming_id ?? null,
-      },
+      draft,
       revision: Number(row.revision),
       updatedAt: row.updated_at,
     })
@@ -140,18 +170,24 @@ export function putDraft({ pool }) {
     // Go mengubah nil menjadi [] sebelum marshal, sehingga kolomnya tidak
     // pernah berisi JSON null.
     const recipients = JSON.stringify(d.recipients ?? [])
+    const sectionKeys = JSON.stringify(d.sections ?? [])
+    // R5H2: disimpan apa adanya (setelah normalisasi), TANPA memeriksa master
+    // disposisi -- kertas buram tidak boleh mulai gagal disimpan hanya karena
+    // Superadmin menghapus satu opsi. Gerbangnya ada saat kirim.
+    const sheet = sheetArg(normalizeSheet(d.sheet))
 
     let rows
     try {
       ;({ rows } = await pool.query(
-        `INSERT INTO sdl_leadership_directive_drafts AS d(issuer_id,title,body,kind,priority,due_at_local,recipient_ids,incoming_id,revision,updated_at)
-         VALUES($1::uuid,$2,$3,$4,$5,$6,$7::jsonb,$8::uuid,1,NOW())
+        `INSERT INTO sdl_leadership_directive_drafts AS d(issuer_id,title,body,kind,priority,due_at_local,recipient_ids,section_keys,incoming_id,sheet,revision,updated_at)
+         VALUES($1::uuid,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9::uuid,$11::jsonb,1,NOW())
          ON CONFLICT(issuer_id) DO UPDATE SET title=EXCLUDED.title,body=EXCLUDED.body,kind=EXCLUDED.kind,
            priority=EXCLUDED.priority,due_at_local=EXCLUDED.due_at_local,recipient_ids=EXCLUDED.recipient_ids,
-           incoming_id=EXCLUDED.incoming_id,revision=d.revision+1,updated_at=NOW()
-         WHERE d.revision=$9 RETURNING revision,updated_at`,
-        [req.actor, d.title, d.body, d.kind, d.priority, d.dueAt, recipients,
-          d.incomingId ?? null, d.revision],
+           section_keys=EXCLUDED.section_keys,incoming_id=EXCLUDED.incoming_id,sheet=EXCLUDED.sheet,
+           revision=d.revision+1,updated_at=NOW()
+         WHERE d.revision=$10 RETURNING revision,updated_at`,
+        [req.actor, d.title, d.body, d.kind, d.priority, d.dueAt, recipients, sectionKeys,
+          d.incomingId ?? null, d.revision, sheet],
       ))
     } catch {
       deny(res, 503)

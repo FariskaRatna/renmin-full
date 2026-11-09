@@ -4,6 +4,7 @@ import { writeJson } from '../../http/respond.js'
 import { createRolesRouter } from '../roles/index.js'
 import { createRoadmapRouter } from '../roadmap/index.js'
 import { createUsersRouter } from '../users/index.js'
+import { createPaurRouter } from '../users/paur.js'
 
 /**
  * Perakitan /api/v1/admin, padanan router.go:226-256.
@@ -38,6 +39,8 @@ export function createAdminRouter({ pool, config }) {
   router.all('/delegation-candidates', denyDelegation)
 
   router.use(createUsersRouter({ pool, config }))
+  // R5H4: keanggotaan Paur, sesudah /users seperti PaurRoutes di router.go.
+  router.use(createPaurRouter({ pool, config }))
 
   return router
 }

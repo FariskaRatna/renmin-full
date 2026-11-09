@@ -1,5 +1,6 @@
 import { parsePayload } from '../../http/payload.js'
 import { writeJson } from '../../http/respond.js'
+import { decodeSheetInput } from './sheet.js'
 
 /**
  * Helper bersama paket directives, port dari apps/backend/internal/directives/.
@@ -183,6 +184,7 @@ export async function draftPermission(res, runner, userId) {
  *   int?      pointer *int64; absen/null -> undefined
  *   time?     pointer *time.Time; absen/null -> undefined, selain itu RFC3339
  *   string[]  []string; absen/null -> undefined (Go membiarkannya nil)
+ *   sheet     *sheet (R5H2); lihat decodeSheetInput di sheet.js
  *
  * Tipe yang tidak cocok mengembalikan {ok:false}, padanan error decode Go.
  * Keduanya bermuara ke 400 invalid_request, jadi perbedaan jalurnya tidak
@@ -238,6 +240,12 @@ export function decodeTyped(req, schema) {
       out[field] = raw
       continue
     }
+    if (kind === 'sheet') {
+      const sheet = decodeSheetInput(raw)
+      if (!sheet.ok) return { ok: false }
+      out[field] = sheet.value
+      continue
+    }
     return { ok: false }
   }
   return { ok: true, value: out }
@@ -260,7 +268,8 @@ export const LIST_SQL = `SELECT d.id::text,d.title,d.body,d.kind,d.priority,d.is
   (SELECT COUNT(*) FROM sdl_leadership_directive_recipients x WHERE x.directive_id=d.id)::int AS total,
   (SELECT COUNT(*) FROM sdl_leadership_directive_recipients x WHERE x.directive_id=d.id AND x.read_at IS NOT NULL)::int AS read,
   (SELECT COUNT(*) FROM sdl_leadership_directive_recipients x WHERE x.directive_id=d.id AND x.acknowledged_at IS NOT NULL)::int AS acknowledged,
-  d.incoming_id::text AS incoming_id
+  d.incoming_id::text AS incoming_id,
+  d.sheet
  FROM sdl_leadership_directives d JOIN sdl_users u ON u.id=d.issuer_id`
 
 /**
@@ -271,12 +280,10 @@ export const LIST_SQL = `SELECT d.id::text,d.title,d.body,d.kind,d.priority,d.is
  * sebagai null. Ketiganya sengaja TIDAK diisi di sini; pemanggil yang
  * menambahkannya hanya kalau memang ada nilainya.
  *
- * incomingId (R5G2) mengikuti aturan omitempty yang sama, dan itulah sebabnya
- * ia ditulis bersyarat alih-alih `?? null`: arahan tanpa surat asal harus
- * terserialisasi persis seperti sebelum R5G2.
+ * incomingId (R5G2) SENGAJA tidak ditulis di sini — lihat appendIncomingId().
  */
 export function mapSummary(row) {
-  const out = {
+  return {
     id: row.id,
     title: row.title,
     body: row.body,
@@ -290,21 +297,50 @@ export function mapSummary(row) {
     read: row.read,
     acknowledged: row.acknowledged,
   }
-  if (row.incoming_id !== null && row.incoming_id !== undefined) {
-    out.incomingId = row.incoming_id
-  }
-  return out
 }
 
-/** Padanan struct recipient (api.go:31); readAt/acknowledgedAt tanpa omitempty. */
-export function mapRecipient(row) {
-  return {
-    id: row.id,
-    name: row.name,
-    unit: row.unit,
-    readAt: row.read_at ?? null,
-    acknowledgedAt: row.acknowledged_at ?? null,
+/**
+ * Menambahkan incomingId (R5G2) sebagai kunci TERAKHIR, dan itu bukan selera.
+ *
+ * Di struct summary Go, IncomingID dideklarasikan SESUDAH MyReadAt,
+ * MyAcknowledgedAt, dan Recipients — dan Go menserialisasi mengikuti urutan
+ * deklarasi. Jadi pada endpoint 91 Go menulis `...,"recipients":[...],
+ * "incomingId":"..."`, bukan sebaliknya.
+ *
+ * Sampai 2026-11-04 fungsi ini tidak ada: mapSummary menulis incomingId tepat
+ * sesudah `acknowledged`, sehingga endpoint 87 dan 91 berbeda urutan kunci dari
+ * Go setiap kali arahan punya surat asal. Golden file sedang basi sejak R5G
+ * sehingga tidak menangkapnya; yang menangkapnya adalah tahap 7
+ * verify/r5h1-flow.js. Panggil ini SETELAH my* dan recipients terisi, tidak
+ * pernah sebelumnya.
+ *
+ * Bersyarat, bukan `?? null`: arahan tanpa surat asal harus terserialisasi
+ * persis seperti sebelum R5G2.
+ */
+export function appendIncomingId(item, row) {
+  if (row.incoming_id !== null && row.incoming_id !== undefined) {
+    item.incomingId = row.incoming_id
   }
+  return item
+}
+
+/**
+ * Padanan struct recipient (api.go:31); readAt/acknowledgedAt tanpa omitempty.
+ *
+ * `section` (R5H1) SEBALIKNYA ber-omitempty, dan urutannya di antara `unit` dan
+ * `readAt` mengikuti urutan deklarasi struct Go. Karena itu ia ditulis
+ * bersyarat di tengah objek dan bukan `?? null` di akhir: /candidates memakai
+ * pemeta yang sama tanpa kolom section_key, dan responsnya harus tetap
+ * byte-identik seperti sebelum R5H1.
+ */
+export function mapRecipient(row) {
+  const out = { id: row.id, name: row.name, unit: row.unit }
+  if (row.section_key !== null && row.section_key !== undefined && row.section_key !== '') {
+    out.section = row.section_key
+  }
+  out.readAt = row.read_at ?? null
+  out.acknowledgedAt = row.acknowledged_at ?? null
+  return out
 }
 
 /** Padanan struct directiveFile (attachments.go:29). */
