@@ -2,6 +2,7 @@ import { FloatingToast } from './UIFeedback'
 import { SuratR3B } from './SuratR3B'
 import { LampiranPreviewR5F15 } from './LampiranPreviewR5F15'
 import { LampiranFileCardR5F16 } from './LampiranFileCardR5F16'
+import { DisposisiSuratR5H6 } from './DisposisiSuratR5H6'
 import { useCallback, useEffect, useRef, useState, type FormEvent, type DragEvent } from 'react'
 import './SuratMasukR5F6.css'
 import './SuratMasukR5F7.css'
@@ -16,11 +17,14 @@ type FileSummary = {items:{id:string}[];canUpload:boolean;canDownload:boolean;ca
 type Kind = 'undangan'|'permintaan'|'pemberitahuan'|'lainnya'
 type IntakeExtra = {letterKind:Kind;responseDue:string;eventStart:string;eventEnd:string;eventLocation:string;eventAgenda:string;details:string;needsDisposition:boolean}
 type IntakeRecord = IntakeExtra & {routeStatus:string;workflowStatus:string;submittedAt:string|null}
+// R5H6: ringkasan intake kini masuk ke grid detail, bukan kotak terpisah
+// di tengah halaman. Status sudah tampil di baris judul.
+const kindLabels:Record<string,string>={undangan:'Undangan',permintaan:'Permintaan Data / Dokumen',pemberitahuan:'Pemberitahuan',lainnya:'Lainnya'}
 const blankExtra:IntakeExtra={letterKind:'lainnya',responseDue:'',eventStart:'',eventEnd:'',eventLocation:'',eventAgenda:'',details:'',needsDisposition:false}
 // read_kabag dan directive_issued (R5G2) duduk di antara awaiting_kabag dan
 // dispatched: surat yang dijawab lewat Arahan Pimpinan tidak pernah melewati
 // jalur distribusi, jadi tanpa keduanya ia akan tertinggal di "Menunggu".
-const routeLabels:Record<string,string>={draft:'Draft',recorded:'Tercatat · Tanpa Disposisi',awaiting_kabag:'Menunggu Disposisi Kabagrenmin',read_kabag:'Dibaca Kabagrenmin',directive_issued:'Arahan Sudah Dibuat',dispatched:'Sudah Didistribusikan Kabagrenmin',in_progress:'Dalam Tindak Lanjut',awaiting_review:'Menunggu Review'}
+const routeLabels:Record<string,string>={draft:'Draft',recorded:'Tercatat · Tanpa Disposisi',awaiting_kabag:'Menunggu Disposisi Kabagrenmin',read_kabag:'Dibaca Kabagrenmin',directive_issued:'Sudah Didisposisikan Kabagrenmin',dispatched:'Sudah Didistribusikan Kabagrenmin',in_progress:'Dalam Tindak Lanjut',awaiting_review:'Menunggu Review'}
 
 /**
  * R5G5: lama sebuah surat berada pada keadaannya sekarang.
@@ -163,7 +167,7 @@ function statusTone(workflow:string|undefined,registerStatus:string):'neutral'|'
  * "Menunggu Disposisi Kabagrenmin" dipecah menjadi dibuka/belum dibuka karena
  * hanya itu yang membedakan dua keadaan tersebut di mata petugas.
  */
-const listLabels:Record<string,string>={draft:'Draft',recorded:'Tercatat',awaiting_kabag:'Belum Dibuka Kabagrenmin',read_kabag:'Dibuka Kabagrenmin',directive_issued:'Arahan Dibuat',dispatched:'Didistribusikan',in_progress:'Ditindaklanjuti',awaiting_review:'Menunggu Review'}
+const listLabels:Record<string,string>={draft:'Draft',recorded:'Tercatat',awaiting_kabag:'Belum Dibuka Kabagrenmin',read_kabag:'Dibuka Kabagrenmin',directive_issued:'Didisposisikan',dispatched:'Didistribusikan',in_progress:'Ditindaklanjuti',awaiting_review:'Menunggu Review'}
 
 /**
  * R5H5: satu badge dan PALING BANYAK satu keterangan. Sebelumnya tiga baris
@@ -372,9 +376,9 @@ export default function SuratMasuk({initialID,initialCreate}:{initialID?:string;
    {!loading&&list.length===0&&<div className="sm-empty">Belum ada surat yang bisa ditampilkan.</div>}{loading&&<div className="sm-empty">Memuat daftar surat...</div>}
   </section>
   {detail&&<section className="panel sm-panel"><div className="sm-section-title sdl-sm-r5f6__detail-head"><div><span className="eyebrow">DETAIL SURAT MASUK</span><span className="sm-title-row"><h3>{detail.letterNumber}</h3><DerajatTag value={detail.derajat??'biasa'}/></span><p>Agenda SM-{new Date(detail.createdAt).getFullYear()}-{detail.agendaNo} · Versi {detail.version} · {routeLabels[intakeRecord?.workflowStatus||'']||(detail.status==='draft'?'Draft':'Terdaftar')}</p></div><div className="sdl-sm-r5f6__row-actions">{canEdit&&<button className="btn" type="button" onClick={beginEdit}>Edit Draft</button>}{detail.status==='registered'&&<button className="btn primary" type="button" onClick={()=>beginUpload(detail.id)}>Upload Lampiran</button>}</div></div>
-   <dl className="sm-details"><div><dt>Surat Dari</dt><dd>{detail.sender}</dd></div><div><dt>Tanggal Surat</dt><dd>{detail.letterDate}</dd></div><div><dt>Tanggal Diinput</dt><dd>{detail.receivedDate}</dd></div><div><dt>Klasifikasi</dt><dd>{classificationLabel(detail.classification)}</dd></div><div className="sm-span"><dt>Perihal</dt><dd>{detail.subject}</dd></div></dl>
-   {intakeRecord&&<div className="sdl-sm-r5f7__summary"><strong>{routeLabels[intakeRecord.workflowStatus]||'Surat tercatat'}</strong><span>Jenis surat: {intakeRecord.letterKind} · {intakeRecord.responseDue?`Batas respons: ${intakeRecord.responseDue}`:'Tanpa batas respons'}</span>{intakeRecord.eventStart&&<span>Pelaksanaan: {intakeRecord.eventStart.replace('T',' ').slice(0,16)} WIB · {intakeRecord.eventLocation||'Lokasi belum dicatat'}</span>}</div>}
+   <dl className="sm-details"><div><dt>Surat Dari</dt><dd>{detail.sender}</dd></div><div><dt>Tanggal Surat</dt><dd>{detail.letterDate}</dd></div><div><dt>Tanggal Diinput</dt><dd>{detail.receivedDate}</dd></div><div><dt>Klasifikasi</dt><dd>{classificationLabel(detail.classification)}</dd></div>{intakeRecord&&<><div><dt>Jenis Surat</dt><dd>{kindLabels[intakeRecord.letterKind]||intakeRecord.letterKind}</dd></div><div><dt>Batas Respons</dt><dd>{intakeRecord.responseDue?readableDate(intakeRecord.responseDue):'Tanpa batas respons'}</dd></div>{intakeRecord.eventStart&&<div className="sm-span"><dt>Pelaksanaan</dt><dd>{intakeRecord.eventStart.replace('T',' ').slice(0,16)} WIB · {intakeRecord.eventLocation||'Lokasi belum dicatat'}</dd></div>}</>}<div className="sm-span"><dt>Perihal</dt><dd>{detail.subject}</dd></div></dl>
    {detail.status==='draft'&&canEdit&&<div className="sm-register"><strong>Draft Surat</strong><p>Lengkapi informasi, pilihan disposisi dan lampiran dalam satu form sebelum pengajuan.</p><button className="btn primary" type="button" onClick={beginEdit}>Lengkapi & Ajukan</button></div>}
+   {detail.status==='registered'&&<DisposisiSuratR5H6 key={`${detail.id}:${awaitingIds.has(detail.id)}`} letter={detail} onChanged={()=>{void reload().catch(()=>{});void open(detail.id).catch(()=>{})}}/>}
    <SuratR3B key={`${detail.id}:${attachmentRevision}`} incomingId={detail.id} registered={detail.status==='registered'} onRequestUpload={()=>beginUpload(detail.id)}/>
    <h4 className="sm-history-title">Riwayat Surat</h4><div className="sm-history">{history.map((h,i)=><div className="sm-history-row" key={`${h.version}-${i}`}><span className="sm-history-dot"/><div><strong>{h.action==='created'?'Draft dibuat':h.action==='edited'?'Draft diperbarui':'Surat diregister'}</strong><small>{h.actor} · {new Date(h.at).toLocaleString('id-ID')} · Versi {h.version}</small><p>{h.reason}</p></div></div>)}</div>
   </section>}
@@ -405,7 +409,7 @@ export default function SuratMasuk({initialID,initialCreate}:{initialID?:string;
     {intakeFiles.length>0&&<div className="sdl-sm-r5f6__wide sdl-r5f16__cards">{intakeFiles.map((f,i)=><LampiranFileCardR5F16 key={`${f.name}-${f.size}-${f.lastModified}`} file={f} busy={busy} onPreview={()=>setPreviewFile(f)} onRemove={()=>{if(previewFile===f)setPreviewFile(null);setIntakeFiles(x=>x.filter((_,j)=>j!==i))}} />)}</div>}
     <h3 className="sdl-sm-r5f6__wide">Alur Surat</h3>
     <fieldset className="sdl-sm-r5f6__wide sdl-sm-r5f7__choices"><legend>Apakah perlu disposisi?</legend><label><input type="radio" name="needDispo" checked={extra.needsDisposition} onChange={()=>setExtra(x=>({...x,needsDisposition:true}))}/> Ya, kirim ke Kabagrenmin</label><label><input type="radio" name="needDispo" checked={!extra.needsDisposition} onChange={()=>setExtra(x=>({...x,needsDisposition:false}))}/> Tidak, cukup dicatat</label></fieldset>
-    <div className="sdl-sm-r5f6__wide sdl-sm-r5f7__next" aria-live="polite">{extra.needsDisposition?'Setelah diajukan, surat dan lampiran masuk ke Inbox Kabagrenmin untuk arahan dan distribusi.':'Setelah diajukan, surat tercatat tanpa antrean disposisi. Pimpinan dapat melihatnya sesuai hak akses.'}</div>
+    <div className="sdl-sm-r5f6__wide sdl-sm-r5f7__next" aria-live="polite">{extra.needsDisposition?'Setelah diajukan, surat dan lampiran masuk ke Surat Masuk Kabagrenmin untuk didisposisikan.':'Setelah diajukan, surat tercatat tanpa antrean disposisi. Pimpinan dapat melihatnya sesuai hak akses.'}</div>
     {intakeError&&<div className="sdl-sm-r5f6__wide sdl-sm-r5f6__warning" role="alert">{intakeError}</div>}
     <p className="sdl-sm-r5f6__wide sdl-sm-r5f6__note">Simpan Draft hanya menyimpan informasi surat. File baru disimpan bersama pengajuan supaya tidak ada lampiran tanpa proses yang jelas.</p>
    </div><footer className="sdl-sm-r5f6__actions"><button type="button" className="btn" disabled={busy} onClick={closeForm}>Batal</button><button type="submit" className="btn" disabled={busy}>{busy?'Menyimpan...':'Simpan Draft'}</button><button type="button" className="btn primary" disabled={busy||form.reason.trim().length<8} onClick={requestSubmit}>Ajukan Surat</button></footer></form>

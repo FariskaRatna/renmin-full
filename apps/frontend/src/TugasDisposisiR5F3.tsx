@@ -3,6 +3,8 @@ import { confirmDialog, showToast } from './UIFeedback'
 import { LeadershipMonitorR3D3 } from './LeadershipR3D3'
 import { DisposisiAutoCompleteR5F20 } from './DisposisiAutoCompleteR5F20'
 import './TugasDisposisiR5F3.css'
+import { DisposisiSuratR5H6 } from './DisposisiSuratR5H6'
+import { SuratR3B } from './SuratR3B'
 
 type TaskStatus = 'pending' | 'in_progress' | 'completed'
 type ReviewStatus = 'not_ready' | 'awaiting_review' | 'approved' | 'revision_requested'
@@ -28,14 +30,23 @@ type IncomingLetter = {
   id: string; incomingId: string; agendaNo: number; letterNumber: string; subject: string
   classification: string; unit: string; status: 'sent' | 'received'; sentAt: string; reason: string
 }
+// R5H6: di layar baris ini disebut "Disposisi", bukan "Arahan" (permintaan
+// pemilik); datanya tetap arahan dari API yang sama.
 // R5H4: arahan Kabagrenmin yang ditujukan ke akun ini (GET
 // /leadership/directives/inbox). Digabung ke daftar tugas atas permintaan
 // pemilik sistem: staf melihat arahan di menu Disposisi DAN di menu Arahan.
 type DirectiveRow = {
   id: string; title: string; priority: string; issuerName: string; dueAt: string | null; createdAt: string
-  myReadAt?: string | null; myAcknowledgedAt?: string | null; sheet?: { letterNumber?: string; subject?: string }
+  myReadAt?: string | null; myAcknowledgedAt?: string | null; sheet?: { letterNumber?: string; subject?: string; letterFrom?: string; letterDate?: string; classification?: string; derajat?: string }; incomingId?: string
 }
 type Detail = { item: Task; events: Event[] }
+// R5H6: data surat untuk jendela detail disposisi — bentuk yang sama dengan
+// GET /urmin/surat-masuk/:id dan /:id/intake yang dipakai layar Surat Masuk.
+type DispoLetter = {
+  item: { agendaNo: number; letterNumber: string; sender: string; letterDate: string; receivedDate: string; subject: string; classification: string; derajat?: string; createdAt: string }
+  intake: { letterKind: string; responseDue: string; eventStart: string; eventEnd: string; eventLocation: string; eventAgenda: string; details: string } | null
+}
+const letterKindNames: Record<string, string> = { undangan: 'Undangan', permintaan: 'Permintaan Data / Dokumen', pemberitahuan: 'Pemberitahuan', lainnya: 'Lainnya' }
 type OwnerFilter = 'all' | 'mine' | 'issued'
 type StatusFilter = 'all' | 'pending' | 'in_progress' | 'completed' | 'awaiting_review'
 
@@ -93,6 +104,9 @@ export default function TugasDisposisiR5F3({ currentUserId, initialID, workspace
   // ditampilkan dalam satu tabel supaya tidak ada dua daftar yang harus dicek.
   const [incomingLetters, setIncomingLetters] = useState<IncomingLetter[]>([])
   const [directives, setDirectives] = useState<DirectiveRow[]>([])
+  // R5H6: disposisi surat dibuka DI menu ini (jendela), bukan pindah ke Surat Masuk.
+  const [openDispo, setOpenDispo] = useState<DirectiveRow | null>(null)
+  const [dispoLetter, setDispoLetter] = useState<DispoLetter | null>(null)
   const [summary, setSummary] = useState({ pending: 0, overdue: 0, limited: false })
   const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading')
   const [query, setQuery] = useState('')
@@ -164,7 +178,9 @@ export default function TugasDisposisiR5F3({ currentUserId, initialID, workspace
       try {
         const inbox = await api<{ items: DirectiveRow[] }>('/api/v1/leadership/directives/inbox')
         if (!mounted.current || seq !== listSeq.current) return
-        setDirectives(inbox.items ?? [])
+        // R5H6: hanya disposisi SURAT (arahan bertaut surat masuk). Arahan biasa
+        // tinggal di menu Arahan; menu ini tidak lagi terhubung ke sana.
+        setDirectives((inbox.items ?? []).filter(d => Boolean(d.incomingId)))
       } catch { if (mounted.current && seq === listSeq.current) setDirectives([]) }
     } catch (error) {
       if (!mounted.current || seq !== listSeq.current) return
@@ -186,6 +202,29 @@ export default function TugasDisposisiR5F3({ currentUserId, initialID, workspace
     setForwardInstruction('')
   }, [])
 
+  // R5H6: membuka disposisi = menerima suratnya (baris distribusi 'sent'),
+  // sama seperti membuka detail di Surat Masuk. Konfirmasi "Terima Disposisi"
+  // tetap tindakan sendiri di dalam jendela.
+  async function openDisposition(d: DirectiveRow) {
+    setOpenDispo(d); setDispoLetter(null)
+    const pending = incomingLetters.find(l => l.incomingId === d.incomingId && l.status === 'sent')
+    if (pending) {
+      try {
+        await api(`/api/v1/urmin/distribution-inbox/${encodeURIComponent(pending.id)}/receive`, 'POST', { reason: 'Diterima saat membuka disposisi' })
+        window.dispatchEvent(new Event('sdl:inbox-changed'))
+      } catch { /* 409 = sudah diterima; daftar dimuat ulang saat jendela ditutup */ }
+    }
+    // Data surat lengkap hanya untuk penerima yang diserahi suratnya; yang lain
+    // (403/404) cukup memakai isi lembar disposisi.
+    if (!d.incomingId || !incomingLetters.some(l => l.incomingId === d.incomingId)) return
+    try {
+      const [main, meta] = await Promise.all([
+        api<{ item: DispoLetter['item'] }>(`/api/v1/urmin/surat-masuk/${d.incomingId}`),
+        api<{ intake: DispoLetter['intake'] }>(`/api/v1/urmin/surat-masuk/${d.incomingId}/intake`).catch(() => ({ intake: null })),
+      ])
+      setDispoLetter({ item: main.item, intake: meta.intake })
+    } catch { setDispoLetter(null) }
+  }
   const openDetail = useCallback(async (id: string, resetForm = true) => {
     if (!id) return
     const seq = ++detailSeq.current
@@ -382,6 +421,8 @@ export default function TugasDisposisiR5F3({ currentUserId, initialID, workspace
   const letterRows = (workspaceTab === 'mine' || !workspaceTab)
     ? incomingLetters
         .filter(l => l.status === 'sent')
+        // R5H6: surat yang datang bersama disposisi sudah diwakili baris disposisinya.
+        .filter(l => !directives.some(d => d.incomingId === l.incomingId))
         .filter(() => statusFilter === 'all' || statusFilter === 'pending')
         .filter(l => !letterQuery || [l.letterNumber, l.subject, l.unit].some(v => v.toLowerCase().includes(letterQuery)))
         .sort((a, b) => b.sentAt.localeCompare(a.sentAt))
@@ -477,12 +518,12 @@ export default function TugasDisposisiR5F3({ currentUserId, initialID, workspace
             <td>{onOpenLetter ? <button type="button" className="btn" onClick={() => onOpenLetter(letter.incomingId)}>Lihat Surat</button> : '—'}</td>
           </tr>)}
           {directivesShown.map(d => <tr key={`arahan-${d.id}`} className="sdl-tasks-r5f3__letter-row">
-            <td><strong>{d.sheet?.letterNumber || d.title}</strong><small>{d.sheet?.letterNumber ? d.title : (d.sheet?.subject || 'Arahan pimpinan')}</small></td>
-            <td><strong>Arahan · {d.issuerName}</strong><small>{d.priority === 'kilat' ? 'Kilat' : d.priority === 'penting' ? 'Penting' : 'Biasa'}</small></td>
+            <td><strong>{d.sheet?.letterNumber || d.title}</strong><small>{d.sheet?.letterNumber ? d.title : (d.sheet?.subject || 'Disposisi pimpinan')}</small></td>
+            <td><strong>Disposisi · {d.issuerName}</strong><small>{d.priority === 'kilat' ? 'Kilat' : d.priority === 'penting' ? 'Penting' : 'Biasa'}</small></td>
             <td>{d.dueAt ? datetime(d.dueAt) : '—'}</td>
-            <td><span className={`r3c-status ${d.myAcknowledgedAt ? 'completed' : d.myReadAt ? 'in_progress' : 'pending'}`}>{d.myAcknowledgedAt ? 'Arahan Diterima' : d.myReadAt ? 'Arahan Dibaca' : 'Arahan Baru'}</span></td>
+            <td><span className={`r3c-status ${d.myAcknowledgedAt ? 'completed' : d.myReadAt ? 'in_progress' : 'pending'}`}>{d.myAcknowledgedAt ? 'Disposisi Diterima' : d.myReadAt ? 'Disposisi Dibaca' : 'Disposisi Baru'}</span></td>
             <td><span className="r3d-sla unknown">{d.myAcknowledgedAt ? 'Sudah dikonfirmasi' : 'Perlu konfirmasi'}</span><small>{datetime(d.createdAt)}</small></td>
-            <td>{onOpenDirective ? <button type="button" className="btn" onClick={() => onOpenDirective(d.id)}>Buka Arahan</button> : '—'}</td>
+            <td>{d.incomingId ? <button type="button" className="btn" onClick={() => void openDisposition(d)}>Buka</button> : '—'}</td>
           </tr>)}
           {displayed.map(t => <tr key={t.id} className={selectedID === t.id ? 'sdl-tasks-r5f3__active' : undefined}>
           <td><strong>{t.depth > 0 ? `↳ L${t.depth} · ` : ''}{t.letterNumber}</strong><small>{t.subject}</small></td>
@@ -501,6 +542,45 @@ export default function TugasDisposisiR5F3({ currentUserId, initialID, workspace
         </div>
       </div>}
     </section>
+    {openDispo && openDispo.incomingId && <div className="sdl-tasks-r5f11__backdrop" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) { setOpenDispo(null); void refresh() } }} onKeyDown={e => { if (e.key === 'Escape') { setOpenDispo(null); void refresh() } }}>
+      <section className="sdl-tasks-r5f11__dialog" role="dialog" aria-modal="true" aria-labelledby="sdl-dispo-r5h6-title">
+      <div className="sdl-tasks-r5f11__modal-head"><div><span className="sdl-work-kicker">DETAIL DISPOSISI</span><h2 id="sdl-dispo-r5h6-title">{openDispo.sheet?.letterNumber || openDispo.title}</h2><p>{openDispo.sheet?.subject || openDispo.title}</p></div><button type="button" className="btn" autoFocus onClick={() => { setOpenDispo(null); void refresh() }} aria-label="Tutup detail disposisi">Tutup</button></div>
+      <div className="sdl-tasks-r5f11__modal-body">
+        {(() => {
+          const L = dispoLetter?.item, I = dispoLetter?.intake, sh = openDispo.sheet
+          const klas = (L?.classification ?? sh?.classification) === 'penting' ? 'Rahasia' : 'Biasa'
+          const derajat = (L?.derajat ?? sh?.derajat) === 'kilat' ? 'Kilat' : 'Biasa'
+          const when = (v?: string) => v ? v.replace('T', ' ').slice(0, 16) + ' WIB' : ''
+          return <>
+            <h4 className="sm-history-title" style={{ marginTop: 0, borderTop: 0, paddingTop: 0 }}>Informasi Surat</h4>
+            <div className="sdl-tasks-r5f3__facts">
+              <div><span>No. Agenda Surat Masuk</span><strong>{L ? `SM-${new Date(L.createdAt).getFullYear()}-${L.agendaNo}` : '—'}</strong></div>
+              <div><span>Nomor Surat</span><strong>{L?.letterNumber || sh?.letterNumber || '—'}</strong></div>
+              <div><span>Surat Dari</span><strong>{L?.sender || sh?.letterFrom || '—'}</strong></div>
+              <div><span>Tanggal Surat</span><strong>{(L?.letterDate || sh?.letterDate) ? dateOnly((L?.letterDate || sh?.letterDate)!) : '—'}</strong></div>
+              <div><span>Tanggal Diterima</span><strong>{L?.receivedDate ? dateOnly(L.receivedDate) : '—'}</strong></div>
+              <div><span>Klasifikasi</span><strong>{klas}</strong></div>
+              <div><span>Derajat</span><strong>{derajat}</strong></div>
+              <div><span>Jenis Surat</span><strong>{I ? (letterKindNames[I.letterKind] ?? I.letterKind) : '—'}</strong></div>
+              <div><span>Batas Respons</span><strong>{I?.responseDue ? dateOnly(I.responseDue) : 'Tanpa batas respons'}</strong></div>
+              <div><span>Tenggat Disposisi</span><strong>{openDispo.dueAt ? datetime(openDispo.dueAt) : '—'}</strong></div>
+              <div><span>Dikirim Oleh</span><strong>{openDispo.issuerName}</strong></div>
+              <div><span>Tanggal Dikirim</span><strong>{datetime(openDispo.createdAt)}</strong></div>
+              {I?.eventStart && <div style={{ gridColumn: '1 / -1' }}><span>Pelaksanaan Kegiatan</span><strong>{when(I.eventStart)}{I.eventEnd ? ` s.d. ${when(I.eventEnd)}` : ''} · {I.eventLocation || 'Lokasi belum dicatat'}{I.eventAgenda ? ` · ${I.eventAgenda}` : ''}</strong></div>}
+              <div style={{ gridColumn: '1 / -1' }}><span>Perihal</span><strong>{L?.subject || sh?.subject || openDispo.title}</strong></div>
+              {I?.details && <div style={{ gridColumn: '1 / -1' }}><span>Informasi Tambahan</span><strong style={{ whiteSpace: 'pre-wrap' }}>{I.details}</strong></div>}
+            </div>
+          </>
+        })()}
+        <DisposisiSuratR5H6 key={openDispo.id} letter={{ id: openDispo.incomingId, letterNumber: openDispo.sheet?.letterNumber || '', sender: openDispo.sheet?.letterFrom || '', letterDate: openDispo.sheet?.letterDate || '', subject: openDispo.sheet?.subject || openDispo.title, classification: openDispo.sheet?.classification === 'penting' ? 'penting' : 'biasa', derajat: openDispo.sheet?.derajat === 'kilat' ? 'kilat' : 'biasa' }} onChanged={() => void refresh()} />
+        {/* Naskah & lampiran hanya untuk penerima yang memang diserahi suratnya
+            (berwenang atas klasifikasinya); yang lain cukup lembar disposisi. */}
+        {incomingLetters.some(l => l.incomingId === openDispo.incomingId)
+          ? <SuratR3B incomingId={openDispo.incomingId} registered={true} />
+          : <p className="sdl-tasks-r5f3__message">Naskah surat tidak diserahkan ke akun Anda karena klasifikasinya. Lembar disposisi di atas tetap berlaku.</p>}
+      </div>
+      </section>
+    </div>}
     {selectedID && <div className="sdl-tasks-r5f11__backdrop" role="presentation">
       <section ref={dialogRef} className="sdl-tasks-r5f11__dialog" role="dialog" aria-modal="true" aria-labelledby="sdl-tasks-r5f11-title" aria-describedby="sdl-tasks-r5f11-subtitle">
       <div className="sdl-tasks-r5f11__modal-head"><div><span className="sdl-work-kicker">DETAIL DISPOSISI</span><h2 id="sdl-tasks-r5f11-title">{task ? task.letterNumber : 'Detail Tugas'}</h2><p id="sdl-tasks-r5f11-subtitle">{task?.subject ?? 'Memuat informasi tugas...'}</p></div><button ref={closeButtonRef} type="button" className="btn" onClick={clearDetail} disabled={busy} aria-label="Tutup detail disposisi">Tutup</button></div>

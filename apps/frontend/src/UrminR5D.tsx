@@ -89,7 +89,8 @@ const schema: Record<Kind, { title: string; singular: string; code: string; name
   // data (/urmin/surat-opsi) dan dari surat masuk / arahan yang nyata.
   surat_keluar: {title:'Surat Keluar',singular:'Surat Keluar',code:'Kode Register Internal',name:'Hal / Tentang Surat',icon:'surat_keluar',helper:'',fields:[
     // Arahan lebih dulu: memilihnya mengisi Rujukan Surat (useSuratKeluarChoices).
-    {key:'rujukanArahan',label:'Rujukan Arahan',input:'select',choices:[]},
+    // R5H6: label 'Rujukan Disposisi' (permintaan pemilik); kuncinya tetap rujukanArahan.
+    {key:'rujukanArahan',label:'Rujukan Disposisi',input:'select',choices:[]},
     {key:'rujukanSurat',label:'Rujukan Surat',input:'select',choices:[]},
     {key:'tanggalSurat',label:'Tanggal Naskah Dinas',input:'date'},
     {key:'jalurSurat',label:'Jalur Surat',input:'select',choices:[]},
@@ -574,6 +575,10 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate}: {kind
   const [records,setRecords] = useState<Entry[]>([])
   const [selected,setSelected] = useState<Entry|null>(null)
   const [form,setForm] = useState<Draft>(() => blank(kind))
+  // R5H6: surat keluar boleh tanpa rujukan (mis. undangan atas inisiatif
+  // sendiri). Ini pilihan layar saja -- tidak ada kunci baru di backend: "tanpa
+  // rujukan" berarti rujukanArahan/rujukanSurat/rujukanArahanId dikosongkan.
+  const [tanpaRujukan,setTanpaRujukan] = useState(false)
   const [editing,setEditing] = useState(false)
   const [search,setSearch] = useState('')
   const [appliedSearch,setAppliedSearch] = useState('')
@@ -687,13 +692,14 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate}: {kind
     setSavedFiles(result.files.filter(f=>f.purpose!=='pendukung'))
   }
   function newRecord() {
-    dismissPreview();clearQueued();setSavedFiles([]);setSelected(null);setForm(blank(kind))
+    dismissPreview();clearQueued();setSavedFiles([]);setSelected(null);setForm(blank(kind));setTanpaRujukan(false)
     setEditing(true);setError('');setNotice('');setInlineError('');setProgress('')
   }
   function edit(p:Entry) {
     if(kind==='surat_keluar' && !['draft','rejected'].includes(outgoingStatus(p))) {showToast('Surat yang diajukan tidak dapat diedit sampai dikembalikan untuk revisi.','error');return}
     dismissPreview();clearQueued();setSavedFiles([]);setSelected(p)
     setForm({kind,code:p.code,title:p.title,classification:p.classification,fields:{...p.fields},version:p.version})
+    setTanpaRujukan(kind==='surat_keluar'&&!p.fields.rujukanArahan&&!p.fields.rujukanSurat)
     setEditing(true);setError('');setNotice('');setInlineError('');setProgress('')
     if(kind==='surat_keluar') {
       setFilesLoading(true)
@@ -854,6 +860,11 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate}: {kind
     })
   }
   const rujukanSuratLocked = kind==='surat_keluar' && Boolean(suratOfArahan[form.fields.rujukanArahan||''])
+  function chooseRujukan(tanpa:boolean) {
+    setTanpaRujukan(tanpa)
+    if(tanpa) setForm(v=>({...v,fields:{...v.fields,rujukanArahan:'',rujukanSurat:'',rujukanArahanId:''}}))
+  }
+  const RUJUKAN_KEYS = ['rujukanArahan','rujukanSurat']
 
   return <div className="sumda-r5b urmin-r5d">
     {kind!=='surat_keluar'&&<section className="sumda-overview" aria-label="Ringkasan data">
@@ -973,7 +984,15 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate}: {kind
             <label className="sumda-field"><span>{def.name} <b aria-label="wajib diisi">*</b></span><input required minLength={3} maxLength={200} value={form.title} onChange={e=>setForm(v=>({...v,title:e.target.value}))} placeholder={`Masukkan ${def.name.toLowerCase()}`}/></label>
           </div></div>
           <div className="sumda-form-block"><div className="sumda-form-section"><span className="sumda-form-step">02</span><div><h3>Detail {def.singular}</h3><p>Lengkapi informasi pendukung yang relevan.</p></div></div><div className="sumda-form-grid">
-            {formFields.map(f=>f.input==='multi'?<MultiPick key={f.key} field={f} value={form.fields[f.key]||''} onChange={v=>changeField(f.key,v)}/>:f.input==='kodearsip'?<KodeArsipPick key={f.key} field={f} value={form.fields[f.key]||''} onChange={v=>changeField(f.key,v)}/>:f.input==='jenissurat'?<JenisSuratPick key={f.key} field={f} value={form.fields[f.key]||''} onChange={v=>changeField(f.key,v)}/>:f.input==='nomorsurat'?<label className="sumda-field" key={f.key}><span>{f.label}</span>
+            {kind==='surat_keluar'&&<div className="sumda-field sumda-field-wide"><span id="urmin-dasar-surat">Dasar Surat</span>
+              <div className="urmin-dasar" role="radiogroup" aria-labelledby="urmin-dasar-surat">
+                {([[false,'Berdasarkan rujukan','Menjawab disposisi atau surat masuk'],[true,'Tanpa rujukan','Mis. undangan atas inisiatif sendiri']] as const).map(([tanpa,judul,ket])=>
+                  <button type="button" key={judul} role="radio" aria-checked={tanpaRujukan===tanpa} className={`urmin-dasar__opt${tanpaRujukan===tanpa?' is-on':''}`} onClick={()=>chooseRujukan(tanpa)}>
+                    <span className="urmin-dasar__dot" aria-hidden="true"/><span className="urmin-dasar__text"><strong>{judul}</strong><small>{ket}</small></span>
+                  </button>)}
+              </div>
+            </div>}
+            {formFields.filter(f=>!(kind==='surat_keluar'&&tanpaRujukan&&RUJUKAN_KEYS.includes(f.key))).map(f=>f.input==='multi'?<MultiPick key={f.key} field={f} value={form.fields[f.key]||''} onChange={v=>changeField(f.key,v)}/>:f.input==='kodearsip'?<KodeArsipPick key={f.key} field={f} value={form.fields[f.key]||''} onChange={v=>changeField(f.key,v)}/>:f.input==='jenissurat'?<JenisSuratPick key={f.key} field={f} value={form.fields[f.key]||''} onChange={v=>changeField(f.key,v)}/>:f.input==='nomorsurat'?<label className="sumda-field" key={f.key}><span>{f.label}</span>
               {/* R5G13: dibangkitkan backend saat draf dibuat, jadi ia
                   ditampilkan, bukan diminta. Dibiarkan sebagai teks statis dan
                   bukan input terkunci supaya tidak terlihat seperti kolom yang
@@ -982,7 +1001,7 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate}: {kind
               <small className="sdl-kodearsip__hint">Disusun dari Derajat, Jenis Surat, Kode Arsip, dan Lingkup Surat di bawah. Nomor urut diambil saat draf disimpan dan tidak dapat dipakai ulang.</small>
             </label>:f.key==='rujukanSurat'&&rujukanSuratLocked?<label className="sumda-field" key={f.key}><span>{f.label}</span>
               <output className="sdl-nomorsurat">{form.fields.rujukanSurat||suratOfArahan[form.fields.rujukanArahan||'']}</output>
-              <small className="sdl-kodearsip__hint">Mengikuti surat asal dari Rujukan Arahan. Kosongkan Rujukan Arahan untuk memilih surat lain.</small>
+              <small className="sdl-kodearsip__hint">Mengikuti surat asal dari Rujukan Disposisi. Kosongkan Rujukan Disposisi untuk memilih surat lain.</small>
             </label>:<label className={`sumda-field ${f.input==='textarea'?'sumda-field-wide':''}`} key={f.key}><span>{f.label}</span>{f.input==='select'?<select value={form.fields[f.key]||''} onChange={e=>changeField(f.key,e.target.value)}><option value="">Pilih {f.label.toLowerCase()}</option>{f.choices?.map(x=><option key={x} value={x}>{x}</option>)}{/* R5G11: nilai tersimpan yang sudah tidak ada di daftar tetap ditampilkan sebagai pilihan. Tanpa ini, mempersempit pilihan Derajat membuat surat lama tampil kosong di layar padahal datanya masih ada — lalu tersimpan kosong begitu disunting karena alasan lain. */}{form.fields[f.key]&&!f.choices?.includes(form.fields[f.key])&&<option value={form.fields[f.key]}>{form.fields[f.key]} (nilai lama)</option>}</select>:f.input==='textarea'?<textarea rows={3} maxLength={200} value={form.fields[f.key]||''} onChange={e=>changeField(f.key,e.target.value)} placeholder={f.placeholder||'Tambahkan keterangan...'}/>:<input type={f.input||'text'} min={f.input==='number'?0:undefined} step={f.input==='number'?1:undefined} maxLength={f.input==='number'?undefined:200} value={form.fields[f.key]||''} onChange={e=>changeField(f.key,e.target.value)} placeholder={f.placeholder||''}/>}</label>)}
           </div></div>
           {/* R5G4: agenda tidak memakai klasifikasi; seluruh agenda tercatat

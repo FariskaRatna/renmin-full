@@ -22,7 +22,7 @@ type OpenFilter = 'all' | 'unread' | 'read'
 const statusLabels: Record<string, string> = {
   awaiting_kabag: 'Belum Dibuka',
   read_kabag: 'Sudah Dibuka',
-  directive_issued: 'Arahan Sudah Dibuat',
+  directive_issued: 'Sudah Didisposisikan Kabagrenmin',
   dispatched: 'Sudah Didistribusikan',
   in_progress: 'Dalam Tindak Lanjut',
   awaiting_review: 'Menunggu Review',

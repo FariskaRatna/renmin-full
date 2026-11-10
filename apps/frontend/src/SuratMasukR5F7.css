@@ -38,3 +38,14 @@
   .sm-kabagwait.is-read{color:#6ac4a4}
   .sm-kabagwait.is-overdue{color:#f09272}
 }
+
+/* R5H6: kepala detail surat. Eyebrow dan baris judul sebelumnya elemen inline
+ * yang berdampingan, sehingga "DETAIL SURAT MASUK" bisa menempel sebaris
+ * dengan nomor surat dan garis dasarnya tidak sejajar. Kini bertingkat:
+ * eyebrow → nomor surat + derajat → keterangan agenda/versi/status. */
+.sdl-sm-r5f6__detail-head>div:first-child{display:flex;flex-direction:column;gap:6px;min-width:0}
+.sdl-sm-r5f6__detail-head .eyebrow{display:block;line-height:1}
+.sdl-sm-r5f6__detail-head .sm-title-row{display:flex;gap:10px;align-items:center}
+.sdl-sm-r5f6__detail-head .sm-title-row h3{margin:0;font-size:20px;line-height:1.25;overflow-wrap:anywhere}
+.sdl-sm-r5f6__detail-head p{margin:0}
+.sdl-sm-r5f6__detail-head>.sdl-sm-r5f6__row-actions{align-self:center}

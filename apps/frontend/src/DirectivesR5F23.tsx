@@ -26,10 +26,6 @@ type SendForm={title:string;body:string;kind:string;priority:string;dueAt:string
 type DraftStatus='loading'|'empty'|'dirty'|'saving'|'saved'|'error'|'conflict'
 const todayJakarta=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Jakarta',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date())
 const blankSheet=():Sheet=>({letterFrom:'',letterNumber:'',directiveDate:todayJakarta(),letterDate:'',subject:'',classification:'biasa',derajat:'biasa',dispositions:[],dispositionNote:''})
-// Prioritas tidak lagi dipilih di layar; ia diturunkan dari lembar supaya
-// badge daftar arahan (yang membaca priority) tetap bermakna. Kilat menang atas
-// Rahasia karena badge itu menjawab "seberapa cepat", bukan "siapa boleh baca".
-const priorityOf=(s:Sheet)=>s.derajat==='kilat'?'kilat':s.classification==='penting'?'penting':'biasa'
 // Hanya field yang dikenal backend. Membangun ulang (bukan menyebar objek)
 // memastikan agendaNo maupun kunci asing lain tidak pernah ikut terkirim.
 const sheetPayload=(s:Sheet):Sheet=>({letterFrom:s.letterFrom,letterNumber:s.letterNumber,directiveDate:s.directiveDate,letterDate:s.letterDate,subject:s.subject,classification:s.classification,derajat:s.derajat,dispositions:[...s.dispositions],dispositionNote:s.dispositionNote})
@@ -39,7 +35,8 @@ const initialsOf=(label:string)=>label.replace(/[^A-Za-z ]/g,' ').split(/\s+/).f
 type ChipOption={key:string;label:string;detail:string;blocked:string}
 // Pemilih berbentuk chip + kotak cari: bentuk penunjukan penerima sebelum R5H1,
 // dipakai lagi untuk daftar Kasubbag dan daftar Disposisi Kabagrenmin.
-function ChipPicker({ariaLabel,cap,placeholder,empty,options,picked,labelOf,disabled,onToggle}:{ariaLabel:string;cap:string;placeholder:string;empty:string;options:ChipOption[];picked:string[];labelOf:(key:string)=>string;disabled:boolean;onToggle:(key:string)=>void}){
+// R5H6: diekspor untuk panel disposisi di detail Surat Masuk (DisposisiSuratR5H6).
+export function ChipPicker({ariaLabel,cap,placeholder,empty,options,picked,labelOf,disabled,onToggle}:{ariaLabel:string;cap:string;placeholder:string;empty:string;options:ChipOption[];picked:string[];labelOf:(key:string)=>string;disabled:boolean;onToggle:(key:string)=>void}){
  const [query,setQuery]=useState(''),[open,setOpen]=useState(false)
  const q=query.trim().toLowerCase()
  const available=options.filter(o=>!picked.includes(o.key)&&(!q||o.label.toLowerCase().includes(q)||o.detail.toLowerCase().includes(q)))
@@ -118,7 +115,10 @@ export default function DirectivesR5F23({onNotificationChange,initialID}:{onNoti
  const reload=useCallback(async(_mode:Tab='list',withSpinner=true)=>{if(withSpinner)setLoading(true);try{
   const [meta,received]=await Promise.all([api<{canIssue:boolean}>('/meta'),api<{items:Directive[]}>('/inbox')])
   const sent=meta.canIssue?await api<{items:Directive[]}>('/sent'):{items:[] as Directive[]}
-  const all:ViewItem[]=[...(received.items||[]).map(x=>({...x,direction:'received' as const})),...(sent.items||[]).map(x=>({...x,direction:'sent' as const}))]
+  // R5H6: arahan yang bertaut surat masuk adalah DISPOSISI dan kini dikelola di
+  // detail Surat Masuk / menu Disposisi, jadi tidak ditampilkan di sini.
+  const plain=(x:Directive)=>!x.incomingId
+  const all:ViewItem[]=[...(received.items||[]).filter(plain).map(x=>({...x,direction:'received' as const})),...(sent.items||[]).filter(plain).map(x=>({...x,direction:'sent' as const}))]
   all.sort((a,b)=>new Date(b.createdAt).getTime()-new Date(a.createdAt).getTime())
   setCanIssue(meta.canIssue);setItems(all);setError('')
  }catch(e){setError(e instanceof Error?e.message:'Gagal memuat data.');if(withSpinner)setItems([])}finally{if(withSpinner)setLoading(false)}},[])
@@ -187,9 +187,10 @@ export default function DirectivesR5F23({onNotificationChange,initialID}:{onNoti
    // Draft lama bisa menyebut bagian yang kini tidak ada lagi, atau surat yang
    // sudah tidak boleh ditautkan. Keduanya disaring di sini, bukan dibiarkan
    // sampai tombol kirim — 400 saat kirim tidak memberi tahu apa yang salah.
-   const restore:SendForm=old?{title:old.title||'',body:old.body||'',kind:old.kind||'umum',priority:old.priority||'biasa',dueAt:old.dueAt||'',recipients:[],
+   const restore:SendForm=old?{title:old.title||'',body:old.body||'',kind:old.kind||'umum',priority:['biasa','penting','kilat'].includes(old.priority)?old.priority:'biasa',dueAt:old.dueAt||'',recipients:[],
     sections:Array.isArray(old.sections)?old.sections.filter(k=>known.has(k)):[],
-    incomingId:old.incomingId&&suratList.some(l=>l.id===old.incomingId)?old.incomingId:null,
+    // R5H6: menautkan surat tidak lagi dilakukan dari Arahan.
+    incomingId:null,
     // Draft sebelum R5H2 tidak punya lembar. Opsi disposisi yang sudah dihapus
     // dari Master Data dilepas di sini karena akan ditolak saat kirim.
     sheet:old.sheet?{...sheetPayload({...blankSheet(),...old.sheet}),dispositions:(old.sheet.dispositions||[]).filter(c=>knownOption.has(c))}:blankSheet()}:initialForm()
@@ -217,7 +218,7 @@ export default function DirectivesR5F23({onNotificationChange,initialID}:{onNoti
   const work=(async()=>{
    try{
     setDraftStatus('saving')
-    const response=await api<{revision:number;updatedAt:string}>('/draft','PUT',{...snapshot,revision:revisionRef.current})
+    const response=await api<{revision:number;updatedAt:string}>('/draft','PUT',{...snapshot,incomingId:null,sheet:undefined,revision:revisionRef.current})
     revisionRef.current=response.revision;savedKeyRef.current=signature;setSavedAt(response.updatedAt)
     setDraftStatus(formKey(formRef.current)===signature?'saved':'dirty')
     return true
@@ -273,9 +274,9 @@ export default function DirectivesR5F23({onNotificationChange,initialID}:{onNoti
    if(!(await flushDraft()))return
    // recipients SENGAJA tidak dikirim: backend menolak payload yang mengisi
    // sections dan recipients sekaligus.
-   await api<{id:string}>('/','POST',{title:p.title.trim(),body:p.body.trim(),kind:p.kind,priority:priorityOf(p.sheet),dueAt:p.dueAt?new Date(p.dueAt).toISOString():null,sections:p.sections,incomingId:p.incomingId,draftRevision:revisionRef.current,sheet:sheetPayload(p.sheet)})
+   await api<{id:string}>('/','POST',{title:p.title.trim(),body:p.body.trim(),kind:p.kind,priority:p.priority,dueAt:p.dueAt?new Date(p.dueAt).toISOString():null,sections:p.sections,draftRevision:revisionRef.current})
    const cleared=initialForm();formRef.current=cleared;setForm(cleared);savedKeyRef.current=formKey(cleared);revisionRef.current=0;setSavedAt(null);setDraftReady(false)
-   setDraftFiles([]);setTab('list');flash(p.incomingId?'Arahan terkirim. Surat beserta lampirannya ikut diserahkan ke bagian yang ditunjuk.':'Arahan berhasil dikirim ke bagian yang ditunjuk.');onNotificationChange?.()
+   setDraftFiles([]);setTab('list');flash('Arahan berhasil dikirim ke bagian yang ditunjuk.');onNotificationChange?.()
   }catch(e){setError(e instanceof Error?e.message:'Gagal mengirim arahan.')}finally{setBusy(false)}
  }
  async function clearDraft(){
@@ -296,13 +297,6 @@ export default function DirectivesR5F23({onNotificationChange,initialID}:{onNoti
   return [...new Set(keys)].map(k=>sectionLabel[k]||k)
  },[detail,sectionLabel])
  const chosenLetter=useMemo(()=>letters.find(l=>l.id===form.incomingId)||null,[letters,form.incomingId])
- // Pencarian di sisi layar atas daftar yang sudah dimuat (maks. 100 surat dari
- // /letters); tidak ada panggilan API baru. Cocok ke agenda, nomor, perihal, pengirim.
- const shownLetters=useMemo(()=>{
-  const q=letterQuery.trim().toLocaleLowerCase('id-ID')
-  if(!q)return letters
-  return letters.filter(l=>[String(l.agendaNo),`#${l.agendaNo}`,l.letterNumber,l.subject,l.sender].some(v=>(v||'').toLocaleLowerCase('id-ID').includes(q)))
- },[letters,letterQuery])
  // R5H4: klasifikasi tidak lagi menghalangi pilihan. Anggota yang tidak
  // berwenang atas surat tetap menerima arahannya, tanpa naskah suratnya --
  // keterangan itu ditampilkan di detail pilihan (lihat sectionDetail).
@@ -321,29 +315,6 @@ export default function DirectivesR5F23({onNotificationChange,initialID}:{onNoti
   return text
  },[chosenLetter])
  function toggleSection(key:string){const current=formRef.current.sections;changeForm({sections:current.includes(key)?current.filter(x=>x!==key):[...current,key]})}
- // Mengganti surat dapat membuat bagian yang sudah dipilih menjadi tidak
- // berwenang. Dibersihkan saat itu juga supaya ringkasan pengiriman tidak
- // pernah menghitung bagian yang tombolnya sedang mati.
- function chooseLetter(id:string|null){
-  const letter=id?letters.find(l=>l.id===id)||null:null
-  // Memilih surat mengisi lembar dari data surat itu; isiannya tetap bisa
-  // diubah. Melepas surat tidak mengosongkan lembar -- yang sudah diketik atau
-  // terisi tidak hilang diam-diam.
-  const current=formRef.current.sheet
-  const sheet=letter?{...current,letterFrom:letter.sender,letterNumber:letter.letterNumber,letterDate:letter.letterDate||'',subject:letter.subject,classification:letter.classification==='penting'?'penting':current.classification,derajat:letter.derajat==='kilat'?'kilat':'biasa'}:current
-  const keep=formRef.current.sections.filter(key=>{
-   const s=sectionList.find(x=>x.key===key)
-   return Boolean(s&&s.holders.length>0)
-  })
-  changeForm({incomingId:id,sections:keep,sheet,priority:priorityOf(sheet)})
-  setLetterPickerOpen(false);setLetterQuery('')
- }
- function changeSheet(patch:Partial<Sheet>){
-  const sheet={...formRef.current.sheet,...patch}
-  // R5H4: klasifikasi lembar tidak lagi melepas pilihan tujuan.
-  changeForm({sheet,priority:priorityOf(sheet)})
- }
- function toggleDisposition(code:string){const current=formRef.current.sheet.dispositions;changeSheet({dispositions:current.includes(code)?current.filter(x=>x!==code):[...current,code]})}
  const dispositionName=useMemo(()=>Object.fromEntries(dispositionOptions.map(o=>[o.code,o.name])) as Record<string,string>,[dispositionOptions])
  // Penerima juga perlu nama opsi untuk membaca lembar; dimuat sekali saat
  // detail berisi disposisi pertama kali dibuka.
@@ -351,10 +322,7 @@ export default function DirectivesR5F23({onNotificationChange,initialID}:{onNoti
   if(!detail?.sheet?.dispositions.length||dispositionOptions.length>0)return
   api<{items:DispositionOption[]}>('/disposition-options').then(r=>setDispositionOptions(r.items||[])).catch(()=>{})
  },[detail,dispositionOptions.length])
- // Lembar tidak boleh menurunkan klasifikasi surat Rahasia yang ditautkan;
- // backend menolaknya dengan 400, layar mencegahnya lebih dulu.
- const letterLocksClass=chosenLetter?.classification==='penting'
- const hasContent=Boolean(form.title||form.body||form.dueAt||form.sections.length||form.incomingId||form.kind!=='umum'||draftFiles.length>0||form.sheet.letterFrom||form.sheet.letterNumber||form.sheet.letterDate||form.sheet.subject||form.sheet.dispositions.length||form.sheet.dispositionNote||form.sheet.classification!=='biasa'||form.sheet.derajat!=='biasa')
+ const hasContent=Boolean(form.title||form.body||form.dueAt||form.sections.length||form.priority!=='biasa'||form.kind!=='umum'||draftFiles.length>0)
  const statusText:Record<DraftStatus,string>={loading:'Memuat draft…',empty:'Siap menulis arahan',dirty:'Ada perubahan belum tersimpan',saving:'Menyimpan draft…',saved:'Draft tersimpan otomatis',error:'Draft belum tersimpan',conflict:'Draft berubah di sesi lain'}
  const outstanding=items.filter(item=>item.direction==='received'?!item.myAcknowledgedAt:item.acknowledged<item.total).length
 
@@ -379,34 +347,13 @@ export default function DirectivesR5F23({onNotificationChange,initialID}:{onNoti
    <div className="sdl-arahan__editor-heading"><div><span className="sdl-arahan__eyebrow">KIRIM ARAHAN</span><h2>Tulis instruksi baru</h2><p>Tunjuk bagiannya; sistem yang menentukan pejabatnya.</p></div><span className={`sdl-arahan__save-indicator ${draftStatus}`}><span className="sdl-arahan__status-dot"/>{statusText[draftStatus]}</span></div>
    <form onSubmit={(e:FormEvent)=>void send(e)} className="sdl-arahan__editor-grid">
     <div className="sdl-arahan__compose-card">
-     <div className="sdl-arahan__letterpick">
-      <div className="sdl-arahan__receiver-head"><span>Surat terkait <i>(opsional)</i></span><span className="sdl-arahan__small">{letters.length} surat sudah Anda terima</span></div>
-      {chosenLetter?<div className="sdl-arahan__letter-chosen"><span className="sdl-arahan__letter-main"><strong>#{chosenLetter.agendaNo} · {chosenLetter.subject}</strong><small>{chosenLetter.letterNumber} · Dari {chosenLetter.sender}</small></span><span className={`sdl-arahan__priority ${chosenLetter.classification==='penting'?'penting':'biasa'}`}>{(displayClass[chosenLetter.classification]||chosenLetter.classification).toUpperCase()}</span><button type="button" onClick={()=>chooseLetter(null)} disabled={busy||!draftReady} aria-label="Lepas surat terkait">×</button></div>
-      :<button type="button" className="sdl-arahan__letter-open" disabled={!draftReady||busy||letters.length===0} onClick={()=>setLetterPickerOpen(true)}>{letters.length===0?'Belum ada surat masuk yang Anda terima':'＋ Pilih surat masuk yang diarahkan'}</button>}
-      {letterPickerOpen&&<div className="sdl-arahan__picker" role="listbox" aria-label="Pilihan surat masuk"><div className="sdl-arahan__picker-cap">SURAT YANG SUDAH ANDA TERIMA</div>
-       <input className="sdl-arahan__letter-search" autoFocus value={letterQuery} onChange={e=>setLetterQuery(e.target.value)} onKeyDown={e=>{if(e.key==='Escape'){e.preventDefault();setLetterPickerOpen(false);setLetterQuery('')}else if(e.key==='Enter'){e.preventDefault();if(shownLetters.length===1)chooseLetter(shownLetters[0].id)}}} placeholder="Ketik nomor surat, perihal, pengirim, atau agenda…" aria-label="Cari surat masuk" maxLength={100}/>
-       {shownLetters.length===0&&<p className="sdl-arahan__no-people">Tidak ada surat yang cocok dengan “{letterQuery.trim()}”.</p>}
-       {shownLetters.map(letter=><button role="option" aria-selected={form.incomingId===letter.id} className="sdl-arahan__letter-option" type="button" key={letter.id} disabled={busy} onClick={()=>chooseLetter(letter.id)}><span><strong>#{letter.agendaNo} · {letter.subject}</strong><small>{letter.letterNumber} · {letter.sender} · {displayClass[letter.classification]||letter.classification}{letter.derajat==='kilat'?' · KILAT':''}</small></span>{letter.directiveCount>0&&<span className="sdl-arahan__letter-tag">{letter.directiveCount} arahan</span>}</button>)}
-       <button type="button" className="sdl-arahan__picker-close" onClick={()=>{setLetterPickerOpen(false);setLetterQuery('')}}>Tutup</button></div>}
-      {chosenLetter&&<p className="sdl-arahan__letter-note">Surat ini beserta lampirannya ikut diserahkan kepada penerima yang berwenang atas klasifikasinya. Penerima lain tetap menerima arahan dan lembar disposisinya.</p>}
-     </div>
+     {/* R5H6: pemilih "Surat terkait" dihapus — disposisi surat dibuat dari detail Surat Masuk. */}
      <div className="sdl-arahan__receiver-head"><span>Kepada <b>{form.sections.length}/{sectionList.length||11}</b></span><span className="sdl-arahan__small">Jabatan, seluruh bagian, atau Paur</span></div>
      <ChipPicker ariaLabel="Bagian tujuan arahan" cap="TUJUAN ARAHAN" placeholder={form.sections.length?'Tambah tujuan…':'Ketik atau pilih Kasubbag, bagian, atau Paur…'} empty={sectionList.length===0?'Daftar tujuan belum dapat dimuat.':'Semua tujuan sudah dipilih.'}
       options={sectionList.map(s=>({key:s.key,label:s.label,detail:sectionDetail(s),blocked:blockReason(s)}))}
       picked={form.sections} labelOf={key=>sectionLabel[key]||key} disabled={!draftReady||busy} onToggle={toggleSection}/>
-     <fieldset className="sdl-arahan__sheet" disabled={!draftReady||busy}><legend>Lembar disposisi</legend>
-      <label><span>No. Agenda</span><input value="" disabled readOnly placeholder="Terisi otomatis saat bagian membuat surat"/></label>
-      <label><span>Surat dari</span><input maxLength={200} value={form.sheet.letterFrom} onChange={(e:{target:{value:string}})=>changeSheet({letterFrom:e.target.value})} placeholder="Instansi / pejabat pengirim"/></label>
-      <label><span>Nomor surat</span><input maxLength={100} value={form.sheet.letterNumber} onChange={(e:{target:{value:string}})=>changeSheet({letterNumber:e.target.value})} placeholder="Contoh: B/ND-157/X/2026"/></label>
-      <label><span>Tanggal</span><input type="date" value={form.sheet.directiveDate} onChange={(e:{target:{value:string}})=>changeSheet({directiveDate:e.target.value})}/></label>
-      <label><span>Tanggal dibuat surat</span><input type="date" value={form.sheet.letterDate} onChange={(e:{target:{value:string}})=>changeSheet({letterDate:e.target.value})}/></label>
-      <label className="is-wide"><span>Perihal</span><input maxLength={250} value={form.sheet.subject} onChange={(e:{target:{value:string}})=>changeSheet({subject:e.target.value})} placeholder="Perihal surat"/></label>
-     </fieldset>
-     <div className="sdl-arahan__receiver-head"><span>Disposisi Kabagrenmin <b>{form.sheet.dispositions.length}</b></span><span className="sdl-arahan__small">Pilihan dikelola di Master Data</span></div>
-     <ChipPicker ariaLabel="Disposisi Kabagrenmin" cap="PILIHAN DISPOSISI" placeholder={form.sheet.dispositions.length?'Tambah disposisi…':'Ketik atau pilih disposisi…'} empty={dispositionOptions.length===0?'Belum ada pilihan disposisi di Master Data.':'Semua pilihan sudah dipilih.'}
-      options={dispositionOptions.map(o=>({key:o.code,label:o.name,detail:o.code,blocked:''}))}
-      picked={form.sheet.dispositions} labelOf={code=>dispositionName[code]||code} disabled={!draftReady||busy} onToggle={toggleDisposition}/>
-     <div className="sdl-arahan__sheet-note"><label htmlFor="sdl-directive-dispo-note">Disposisi lainnya <i>(di luar daftar)</i></label><textarea id="sdl-directive-dispo-note" maxLength={1000} rows={3} value={form.sheet.dispositionNote} onChange={(e:{target:{value:string}})=>changeSheet({dispositionNote:e.target.value})} disabled={!draftReady||busy} placeholder="Tulis disposisi yang tidak ada di daftar…"/></div>
+     {/* R5H6: lembar disposisi, Disposisi Kabagrenmin, dan Disposisi lainnya pindah ke
+         detail Surat Masuk. Arahan kembali ke bentuk sebelum R5H2. */}
      <div className="sdl-arahan__compose-body"><label className="sdl-arahan__sr-only" htmlFor="sdl-directive-title">Judul Arahan</label><input id="sdl-directive-title" className="sdl-arahan__title-input" required minLength={3} maxLength={160} value={form.title} onChange={(e:{target:{value:string}})=>changeForm({title:e.target.value})} onBlur={()=>{if(draftReady&&!busy)void flushDraft()}} disabled={!draftReady||busy} placeholder="Judul arahan…" />
       <label className="sdl-arahan__sr-only" htmlFor="sdl-directive-body">Isi Arahan</label><textarea id="sdl-directive-body" className="sdl-arahan__body-input" required minLength={8} maxLength={4000} rows={7} value={form.body} onChange={(e:{target:{value:string}})=>changeForm({body:e.target.value})} onBlur={()=>{if(draftReady&&!busy)void flushDraft()}} disabled={!draftReady||busy} placeholder="Tulis arahan singkat dan jelas untuk staf yang dituju…"/>
       <span className="sdl-arahan__character">{form.body.length}/4.000 karakter</span></div>
@@ -418,11 +365,10 @@ export default function DirectivesR5F23({onNotificationChange,initialID}:{onNoti
      <div className="sdl-arahan__composer-foot"><span>Pesan satu arah · Penerima wajib konfirmasi</span><span className="sdl-arahan__save-inline">{savedAt&&draftStatus==='saved'?`Disimpan ${fmt(savedAt)}`:statusText[draftStatus]}</span></div>
     </div>
     <aside className="sdl-arahan__settings"><div className="sdl-arahan__settings-title"><h3>Pengaturan arahan</h3><p>Lengkapi bila diperlukan.</p></div>
-     <div className="sdl-arahan__setting-block"><span className="sdl-arahan__setting-label">Klasifikasi</span><div className="sdl-arahan__priority-switch" role="group" aria-label="Klasifikasi arahan">{[['biasa','Biasa'],['penting','Rahasia']].map(([val,label])=><button type="button" key={val} disabled={!draftReady||busy||(val==='biasa'&&letterLocksClass)} title={val==='biasa'&&letterLocksClass?'Surat terkait berklasifikasi Rahasia.':undefined} className={form.sheet.classification===val?`active ${val}`:''} aria-pressed={form.sheet.classification===val} onClick={()=>changeSheet({classification:val})}>{label}</button>)}</div></div>
-     <div className="sdl-arahan__setting-block"><span className="sdl-arahan__setting-label">Derajat</span><div className="sdl-arahan__priority-switch" role="group" aria-label="Derajat arahan">{[['biasa','Biasa'],['kilat','Kilat']].map(([val,label])=><button type="button" key={val} disabled={!draftReady||busy} className={form.sheet.derajat===val?`active ${val}`:''} aria-pressed={form.sheet.derajat===val} onClick={()=>changeSheet({derajat:val})}>{label}</button>)}</div></div>
+     <div className="sdl-arahan__setting-block"><span className="sdl-arahan__setting-label">Prioritas</span><div className="sdl-arahan__priority-switch" role="group" aria-label="Prioritas arahan">{[['biasa','Biasa'],['penting','Penting'],['kilat','Kilat']].map(([val,label])=><button type="button" key={val} disabled={!draftReady||busy} className={form.priority===val?`active ${val}`:''} aria-pressed={form.priority===val} onClick={()=>changeForm({priority:val})}>{label}</button>)}</div></div>
      <label className="sdl-arahan__setting-block"><span className="sdl-arahan__setting-label">Jenis arahan</span><select value={form.kind} onChange={(e:{target:{value:string}})=>changeForm({kind:e.target.value})} disabled={!draftReady||busy}>{Object.entries(displayKind).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>
      <label className="sdl-arahan__setting-block"><span className="sdl-arahan__setting-label">Tenggat <i>(opsional)</i></span><input type="datetime-local" value={form.dueAt} onChange={(e:{target:{value:string}})=>changeForm({dueAt:e.target.value})} disabled={!draftReady||busy}/></label>
-     <div className="sdl-arahan__send-summary"><span>Ringkasan pengiriman</span><strong>{form.sections.length} tujuan · {recipientCount} orang</strong><small>{form.sections.length>0?form.sections.map(k=>sectionLabel[k]||k).join(' · '):'Belum ada tujuan yang dipilih.'}</small><small>{form.incomingId?'Surat terkait ikut diserahkan. ':''}Setelah dikirim, isi arahan tidak dapat diubah.</small></div>
+     <div className="sdl-arahan__send-summary"><span>Ringkasan pengiriman</span><strong>{form.sections.length} tujuan · {recipientCount} orang</strong><small>{form.sections.length>0?form.sections.map(k=>sectionLabel[k]||k).join(' · '):'Belum ada tujuan yang dipilih.'}</small><small>Setelah dikirim, isi arahan tidak dapat diubah.</small></div>
      <button className="sdl-arahan__primary sdl-arahan__send" type="submit" disabled={busy||uploadBusy||!draftReady||form.sections.length===0||!form.title.trim()||!form.body.trim()||draftStatus==='conflict'}>{busy?'Mengirim…':`Kirim Arahan →`}</button>
      <div className="sdl-arahan__draft-actions">{draftStatus==='conflict'?<button type="button" disabled={busy} onClick={()=>{void loadDraft()}}>Muat draft terbaru (ganti perubahan lokal)</button>:<button type="button" disabled={busy||!draftReady} onClick={()=>{void flushDraft()}}>Simpan sekarang</button>}<button type="button" disabled={busy||!draftReady||!hasContent} onClick={()=>setDeleteConfirm(true)}>Hapus draft</button></div>
     </aside>

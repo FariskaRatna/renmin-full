@@ -66,3 +66,22 @@
 /* R5G13: nomor surat yang dibangkitkan backend. Teks, bukan input terkunci. */
 .sdl-nomorsurat{display:block;padding:11px 12px;border:1px dashed var(--border,#d6dce5);border-radius:9px;background:var(--subtle,#eef1f6);color:var(--ink,#1d2531);font-size:13px;font-weight:800;letter-spacing:.3px;overflow-wrap:anywhere}
 .sdl-nomorsurat:empty::before{content:'Terbit otomatis setelah disimpan';color:var(--muted,#64708a);font-weight:600}
+
+/* R5H6: pilihan Dasar Surat (berdasarkan rujukan / tanpa rujukan). Sengaja
+ * tombol, bukan <input type=radio>: aturan .sumda-field :is(input,...) membuat
+ * radio selebar kolom dan setinggi 44px. */
+.urmin-dasar{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.urmin-dasar__opt{display:flex;align-items:center;gap:11px;min-height:56px;padding:10px 14px;border:1px solid #cfd8e5;border-radius:10px;background:var(--sm-surface,#fff);color:var(--sm-ink,inherit);font:inherit;text-align:left;cursor:pointer;transition:border-color .15s,box-shadow .15s,background .15s}
+.urmin-dasar__opt:hover{border-color:#9fb3cc}
+.urmin-dasar__opt:focus-visible{outline:0;box-shadow:0 0 0 3px var(--sm-ring,#c9dbf2)}
+.urmin-dasar__opt.is-on{border-color:#4a86d6;background:#f1f6fd;box-shadow:0 0 0 1px #4a86d6 inset}
+.urmin-dasar__dot{flex:none;width:16px;height:16px;border-radius:50%;border:2px solid #9fb0c5;background:#fff}
+.urmin-dasar__opt.is-on .urmin-dasar__dot{border-color:#2f6fc4;background:radial-gradient(circle,#2f6fc4 0 4px,#fff 4.5px)}
+.urmin-dasar__text{display:flex;flex-direction:column;gap:2px;min-width:0}
+.urmin-dasar__text strong{font-size:13px;font-weight:750;color:var(--sm-ink,inherit)}
+.urmin-dasar__text small{font-size:11px;font-weight:500;color:var(--sm-secondary,#71849c)}
+:root[data-theme=dark] .urmin-dasar__opt{border-color:#465874}
+:root[data-theme=dark] .urmin-dasar__opt.is-on{background:#17304f;border-color:#5f9be6;box-shadow:0 0 0 1px #5f9be6 inset}
+:root[data-theme=dark] .urmin-dasar__dot{background:transparent}
+:root[data-theme=dark] .urmin-dasar__opt.is-on .urmin-dasar__dot{border-color:#5f9be6;background:radial-gradient(circle,#5f9be6 0 4px,transparent 4.5px)}
+@media(max-width:640px){.urmin-dasar{grid-template-columns:1fr}}
