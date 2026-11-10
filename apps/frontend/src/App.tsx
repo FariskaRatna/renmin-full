@@ -294,9 +294,11 @@ function App() {
   const [demoAdminEnabled,setDemoAdminEnabled] = useState(false)
   const [account,setAccount] = useState<Account|null>(null)
   const [profileAvatarRevision,setProfileAvatarRevision] = useState(0)
-  const [inboxPending,setInboxPending] = useState(0)
+  // R5H6: angka penanda di menu (Surat Masuk, Inbox, Arahan) dihapus atas permintaan
+  // pemilik; hitungannya masih dimuat tapi tidak ditampilkan.
+  const [,setInboxPending] = useState(0)
   // R5F23 - leadership directives independent from URMIN
-  const [directiveAlerts,setDirectiveAlerts] = useState(0)
+  const [,setDirectiveAlerts] = useState(0)
   const [executiveKind,setExecutiveKind] = useState<'leader'|'admin'|null>(null)
   useEffect(()=>{
     if(!account){setExecutiveKind(null);return}
@@ -325,7 +327,10 @@ function App() {
   // Ini penyembunyian NAVIGASI, bukan otorisasi: backend tetap satu-satunya
   // yang menegakkan akses, dan Engine A tidak berubah.
   const isKabagrenmin = account?.roles.includes('br_kabagrenmin') ?? false
-  const visibleUrminNav = isKabagrenmin ? urminNav.filter(item=>item.id!=='disposisi') : urminNav
+  // R5H6: bagi Kabagrenmin, menu Surat Masuk berisi surat yang didisposisikan
+  // kepadanya saja (lihat SuratMasuk isKabagrenmin), jadi dinamai "Disposisi".
+  // Hanya label; id menu tetap 'surat-masuk' sehingga tautan dan rute tidak berubah.
+  const visibleUrminNav = isKabagrenmin ? urminNav.filter(item=>item.id!=='disposisi').map(item=>item.id==='surat-masuk'?{...item,label:'Disposisi'}:item) : urminNav
   useEffect(()=>{
     if(!account || restrictedSuperadmin)return
     let alive=true
@@ -410,8 +415,8 @@ function App() {
   const sidebarModules = unit?.id==='ren'&&renSubInfo ? unit.modules.filter(m=>renSubInfo.modules.includes(m.id)) : unit?.modules ?? []
   const workspace = !renChooser && (effectiveScreen.view==='workspace'||effectiveScreen.view==='inbox'||effectiveScreen.view==='tasks') && unit
   const workMenu=effectiveScreen.view==='inbox'?'__distribution-inbox':effectiveScreen.view==='tasks'?'__tasks':effectiveScreen.menu
-  const workTitle=unit?.id==='urmin'&&workMenu==='__unitwork'?'Berkas Kerja':unit?.id==='urmin'&&workMenu==='disposisi'?'Disposisi':unit?.id==='urmin'&&workMenu==='arsip'?'Arsip':unit?.id==='urmin'&&workMenu==='__admin'?'Pengguna & Hak Akses':workMenu==='__unitwork'?'Berkas, Foto & Disposisi':workMenu==='__distribution-inbox'?'Inbox Distribusi':workMenu==='__tasks'?'Tugas Disposisi':chosenModule?.title??renSubInfo?.name??unit?.name??''
-  const workSubtitle=workMenu==='__unitwork'?'Kelola berkas, lampiran, dan tugas internal.':workMenu==='disposisi'&&unit?.id==='urmin'?'Tugas, tindak lanjut, dan review disposisi.':workMenu==='__admin'?'Kelola akun dan kewenangan sesuai hak akses.':workMenu==='__distribution-inbox'?'Surat yang diteruskan kepada Anda.':workMenu==='__tasks'?'Pantau tugas dan tindak lanjut.':chosenModule?.description??renSubInfo?.description??unit?.subtitle??''
+  const workTitle=unit?.id==='urmin'&&workMenu==='surat-masuk'&&isKabagrenmin?'Disposisi':unit?.id==='urmin'&&workMenu==='__unitwork'?'Berkas Kerja':unit?.id==='urmin'&&workMenu==='disposisi'?'Disposisi':unit?.id==='urmin'&&workMenu==='arsip'?'Arsip':unit?.id==='urmin'&&workMenu==='__admin'?'Pengguna & Hak Akses':workMenu==='__unitwork'?'Berkas, Foto & Disposisi':workMenu==='__distribution-inbox'?'Inbox Distribusi':workMenu==='__tasks'?'Tugas Disposisi':chosenModule?.title??renSubInfo?.name??unit?.name??''
+  const workSubtitle=unit?.id==='urmin'&&workMenu==='surat-masuk'&&isKabagrenmin?'Surat masuk yang diajukan kepada Anda untuk didisposisikan.':workMenu==='__unitwork'?'Kelola berkas, lampiran, dan tugas internal.':workMenu==='disposisi'&&unit?.id==='urmin'?'Tugas, tindak lanjut, dan review disposisi.':workMenu==='__admin'?'Kelola akun dan kewenangan sesuai hak akses.':workMenu==='__distribution-inbox'?'Surat yang diteruskan kepada Anda.':workMenu==='__tasks'?'Pantau tugas dan tindak lanjut.':chosenModule?.description??renSubInfo?.description??unit?.subtitle??''
   const activeTab=workMenu&&unit?.id==='urmin'?(urminTabs[workMenu]?.some(t=>t.id===effectiveScreen.tab)?effectiveScreen.tab:defaultUrminTab[workMenu]):undefined
   const adminSecurity = <section className="panel sdl-r5f5-admin-note"><h2>Kewenangan</h2><p>Hak akses ditentukan oleh role dan izin yang diberikan. Pengelolaan akun tidak otomatis membuka seluruh data unit.</p><button type="button" className="btn" onClick={()=>navigate({view:'workspace',unit:'urmin',menu:'__admin',tab:'roles'})}><Icon name="key" size={16}/> Lihat Role & Akses</button></section>
   async function logout(){
@@ -429,8 +434,8 @@ function App() {
       <nav className="header-actions sdl-nav-clean" aria-label="Main navigation">
         <button type="button" className={`header-text-btn ${effectiveScreen.view==='portal'?'nav-current':''}`} onClick={()=>navigate({view:'portal'})}><Icon name="grid" size={17}/> <span>Portal</span></button>
         {executiveKind&&<button type="button" className={`header-text-btn ${effectiveScreen.view==='executive'?'nav-current':''}`} onClick={()=>navigate({view:'executive'})}><Icon name="chart" size={17}/> <span>Dashboard</span></button>}
-        {!restrictedSuperadmin&&<button type="button" className={`header-text-btn ${effectiveScreen.view==='arahan'?'nav-current':''}`} onClick={()=>navigate({view:'arahan'})}><Icon name="bell" size={17}/> <span>Arahan{directiveAlerts>0?` (${directiveAlerts})`:''}</span></button>}
-        {!(workspace&&unit.id==='urmin')&&!restrictedSuperadmin&&<button type="button" className={`header-text-btn ${effectiveScreen.view==='inbox'?'nav-current':''}`} onClick={()=>navigate({view:'inbox'})}><Icon name="inbox" size={17}/> <span>Inbox{inboxPending>0?` (${inboxPending})`:''}</span></button>}
+        {!restrictedSuperadmin&&<button type="button" className={`header-text-btn ${effectiveScreen.view==='arahan'?'nav-current':''}`} onClick={()=>navigate({view:'arahan'})}><Icon name="bell" size={17}/> <span>Arahan</span></button>}
+        {!(workspace&&unit.id==='urmin')&&!restrictedSuperadmin&&<button type="button" className={`header-text-btn ${effectiveScreen.view==='inbox'?'nav-current':''}`} onClick={()=>navigate({view:'inbox'})}><Icon name="inbox" size={17}/> <span>Inbox</span></button>}
         {!(workspace&&unit.id==='urmin')&&!restrictedSuperadmin&&<button type="button" className={`header-text-btn ${effectiveScreen.view==='tasks'?'nav-current':''}`} onClick={()=>navigate({view:'tasks'})}><Icon name="clipboard" size={17}/> <span>Tasks</span></button>}
         {account.roles.includes('superadmin')&&<details className="sdl-nav-menu"><summary aria-label="Management"><Icon name="settings" size={17}/> <span>Manage</span><Icon name="chevron" size={13}/></summary>
           <div className="sdl-nav-dropdown" role="group" aria-label="Management">
@@ -458,8 +463,8 @@ function App() {
         <nav aria-label="Navigasi utama seluler">
           <button type="button" className={effectiveScreen.view==='portal'?'is-active':''} onClick={()=>navigate({view:'portal'})}><Icon name="grid" size={18}/> Portal</button>
           {executiveKind&&<button type="button" className={effectiveScreen.view==='executive'?'is-active':''} onClick={()=>navigate({view:'executive'})}><Icon name="chart" size={18}/> Dashboard</button>}
-          {!restrictedSuperadmin&&<button type="button" className={effectiveScreen.view==='arahan'?'is-active':''} onClick={()=>navigate({view:'arahan'})}><Icon name="bell" size={18}/> Arahan {directiveAlerts>0&&<span className="sdl-r5f23c-nav-count">{directiveAlerts}</span>}</button>}
-          {!restrictedSuperadmin&&<button type="button" className={effectiveScreen.view==='inbox'?'is-active':''} onClick={()=>navigate({view:'inbox'})}><Icon name="inbox" size={18}/> Inbox {inboxPending>0&&<span className="sdl-r5f23c-nav-count">{inboxPending}</span>}</button>}
+          {!restrictedSuperadmin&&<button type="button" className={effectiveScreen.view==='arahan'?'is-active':''} onClick={()=>navigate({view:'arahan'})}><Icon name="bell" size={18}/> Arahan</button>}
+          {!restrictedSuperadmin&&<button type="button" className={effectiveScreen.view==='inbox'?'is-active':''} onClick={()=>navigate({view:'inbox'})}><Icon name="inbox" size={18}/> Inbox</button>}
           {!restrictedSuperadmin&&<button type="button" className={effectiveScreen.view==='tasks'?'is-active':''} onClick={()=>navigate({view:'tasks'})}><Icon name="clipboard" size={18}/> Tasks</button>}
           <button type="button" className={effectiveScreen.view==='roadmap'?'is-active':''} onClick={()=>navigate({view:'roadmap'})}><Icon name="list" size={18}/> Roadmap</button>
           <div className="sdl-r5f23c-nav-divider"/>
@@ -479,14 +484,14 @@ function App() {
         <nav className="sidebar-scroll" aria-label={`Menu ${unit.title}`}>
           {unit.id==='urmin' ? <>
             <div className="sidebar-group">MENU UTAMA</div>
-            {visibleUrminNav.map(item=><button key={item.id||'dashboard'} type="button" title={item.label} className={`side-link ${(workMenu===item.id||(!workMenu&&!item.id))?'selected':''}`} disabled={restrictedSuperadmin} onClick={()=>navigate({view:'workspace',unit:'urmin',menu:item.id||undefined})}><Icon name={item.icon} size={18}/><span>{item.label}</span>{item.id==='surat-masuk'&&inboxPending>0&&<span className="sdl-r5f5-badge" aria-label={`${inboxPending} surat menunggu`}>{inboxPending>99?'99+':inboxPending}</span>}</button>)}
+            {visibleUrminNav.map(item=><button key={item.id||'dashboard'} type="button" title={item.label} className={`side-link ${(workMenu===item.id||(!workMenu&&!item.id))?'selected':''}`} disabled={restrictedSuperadmin} onClick={()=>navigate({view:'workspace',unit:'urmin',menu:item.id||undefined})}><Icon name={item.icon} size={18}/><span>{item.label}</span></button>)}
             {isSuperadmin&&<><div className="sidebar-group">ADMINISTRASI</div><button type="button" title="Pengguna & Hak Akses" className={`side-link ${workMenu==='__admin'?'selected':''}`} onClick={()=>navigate({view:'workspace',unit:'urmin',menu:'__admin',tab:'users'})}><Icon name="users" size={18}/><span>Pengguna & Hak Akses</span></button></>}
           </> : unit.id==='ren' ? <>
             <div className="sidebar-group">MENU UTAMA</div>
             <button type="button" title="Dashboard" className={`side-link ${!chosenModule&&!workMenu?'selected':''}`} disabled={restrictedSuperadmin} onClick={()=>navigate({view:'workspace',unit:'ren',sub:renSub})}><Icon name="grid" size={18}/><span>Dashboard</span></button>
             {sidebarModules.map(m=><button type="button" key={m.id} title={m.title} className={`side-link ${chosenModule?.id===m.id?'selected':''}`} disabled={restrictedSuperadmin} onClick={()=>navigate({view:'workspace',unit:'ren',menu:m.id,sub:renSub})}><Icon name={m.icon} size={18}/><span>{m.title}</span></button>)}
             <div className="sidebar-group">DISTRIBUSI & BERKAS</div>
-            <button type="button" title="Inbox Distribusi" className={`side-link ${workMenu==='__distribution-inbox'?'selected':''}`} disabled={restrictedSuperadmin} onClick={()=>navigate({view:'inbox'})}><Icon name="inbox" size={18}/><span>Inbox Distribusi</span>{inboxPending>0&&<span className="sdl-r5f5-badge" aria-label={`${inboxPending} surat menunggu`}>{inboxPending>99?'99+':inboxPending}</span>}</button>
+            <button type="button" title="Inbox Distribusi" className={`side-link ${workMenu==='__distribution-inbox'?'selected':''}`} disabled={restrictedSuperadmin} onClick={()=>navigate({view:'inbox'})}><Icon name="inbox" size={18}/><span>Inbox Distribusi</span></button>
             <button type="button" title="Tugas Disposisi" className={`side-link ${workMenu==='__tasks'?'selected':''}`} disabled={restrictedSuperadmin} onClick={()=>navigate({view:'tasks'})}><Icon name="clipboard" size={18}/><span>Tugas Disposisi</span></button>
             <button type="button" title="Berkas, Foto & Disposisi" className={`side-link ${workMenu==='__unitwork'?'selected':''}`} disabled={restrictedSuperadmin} onClick={()=>navigate({view:'workspace',unit:'ren',menu:'__unitwork',sub:renSub})}><Icon name="folder" size={18}/><span>Berkas, Foto & Disposisi</span></button>
           </> : <>
@@ -511,11 +516,11 @@ function App() {
           ? <><p className="sdl-r5f5-context">Riwayat distribusi yang telah diterima oleh akun Anda. Detail setiap surat menampilkan perjalanan penerimaannya.</p><InboxDistribusi key="history" workspaceMode="history"/></>
           : workMenu==='__unitwork' ? <UnitWorkR5A key={unit.id} unit={{urmin:'urmin',ren:'subbagren',sumda:'subbagsumda',binfung:'subbagbinfung'}[unit.id] as 'urmin'|'subbagren'|'subbagsumda'|'subbagbinfung'} userID={account.id} initialRecordID={effectiveScreen.recordID} demoAdmin={isSuperadmin&&demoAdminEnabled}/>
           : unit.id==='sumda'&&['personel','pendidikan','inventaris'].includes(chosenModule?.id||'') ? <SumdaR5B key={chosenModule?.id} kind={chosenModule!.id as 'personel'|'pendidikan'|'inventaris'} openFiles={recordID=>navigate({view:'workspace',unit:'sumda',menu:'__unitwork',recordID})}/>
-          : unit.id==='urmin'&&['surat-keluar','agenda','arsip'].includes(chosenModule?.id||'') ? <UrminR5D key={chosenModule?.id} initialID={effectiveScreen.recordID} initialCreate={effectiveScreen.create} kind={({'surat-keluar':'surat_keluar',agenda:'agenda',arsip:'arsip'} as Record<string,'surat_keluar'|'agenda'|'arsip'>)[chosenModule!.id]} openFiles={recordID=>navigate({view:'workspace',unit:'urmin',menu:'__unitwork',recordID})}/>
+          : unit.id==='urmin'&&['surat-keluar','agenda','arsip'].includes(chosenModule?.id||'') ? <UrminR5D key={chosenModule?.id} initialID={effectiveScreen.recordID} initialCreate={effectiveScreen.create} kind={({'surat-keluar':'surat_keluar',agenda:'agenda',arsip:'arsip'} as Record<string,'surat_keluar'|'agenda'|'arsip'>)[chosenModule!.id]} openFiles={recordID=>navigate({view:'workspace',unit:'urmin',menu:'__unitwork',recordID})} isKabagrenmin={isKabagrenmin}/>
           : unit.id==='binfung'&&['sop','pid','rb','abk','pembinaan','evaluasi'].includes(chosenModule?.id||'') ? <BinfungR5C key={chosenModule?.id} kind={chosenModule!.id as 'sop'|'pid'|'rb'|'abk'|'pembinaan'|'evaluasi'} openFiles={recordID=>navigate({view:'workspace',unit:'binfung',menu:'__unitwork',recordID})}/>
           : workMenu==='__distribution-inbox' ? <InboxDistribusi initialID={effectiveScreen.recordID}/>
           : workMenu==='__tasks' ? <TugasDisposisi currentUserId={account.id} initialID={effectiveScreen.recordID} onOpenDirective={id=>navigate({view:'arahan',recordID:id})}/>
-          : chosenModule?.id==='surat-masuk' && unit.id==='urmin' ? <SuratMasuk initialID={effectiveScreen.recordID} initialCreate={effectiveScreen.create}/>
+          : chosenModule?.id==='surat-masuk' && unit.id==='urmin' ? <SuratMasuk initialID={effectiveScreen.recordID} initialCreate={effectiveScreen.create} isKabagrenmin={isKabagrenmin}/>
           : chosenModule?.id==='usulan' && unit.id==='ren' ? <UsulanR4A/>
           : chosenModule?.id==='realisasi' && unit.id==='ren' ? <BudgetR4A3/>
           : chosenModule?.id==='disposisi' && unit.id==='urmin' && activeTab==='semua' ? <SeluruhDisposisi onOpenLetter={incomingID=>navigate({view:'workspace',unit:'urmin',menu:'surat-masuk',tab:'daftar',recordID:incomingID})}/>

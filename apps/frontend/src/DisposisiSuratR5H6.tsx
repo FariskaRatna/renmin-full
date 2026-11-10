@@ -138,6 +138,10 @@ export function DisposisiSuratR5H6({letter,onChanged}:{letter:Letter;onChanged?:
 
  if(loading&&!sent.length&&!received.length)return null
  if(!error&&!canIssue&&received.length===0)return null
+ // R5H6: satu surat hanya didisposisikan SEKALI (keputusan pemilik). Begitu ada
+ // disposisi terkirim, form tidak ditampilkan lagi. Penguncian ini di layar;
+ // backend belum menolak disposisi kedua.
+ const canSend=canIssue&&linkable&&sent.length===0
  if(!error&&canIssue&&!linkable&&sent.length===0)return null
 
  // R5H6 (rev.): lembar yang sudah terkirim memakai gaya grid data surat
@@ -156,7 +160,7 @@ export function DisposisiSuratR5H6({letter,onChanged}:{letter:Letter;onChanged?:
  const stateOf=(r:{readAt:string|null;acknowledgedAt:string|null})=>r.acknowledgedAt?{text:'Diterima',tone:'ok',at:r.acknowledgedAt}:r.readAt?{text:'Dibaca',tone:'info',at:r.readAt}:{text:'Belum dibaca',tone:'warn',at:null}
 
  return <section className="sm-dispo" aria-label="Disposisi Kabagrenmin">
-  <h4 className="sm-history-title sm-dispo__title">{canIssue&&linkable?'Disposisi Kabagrenmin':canIssue?'Disposisi Terkirim':'Disposisi untuk Anda'}</h4>
+  <h4 className="sm-history-title sm-dispo__title">{canSend?'Disposisi Kabagrenmin':canIssue?'Disposisi Terkirim':'Disposisi untuk Anda'}</h4>
   {error&&<p className="sm-dispo__alert is-error" role="alert">{error}</p>}
   {message&&<p className="sm-dispo__alert" role="status">{message}</p>}
 
@@ -172,8 +176,7 @@ export function DisposisiSuratR5H6({letter,onChanged}:{letter:Letter;onChanged?:
    {!d.myAcknowledgedAt&&<div className="sm-dispo__actions"><button type="button" className="btn primary" disabled={busy} onClick={()=>void accept(d.id)}>{busy?'Memproses…':'Terima Disposisi'}</button></div>}
   </div>)}
 
-  {canIssue&&linkable&&<div className="sm-dispo__form">
-   {sent.length>0&&<p className="sm-dispo__hint">Surat ini sudah pernah didisposisikan. Disposisi baru dikirim sebagai tambahan.</p>}
+  {canSend&&<div className="sm-dispo__form">
    <div className="sm-dispo__grid">
     <div className="sdl-arahan__compose-card">
      <fieldset className="sdl-arahan__sheet sm-dispo__agenda" disabled><legend>Lembar disposisi</legend>

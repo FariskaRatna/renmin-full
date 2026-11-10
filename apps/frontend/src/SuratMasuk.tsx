@@ -202,7 +202,10 @@ function RowIcon({d}:{d:'info'|'upload'}){
  </svg>
 }
 
-export default function SuratMasuk({initialID,initialCreate}:{initialID?:string;initialCreate?:boolean}){
+export default function SuratMasuk({initialID,initialCreate,isKabagrenmin=false}:{initialID?:string;initialCreate?:boolean;isKabagrenmin?:boolean}){
+ // R5H6: Kabagrenmin hanya melihat surat yang DIDISPOSISIKAN kepadanya —
+ // bukan draft operator, bukan surat "cukup dicatat". Penyaringan tampilan;
+ // hak akses tetap ditegakkan backend.
  const [list,setList]=useState<Item[]>([]),[search,setSearch]=useState(''),[filter,setFilter]=useState(''),[limited,setLimited]=useState(false),[workflowStatuses,setWorkflowStatuses]=useState<Record<string,string>>({})
  const [workflowSince,setWorkflowSince]=useState<Record<string,string>>({})
  const [selected,setSelected]=useState<string|null>(null),[detail,setDetail]=useState<Item|null>(null),[history,setHistory]=useState<History[]>([])
@@ -230,7 +233,8 @@ export default function SuratMasuk({initialID,initialCreate}:{initialID?:string;
  const modalOpen=creating||editing||uploadOpen||submitConfirm
  const reload=useCallback(async()=>{
   const [items,caps]=await Promise.all([api<{items:Item[];limited:boolean;workflowStatuses?:Record<string,string>;workflowSince?:Record<string,string>}>(`/api/v1/urmin/surat-masuk/?q=${encodeURIComponent(filter)}`),api<{canCreate:boolean}>('/api/v1/urmin/surat-masuk/capabilities')])
-  setList(items.items);setLimited(items.limited);setWorkflowStatuses(items.workflowStatuses||{});setWorkflowSince(items.workflowSince||{});setCanCreate(caps.canCreate)
+  const kabagStatuses=new Set(['awaiting_kabag','read_kabag','directive_issued','dispatched','in_progress','awaiting_review'])
+  setList(isKabagrenmin?items.items.filter(i=>kabagStatuses.has((items.workflowStatuses||{})[i.id]||'')):items.items);setLimited(items.limited);setWorkflowStatuses(items.workflowStatuses||{});setWorkflowSince(items.workflowSince||{});setCanCreate(caps.canCreate)
   // Surat yang DITUJUKAN ke akun ini dan belum dikonfirmasi diterima. Sumbernya
   // distribusi, bukan register, jadi harus diambil terpisah — register tidak
   // tahu apa-apa soal siapa yang dituju. Kegagalannya sengaja ditelan: penanda
@@ -241,7 +245,7 @@ export default function SuratMasuk({initialID,initialCreate}:{initialID?:string;
    awaitingDist.current=new Map(sent.map(d=>[d.incomingId,d.id]))
    setAwaitingIds(new Set(sent.map(d=>d.incomingId)))
   }catch{awaitingDist.current=new Map();setAwaitingIds(new Set())}
- },[filter])
+ },[filter,isKabagrenmin])
  // Lewat ref: open() tidak boleh ikut berubah saat filter berubah, karena
  // efek initialID bergantung padanya dan akan membuka ulang surat lama.
  const reloadRef=useRef(reload);reloadRef.current=reload
@@ -274,7 +278,7 @@ export default function SuratMasuk({initialID,initialCreate}:{initialID?:string;
  },[])
  useEffect(()=>{setLoading(true);reload().catch(e=>setError(e instanceof Error?e.message:'Tidak bisa memuat surat')).finally(()=>setLoading(false))},[reload])
  useEffect(()=>{if(initialID)void open(initialID).catch(()=>setError('Surat tidak dapat dibuka.'))},[initialID,open])
- useEffect(()=>{if(initialCreate)setCreating(true)},[initialCreate])
+ useEffect(()=>{if(initialCreate&&!isKabagrenmin)setCreating(true)},[initialCreate,isKabagrenmin])
  useEffect(()=>{
   if(!modalOpen)return
   const onKey=(e:KeyboardEvent)=>{if(e.key==='Escape'&&!busy&&!uploadBusy){if(submitConfirm)setSubmitConfirm(false);else{setCreating(false);setEditing(false);setUploadOpen(false)}}}
@@ -368,7 +372,7 @@ export default function SuratMasuk({initialID,initialCreate}:{initialID?:string;
   <section className="panel sm-panel">
    <div className="sm-toolbar sdl-sm-r5f6__toolbar">
     <form className="sm-search" onSubmit={e=>{e.preventDefault();setFilter(search)}}><input className="rm-input" aria-label="Cari surat masuk" placeholder="Cari nomor, asal, perihal" value={search} onChange={e=>setSearch(e.target.value)} maxLength={100}/><button className="btn" type="submit">Cari</button></form>
-    <div className="sdl-sm-r5f6__toolbar-actions"><button type="button" className="btn" onClick={()=>beginUpload(detail?.status==='registered'?detail.id:undefined)}>Upload Lampiran</button><button className="btn primary" disabled={!canCreate||busy} title={canCreate?'Buat draft surat masuk':'Tidak ada izin membuat surat'} onClick={beginCreate}>+ Tambah Surat</button></div>
+    <div className="sdl-sm-r5f6__toolbar-actions"><button type="button" className="btn" onClick={()=>beginUpload(detail?.status==='registered'?detail.id:undefined)}>Upload Lampiran</button>{!isKabagrenmin&&<button className="btn primary" disabled={!canCreate||busy} title={canCreate?'Buat draft surat masuk':'Tidak ada izin membuat surat'} onClick={beginCreate}>+ Tambah Surat</button>}</div>
    </div>
    {limited&&<p className="sm-hint">Daftar dibatasi 200 surat terbaru sesuai akses akun. Surat lama dapat dicari melalui kolom pencarian.</p>}
    <div className="table-scroll"><table className="data-table sm-table"><thead><tr><th>Agenda</th><th>Nomor Surat</th><th>Surat Dari</th><th>Tanggal Surat</th><th>Status</th><th>Aksi</th></tr></thead><tbody>{pagedList.map(i=><tr key={i.id} className={selected===i.id?'sm-selected':''}><td>SM-{new Date(i.createdAt).getFullYear()}-{i.agendaNo}</td><td><span className="sm-title-row"><strong>{i.letterNumber}</strong><DerajatTag value={i.derajat??'biasa'}/></span></td><td>{i.sender}</td><td>{readableDate(i.letterDate)}</td><td><StatusCell workflow={workflowStatuses[i.id]} registerStatus={i.status} since={workflowSince[i.id]} mine={awaitingIds.has(i.id)}/></td><td><div className="sdl-sm-r5f6__row-actions sm-row-actions"><button className="sm-row-action" type="button" title="Lihat detail surat" onClick={()=>open(i.id).catch(e=>setError(e instanceof Error?e.message:'Gagal membuka surat'))}><RowIcon d="info"/> Detail</button>{i.status==='registered'&&<button className="sm-row-action sm-row-action--file" type="button" title="Unggah lampiran surat" onClick={()=>beginUpload(i.id)}><RowIcon d="upload"/> Upload</button>}</div></td></tr>)}</tbody></table></div>

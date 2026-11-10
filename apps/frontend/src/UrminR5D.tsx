@@ -152,7 +152,7 @@ function errorMessage(raw: string) { return ({
   stale_version: 'Data telah berubah di sesi lain. Muat ulang data lalu coba lagi.',
   active_disposition: 'Masih ada disposisi aktif. Selesaikan tugas tersebut sebelum mengarsipkan.',
   outgoing_locked: 'Surat sudah diajukan. Jika memerlukan perubahan, Kabagrenmin harus mengembalikan surat untuk revisi.',
-  pdf_required_before_submit: 'Lampirkan minimal satu PDF surat sebelum diajukan.',
+  pdf_required_before_submit: 'Lampirkan minimal satu PDF di bagian Naskah Surat & Lampiran sebelum diajukan. Berkas Pendukung tidak dihitung.',
   recipient_required: 'Isi tujuan/penerima surat sebelum diajukan.',
   // Empat syarat penyusun nomor surat (R5G13). Tanpa terjemahan, kodenya
   // tampil mentah di layar, mis. "derajat_required".
@@ -439,7 +439,12 @@ function useSuratKeluarChoices(active:boolean): SuratKeluarChoices {
  * atau disetujui, karena tidak ikut sidik jari persetujuan. Lampiran surat
  * (form Edit) sengaja tidak ditampilkan di sini.
  */
-function BerkasSuratKeluar({workRecordId,onPreview}:{workRecordId:string;onPreview:(file:StoredFile)=>void}) {
+// R5H6: mode 'naskah' = lampiran surat (tanpa purpose) yang IKUT sidik jari
+// persetujuan dan menjadi syarat pengajuan (minimal satu PDF). Sebelumnya
+// jendela Proses hanya menyediakan berkas pendukung, sehingga PDF yang
+// diunggah di sana tidak pernah memenuhi syarat dan pengajuan ditolak.
+function BerkasSuratKeluar({workRecordId,onPreview,mode='pendukung',editable=true,onFiles}:{workRecordId:string;onPreview:(file:StoredFile)=>void;mode?:'pendukung'|'naskah';editable?:boolean;onFiles?:(files:StoredFile[])=>void}) {
+  const naskah=mode==='naskah'
   const [files,setFiles]=useState<StoredFile[]|null>(null)
   const [busy,setBusy]=useState(false)
   const [progress,setProgress]=useState('')
@@ -448,8 +453,9 @@ function BerkasSuratKeluar({workRecordId,onPreview}:{workRecordId:string;onPrevi
   useEffect(()=>{alive.current=true;return()=>{alive.current=false}},[])
   const refresh=useCallback(async()=>{
     const result=await call<{files:StoredFile[]}>(`${workURL}${encodeURIComponent(workRecordId)}`)
-    if(alive.current) setFiles(result.files.filter(f=>f.purpose==='pendukung'))
-  },[workRecordId])
+    const mine=result.files.filter(f=>naskah?f.purpose!=='pendukung':f.purpose==='pendukung')
+    if(alive.current){setFiles(mine);onFiles?.(mine)}
+  },[workRecordId,naskah])
   useEffect(()=>{
     setFiles(null);setIssue('')
     refresh().catch(e=>{if(alive.current){setFiles([]);setIssue(e instanceof Error?e.message:'Berkas tidak bisa dimuat')}})
@@ -470,11 +476,11 @@ function BerkasSuratKeluar({workRecordId,onPreview}:{workRecordId:string;onPrevi
     try {
       for(const f of ok){
         setProgress(`Mengunggah ${done+1} dari ${ok.length}: ${f.name}`)
-        try{await uploadAttachment(workRecordId,f,'pendukung');done++}
+        try{await uploadAttachment(workRecordId,f,naskah?undefined:'pendukung');done++}
         catch(e){problems.push(`${f.name}: ${e instanceof Error?e.message:'gagal diunggah'}.`)}
       }
       await refresh()
-      if(done) showToast(`${done} berkas ditambahkan dan tersimpan di Berkas Kerja.`,'success')
+      if(done) showToast(naskah?`${done} berkas ditambahkan ke naskah surat.`:`${done} berkas ditambahkan dan tersimpan di Berkas Kerja.`,'success')
     } catch(e){problems.push(e instanceof Error?e.message:'Berkas tidak bisa dimuat ulang')}
     finally{if(alive.current){setBusy(false);setProgress('');setIssue(problems.join(' '))}}
   }
@@ -487,18 +493,18 @@ function BerkasSuratKeluar({workRecordId,onPreview}:{workRecordId:string;onPrevi
     finally{if(alive.current)setBusy(false)}
   }
   return <div className="urmin-berkas-panel">
-    <label className="urmin-upload-zone" onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();void add(e.dataTransfer.files)}}>
-      <Icon name="upload" size={24}/><strong>{busy?'Mengunggah…':'Tambah berkas PDF atau foto'}</strong><span>Seret file ke sini atau klik · PDF, JPG, PNG · maks. 5 MiB · 10 berkas per surat</span>
+    {editable&&<label className="urmin-upload-zone" onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();void add(e.dataTransfer.files)}}>
+      <Icon name="upload" size={24}/><strong>{busy?'Mengunggah…':naskah?'Tambah PDF naskah surat atau lampiran':'Tambah berkas PDF atau foto'}</strong><span>Seret file ke sini atau klik · PDF, JPG, PNG · maks. 5 MiB · 10 berkas per surat</span>
       <input type="file" multiple accept={ACCEPTED} disabled={busy||(files?.length??0)>=10} onChange={e=>{void add(e.target.files);e.currentTarget.value=''}} aria-label="Pilih berkas surat keluar"/>
-    </label>
+    </label>}
     {progress&&<p className="urmin-file-progress" role="status">{progress}</p>}
     {issue&&<p className="urmin-upload-error" role="alert">{issue}</p>}
     {files===null?<p className="urmin-file-hint">Memuat berkas…</p>
-      :files.length===0?<p className="urmin-file-hint">Belum ada berkas pendukung.</p>
-      :<div className="urmin-file-section"><strong>Berkas pendukung ({files.length})</strong><div className="urmin-file-grid">{files.map(file=><div className="urmin-file-card" key={file.id}>
+      :files.length===0?<p className="urmin-file-hint">{naskah?'Belum ada naskah surat. Unggah minimal satu PDF agar surat bisa diajukan.':'Belum ada berkas pendukung.'}</p>
+      :<div className="urmin-file-section"><strong>{naskah?'Naskah surat & lampiran':'Berkas pendukung'} ({files.length})</strong><div className="urmin-file-grid">{files.map(file=><div className="urmin-file-card" key={file.id}>
         <div className="urmin-file-thumb"><Icon name={file.mediaType==='application/pdf'?'file':'image'} size={26}/><span>{file.mediaType==='application/pdf'?'PDF':'FOTO'}</span></div>
         <div className="urmin-file-name" title={file.name}>{file.name}</div><small>{(file.size/1024).toFixed(0)} KB</small>
-        <div className="urmin-file-actions"><button type="button" disabled={busy} onClick={()=>onPreview(file)}><Icon name="eye" size={15}/> Lihat</button><a href={`${workURL}${encodeURIComponent(workRecordId)}/files/${encodeURIComponent(file.id)}`} download={file.name}>Unduh</a><button type="button" disabled={busy} onClick={()=>void remove(file)}>Hapus</button></div>
+        <div className="urmin-file-actions"><button type="button" disabled={busy} onClick={()=>onPreview(file)}><Icon name="eye" size={15}/> Lihat</button><a href={`${workURL}${encodeURIComponent(workRecordId)}/files/${encodeURIComponent(file.id)}`} download={file.name}>Unduh</a>{editable&&<button type="button" disabled={busy} onClick={()=>void remove(file)}>Hapus</button>}</div>
       </div>)}</div></div>}
   </div>
 }
@@ -568,7 +574,13 @@ function BerkasArsipDisposisi({incomingId,dispositionId,onPreview}:{incomingId:s
   </div>)}</div>
 }
 
-export default function UrminR5D({kind,openFiles,initialID,initialCreate}: {kind:Kind;openFiles:(id:string)=>void;initialID?:string;initialCreate?:boolean}) {
+export default function UrminR5D({kind,openFiles,initialID,initialCreate,isKabagrenmin=false}: {kind:Kind;openFiles:(id:string)=>void;initialID?:string;initialCreate?:boolean;isKabagrenmin?:boolean}) {
+  // R5H6: Kabagrenmin adalah PEMUTUS surat keluar, bukan pembuatnya. Ia hanya
+  // melihat surat yang sudah sampai kepadanya (diajukan, disetujui, atau
+  // dikembalikan), tanpa tombol Tambah maupun "Ajukan ke Kabagrenmin".
+  // Ini penyaringan TAMPILAN; hak akses tetap ditegakkan backend.
+  const kabagOutgoing = isKabagrenmin && kind==='surat_keluar'
+  const sudahKeKabag = (items:Entry[]) => kabagOutgoing ? items.filter(item=>['submitted','approved','rejected'].includes(outgoingStatus(item))) : items
   const def = schema[kind]
   const {choices:dynamicChoices,suratOfArahan,arahanIdOf} = useSuratKeluarChoices(kind==='surat_keluar')
   const formFields = useMemo(()=>def.fields.map(f=>dynamicChoices[f.key]?{...f,choices:dynamicChoices[f.key]}:f),[def,dynamicChoices])
@@ -593,6 +605,8 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate}: {kind
   const [source,setSource] = useState<''|'manual'|'disposisi'>('')
   const [outgoingFilter,setOutgoingFilter] = useState<OutgoingStatus>('all')
   const [workflowRecord,setWorkflowRecord]=useState<Entry|null>(null)
+  // R5H6: jumlah PDF naskah surat di jendela Proses; syarat tombol Ajukan.
+  const [naskahPdf,setNaskahPdf]=useState<number|null>(null)
   // R5H5: jendela Berkas surat keluar yang dibuka dari daftar.
   const [berkasRecord,setBerkasRecord]=useState<Entry|null>(null)
   // R5H5: jendela berkas untuk arsip yang berasal dari disposisi.
@@ -620,7 +634,7 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate}: {kind
 
   async function load(q = '', src = source) {
     const data = await call<{items:Entry[];limited:boolean}>(`${url}?kind=${kind}&q=${encodeURIComponent(q)}${src?`&source=${src}`:''}`)
-    setRecords(data.items)
+    setRecords(sudahKeKabag(data.items))
     setLimited(data.limited)
     setAppliedSearch(q)
   }
@@ -632,7 +646,7 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate}: {kind
     let alive = true
     setLoading(true)
     call<{items:Entry[];limited:boolean}>(`${url}?kind=${kind}&q=${encodeURIComponent(appliedSearch)}${source?`&source=${source}`:''}`)
-      .then(data => { if(alive){setRecords(data.items);setLimited(data.limited)} })
+      .then(data => { if(alive){setRecords(sudahKeKabag(data.items));setLimited(data.limited)} })
       .catch(e => { if(alive) setError(e instanceof Error?e.message:'Gagal memuat data') })
       .finally(() => { if(alive) setLoading(false) })
     return () => { alive = false }
@@ -646,7 +660,7 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate}: {kind
     setSearch(''); setAppliedSearch(''); setError(''); setNotice(''); setLimited(false); setLoading(true)
     setSource('')
     call<{items:Entry[];limited:boolean}>(`${url}?kind=${kind}`).then(data => {
-      if(alive) {setRecords(data.items);setLimited(data.limited)}
+      if(alive) {setRecords(sudahKeKabag(data.items));setLimited(data.limited)}
     }).catch(e => {if(alive) setError(e instanceof Error?e.message:'Tidak bisa memuat data')}).finally(() => {if(alive) setLoading(false)})
     return () => {alive = false}
   }, [kind])
@@ -666,7 +680,7 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate}: {kind
   const {pageItems:pagedRows,pager} = usePaged(displayed,[kind,outgoingFilter,source,records.length])
   const countStatus=(status:OutgoingStatus) => status==='all'?records.length:records.filter(item=>outgoingStatus(item)===status).length
   useEffect(()=>{if(initialID){const item=records.find(p=>p.id===initialID);if(item)setSelected(item)}},[initialID,records])
-  useEffect(()=>{if(initialCreate){newRecord()}},[initialCreate])
+  useEffect(()=>{if(initialCreate&&!kabagOutgoing){newRecord()}},[initialCreate])
   const flagged = records.filter(p => p.classification==='penting').length
   const detail = (p:Entry) => schema[kind].fields.slice(0,2).map(f=>p.fields[f.key]).filter(Boolean).join(' · ')
 
@@ -814,7 +828,7 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate}: {kind
     },'Surat dan lampiran berhasil disimpan.')
   }
   async function openWorkflow(p:Entry) {
-    setWorkflowRecord(p);setWorkflowDetail(null);setWorkflowNote('');setWorkflowBusy(true)
+    setWorkflowRecord(p);setWorkflowDetail(null);setWorkflowNote('');setNaskahPdf(null);setWorkflowBusy(true)
     try {
       const item=await call<WorkflowDetail>(`${url}${encodeURIComponent(p.id)}/workflow`)
       setWorkflowDetail(item)
@@ -879,7 +893,7 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate}: {kind
     <section className="sumda-card sumda-register" aria-label={`Daftar ${def.singular}`}>
       <div className="sumda-card-head">
         <div>{kind!=='surat_keluar'&&<span className="sumda-eyebrow">PERSURATAN & ADMINISTRASI UMUM</span>}<h3>{kind==='surat_keluar'?'Daftar Surat Keluar':`Daftar ${def.singular}`}</h3></div>
-        <button className="sumda-button sumda-button-primary" type="button" onClick={newRecord}><Icon name="plus" size={18}/> Tambah {def.singular}</button>
+        {!kabagOutgoing&&<button className="sumda-button sumda-button-primary" type="button" onClick={newRecord}><Icon name="plus" size={18}/> Tambah {def.singular}</button>}
       </div>
       <div className="sumda-toolbar">
         <form className="sumda-search" onSubmit={searchRecords} role="search">
@@ -902,7 +916,7 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate}: {kind
           {(appliedSearch||search)&&<button className="sumda-button sumda-button-quiet" type="button" onClick={resetSearch} disabled={busy}>Reset</button>}
         </div>
       </div>
-      {kind==='surat_keluar'&&<div className="sdl-outgoing-tabs" role="group" aria-label="Filter status surat keluar">{outgoingTabs.filter(tab=>tab.id!=='legacy'||records.some(item=>outgoingStatus(item)==='legacy')).map(tab=><button type="button" key={tab.id} className={outgoingFilter===tab.id?'is-active':''} aria-pressed={outgoingFilter===tab.id} onClick={()=>setOutgoingFilter(tab.id)}>{tab.label}<span>{loading?'–':countStatus(tab.id)}</span></button>)}</div>}
+      {kind==='surat_keluar'&&<div className="sdl-outgoing-tabs" role="group" aria-label="Filter status surat keluar">{outgoingTabs.filter(tab=>!(kabagOutgoing&&tab.id==='draft')).filter(tab=>tab.id!=='legacy'||records.some(item=>outgoingStatus(item)==='legacy')).map(tab=><button type="button" key={tab.id} className={outgoingFilter===tab.id?'is-active':''} aria-pressed={outgoingFilter===tab.id} onClick={()=>setOutgoingFilter(tab.id)}>{tab.label}<span>{loading?'–':countStatus(tab.id)}</span></button>)}</div>}
       
       {limited&&<div className="sumda-inline-note"><Icon name="info" size={16}/> Data yang dimuat dibatasi 100 entri; filter status hanya berlaku pada data yang ditampilkan. Gunakan pencarian untuk menemukan surat lain.</div>}
       {loading ? <div className="sumda-empty" role="status"><div className="sumda-empty-icon"><Icon name="refresh" size={24}/></div><h4>Memuat data...</h4><p></p></div>
@@ -925,7 +939,7 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate}: {kind
            {kind!=='agenda'&&<td><span className={`sumda-classification ${p.classification==='penting'?'is-important':''}`}>{p.classification==='penting'?'Penting':'Biasa'}</span></td>}
            <td className="sumda-secondary-cell">{readableDate(p.createdAt)}</td>
          </>}
-         <td><div className="sumda-actions">{kind==='surat_keluar'&&<button type="button" className="sumda-action" onClick={()=>void openWorkflow(p)}><Icon name="info" size={16}/> Proses</button>}<button type="button" className="sumda-action" title="Edit data" onClick={()=>edit(p)} disabled={kind==='surat_keluar'&&!(['draft','rejected'].includes(outgoingStatus(p)))}><Icon name="edit" size={16}/> <span>Edit</span></button><button type="button" className="sumda-action sumda-action-attachment" title={kind==='surat_keluar'?'Lihat dan tambah berkas surat':'Buka lampiran dan disposisi'} onClick={()=>kind==='surat_keluar'?setBerkasRecord(p):kind==='arsip'&&p.fields.sumber==='disposisi'?setArsipRecord(p):openFiles(p.workRecordId)}><Icon name="attachment" size={16}/> <span>{kind==='surat_keluar'?'Berkas':'File & Disposisi'}</span></button><button type="button" className="sumda-action sumda-action-danger" title="Arsipkan data" onClick={()=>remove(p)} disabled={busy||(kind==='surat_keluar'&&!(['draft','rejected'].includes(outgoingStatus(p))))}><Icon name="archive" size={16}/><span className="sumda-sr-only">Arsipkan</span></button></div></td>
+         <td><div className="sumda-actions">{kind==='surat_keluar'&&<button type="button" className="sumda-action" onClick={()=>void openWorkflow(p)}><Icon name="info" size={16}/> Proses</button>}{!kabagOutgoing&&<><button type="button" className="sumda-action" title="Edit data" onClick={()=>edit(p)} disabled={kind==='surat_keluar'&&!(['draft','rejected'].includes(outgoingStatus(p)))}><Icon name="edit" size={16}/> <span>Edit</span></button><button type="button" className="sumda-action sumda-action-attachment" title={kind==='surat_keluar'?'Lihat dan tambah berkas surat':'Buka lampiran dan disposisi'} onClick={()=>kind==='surat_keluar'?setBerkasRecord(p):kind==='arsip'&&p.fields.sumber==='disposisi'?setArsipRecord(p):openFiles(p.workRecordId)}><Icon name="attachment" size={16}/> <span>{kind==='surat_keluar'?'Berkas':'File & Disposisi'}</span></button><button type="button" className="sumda-action sumda-action-danger" title="Arsipkan data" onClick={()=>remove(p)} disabled={busy||(kind==='surat_keluar'&&!(['draft','rejected'].includes(outgoingStatus(p))))}><Icon name="archive" size={16}/><span className="sumda-sr-only">Arsipkan</span></button></>}</div></td>
         </tr>)}</tbody></table></div>}
       <Pager pager={pager} label={def.singular.toLowerCase()}/>
       <footer className="sumda-list-footer"><span><Icon name="list" size={15}/> {loading?'Memuat...':`${displayed.length} dari ${records.length} data ditampilkan${limited?' (hasil terbatas)':''}`}</span><span></span></footer>
@@ -959,13 +973,20 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate}: {kind
         <div className="sdl-outgoing-workflow-content">
           {workflowDetail?<>
             <div className="sdl-outgoing-workflow-status"><strong>{workflowLabel[workflowDetail.status]||workflowDetail.status}</strong><span>{workflowDetail.status==='approved'?'Menunggu integrasi tanda tangan elektronik tersertifikasi. Surat belum dapat dikirim.':workflowDetail.status==='submitted'?'Menunggu keputusan Kabagrenmin.':workflowDetail.status==='rejected'?'Perbaiki surat dan lampiran, lalu ajukan kembali.':workflowDetail.status==='legacy'?'Status lama memerlukan verifikasi sebelum masuk alur resmi baru.':'Lampirkan PDF dan ajukan untuk persetujuan.'}</span></div>
-            {(workflowDetail.canSubmit||workflowDetail.canReview)&&<label className="sumda-field"><span>{workflowDetail.canReview?'Catatan keputusan':'Catatan pengajuan (opsional)'}</span><textarea rows={3} maxLength={500} value={workflowNote} onChange={e=>setWorkflowNote(e.target.value)} placeholder={workflowDetail.canReview?'Isi arahan atau alasan jika dikembalikan...':'Catatan untuk Kabagrenmin...'}/></label>}
+            {((workflowDetail.canSubmit&&!kabagOutgoing)||workflowDetail.canReview)&&<label className="sumda-field"><span>{workflowDetail.canReview?'Catatan keputusan':'Catatan pengajuan (opsional)'}</span><textarea rows={3} maxLength={500} value={workflowNote} onChange={e=>setWorkflowNote(e.target.value)} placeholder={workflowDetail.canReview?'Isi arahan atau alasan jika dikembalikan...':'Catatan untuk Kabagrenmin...'}/></label>}
             <div className="sdl-outgoing-workflow-actions">
-              {workflowDetail.canSubmit&&<button type="button" disabled={workflowBusy} className="sumda-button sumda-button-primary" onClick={()=>void workflowAction('submit')}>Ajukan ke Kabagrenmin</button>}
+              {workflowDetail.canSubmit&&!kabagOutgoing&&<button type="button" disabled={workflowBusy||naskahPdf===0} title={naskahPdf===0?'Unggah minimal satu PDF di bagian Naskah Surat & Lampiran.':undefined} className="sumda-button sumda-button-primary" onClick={()=>void workflowAction('submit')}>Ajukan ke Kabagrenmin</button>}
               {workflowDetail.canReview&&<><button type="button" disabled={workflowBusy} className="sumda-button sumda-button-primary" onClick={()=>void workflowAction('approve')}>Setujui Surat</button><button type="button" disabled={workflowBusy} className="sumda-button sumda-button-cancel" onClick={()=>void workflowAction('reject')}>Kembalikan untuk Revisi</button></>}
             </div>
-            <h3 className="sdl-outgoing-workflow-subtitle">Berkas Pendukung</h3>
-            <BerkasSuratKeluar workRecordId={workflowRecord.workRecordId} onPreview={f=>void showSaved(f,workflowRecord.workRecordId)}/>
+            {workflowDetail.canSubmit&&!kabagOutgoing&&naskahPdf===0&&<p className="urmin-upload-error" role="alert">Belum bisa diajukan: unggah minimal satu <b>PDF</b> di bagian <b>Naskah Surat &amp; Lampiran</b> di bawah. Berkas Pendukung tidak dihitung.</p>}
+            <h3 className="sdl-outgoing-workflow-subtitle">Naskah Surat &amp; Lampiran</h3>
+            <p className="urmin-file-hint">{kabagOutgoing?'Naskah yang diajukan untuk Anda periksa.':'Ikut diperiksa dan disetujui Kabagrenmin; terkunci setelah diajukan.'}</p>
+            <BerkasSuratKeluar key={`naskah-${workflowRecord.workRecordId}`} mode="naskah" editable={['draft','rejected'].includes(workflowDetail.status)&&!kabagOutgoing} workRecordId={workflowRecord.workRecordId} onPreview={f=>void showSaved(f,workflowRecord.workRecordId)} onFiles={list=>setNaskahPdf(list.filter(f=>f.mediaType==='application/pdf').length)}/>
+            {/* R5H6: Kabagrenmin memutus berdasarkan naskah surat; berkas pendukung
+                adalah urusan operator dan tidak ditampilkan kepadanya. */}
+            {!kabagOutgoing&&<><h3 className="sdl-outgoing-workflow-subtitle">Berkas Pendukung</h3>
+            <p className="urmin-file-hint">Tidak ikut persetujuan dan tidak menggantikan naskah surat.</p>
+            <BerkasSuratKeluar workRecordId={workflowRecord.workRecordId} onPreview={f=>void showSaved(f,workflowRecord.workRecordId)}/></>}
             <h3 className="sdl-outgoing-workflow-subtitle">Riwayat Persetujuan</h3>
             {workflowDetail.events.length===0?<p className="sdl-outgoing-workflow-empty">Belum ada proses persetujuan.</p>:<div className="sdl-outgoing-workflow-timeline">{workflowDetail.events.map(ev=><div key={ev.id}><strong>{ev.action==='submitted'?'Diajukan':ev.action==='approved'?'Disetujui':'Dikembalikan'}</strong><small>{ev.actor} · {readableDate(ev.at)}</small>{ev.note&&<p>{ev.note}</p>}</div>)}</div>}
           </>:<p className="sdl-outgoing-workflow-empty">Memuat riwayat...</p>}
