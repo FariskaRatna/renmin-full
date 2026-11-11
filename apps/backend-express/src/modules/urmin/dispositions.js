@@ -226,6 +226,9 @@ export async function archiveRegisterAllowed(pool, userId, classification) {
  * pada transaksi yang tetap di-commit — dan transaksi telaah memang harus tetap
  * di-commit walau arsipnya dilewati.
  */
+/** R5H9: pengarsipan disposisi dihentikan; endpoint 143 menjawab 409. */
+const ARCHIVE_DISABLED = true
+
 export async function writeDispositionArchive(client, actor, task) {
   const refCode = archiveRefCode(task.letterNumber, task.id)
   const taken = await client.query(
@@ -662,9 +665,11 @@ export function createDispositionsRouter({ pool }) {
       // aksi tersendiri, persis seperti antrean email di atasnya yang juga
       // tidak digerbangi. Siapa yang boleh MEMBACA entri itu tetap ditentukan
       // Engine B seperti biasa.
-      if (p.decision === 'approved') {
-        await data(() => writeDispositionArchive(client, req.actor, task))
-      }
+      //
+      // R5H9 (Express saja, keputusan pemilik 2026-11-11): DIHENTIKAN. Arsip
+      // otomatis kini berasal dari surat keluar yang disetujui > 7 hari
+      // (lihat GET registry ?kind=arsip). Entri 'Dari Disposisi' yang sudah
+      // ada tidak disentuh.
       return { status: 200 }
     })
 
@@ -890,6 +895,15 @@ export function createDispositionsRouter({ pool }) {
     // suratnya kebetulan sudah tua.
     if (task.reviewStatus !== 'approved') {
       fail(res, 409, 'not_approved')
+      return
+    }
+
+    // R5H9: pengarsipan disposisi dihentikan (keputusan pemilik 2026-11-11).
+    // Gerbang di atas tetap berjalan lebih dulu supaya pemanggil yang tidak
+    // berhak tetap mendapat 404/403 yang sama seperti sebelumnya. Tombolnya
+    // sudah tidak ada di UI sejak 2026-11-05.
+    if (ARCHIVE_DISABLED) {
+      fail(res, 409, 'disposition_archive_disabled')
       return
     }
 

@@ -57,7 +57,8 @@ const PAYLOAD_FIELDS = ['kind', 'code', 'title', 'classification', 'fields', 've
 const SELECT = `
   SELECT s.id::text AS id,s.kind,s.ref_code,s.title,w.classification,s.fields,
          s.work_record_id::text AS work_record_id,w.created_by::text AS owner,
-         s.version,s.created_at,COALESCE(o.stage,'draft') AS workflow_status
+         s.version,s.created_at,COALESCE(o.stage,'draft') AS workflow_status,
+         o.approved_at
     FROM sdl_urmin_registry s
     JOIN sdl_unit_work_records w ON w.id=s.work_record_id
     LEFT JOIN sdl_outgoing_workflows o ON o.register_id=s.id`
@@ -230,8 +231,17 @@ export function createUrminRegisterRouter({ pool, config }) {
     //
     // Entri lama tidak punya kunci 'sumber' sama sekali, dan IS DISTINCT FROM
     // memperlakukan NULL itu sebagai manual — tanpa backfill apa pun.
+    //
+    // R5H9 (Express saja, keputusan pemilik 2026-11-11): kategori ketiga,
+    // 'surat_keluar' -- surat keluar yang sudah DISETUJUI dan persetujuannya
+    // lebih dari 7 hari. Ini bukan salinan: barisnya adalah register surat
+    // keluar itu sendiri (kind tetap 'surat_keluar'), ditampilkan di daftar
+    // Arsip. Tidak ada job, tidak ada baris ganda, tidak bisa tidak sinkron.
+    // Hitungannya dari approved_at (dicap server), bukan Tanggal Surat yang
+    // diketik manual. Pengarsipan dari disposisi dihentikan; entri lamanya
+    // tetap ada dan tetap tersaring lewat 'disposisi'.
     const source = String(req.query.source ?? '').trim()
-    if (source !== '' && source !== 'manual' && source !== 'disposisi') {
+    if (source !== '' && source !== 'manual' && source !== 'disposisi' && source !== 'surat_keluar') {
       fail(res, 400, 'invalid_source')
       return
     }
@@ -239,11 +249,18 @@ export function createUrminRegisterRouter({ pool, config }) {
     let rows
     try {
       const result = await pool.query(
-        `${SELECT} WHERE s.kind=$1 AND s.deleted_at IS NULL AND w.deleted_at IS NULL
+        `${SELECT} WHERE s.deleted_at IS NULL AND w.deleted_at IS NULL
                      AND w.unit_key='${UNIT}'
                      AND ($2='' OR s.title ILIKE '%'||$2||'%' OR s.ref_code ILIKE '%'||$2||'%')
-                     AND ($3='' OR ($3='disposisi') = (s.fields->>'sumber' IS NOT DISTINCT FROM 'disposisi'))
-                   ORDER BY s.created_at DESC,s.id DESC LIMIT 251`,
+                     AND (
+                       (s.kind=$1 AND $3<>'surat_keluar'
+                        AND ($3='' OR ($3='disposisi') = (s.fields->>'sumber' IS NOT DISTINCT FROM 'disposisi')))
+                       OR ($1='arsip' AND $3 IN ('','surat_keluar') AND s.kind='surat_keluar'
+                           AND o.stage='approved' AND o.approved_at <= now()-interval '7 days')
+                     )
+                   ORDER BY CASE WHEN $1='arsip' AND s.kind='surat_keluar'
+                                 THEN o.approved_at+interval '7 days' ELSE s.created_at END DESC,
+                            s.id DESC LIMIT 251`,
         [kind, search, source],
       )
       rows = result.rows
@@ -265,6 +282,11 @@ export function createUrminRegisterRouter({ pool, config }) {
           action: 'read',
         })
         if (!allowed) continue
+        // R5H9: kapan surat keluar ini masuk Arsip (disetujui + 7 hari).
+        // Hanya di daftar Arsip; daftar Surat Keluar tidak berubah bentuk.
+        if (kind === 'arsip' && record.kind === 'surat_keluar') {
+          record.archivedAt = new Date(new Date(row.approved_at).getTime() + 7 * 24 * 3600 * 1000)
+        }
         if (items.length < 100) items.push(record)
         else limited = true
       }

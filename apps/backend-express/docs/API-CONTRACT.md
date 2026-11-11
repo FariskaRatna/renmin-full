@@ -1501,3 +1501,28 @@ Superadmin. Tidak mengubah satu pun endpoint lama. Rancangan:
 sepuluh `set` baru. Di server, tambahkan `/api/v1/admin/master/*` ke
 `SDL_EXPRESS_PATHS` (atau langkah 5 `/api/*`). Formulir yang tidak bisa membaca
 `opsi-dropdown` memakai daftar bawaannya sendiri.
+
+## R5H9 — Arsip "Dari Surat Keluar"; pengarsipan disposisi dihentikan (2026-11-11, EXPRESS SAJA)
+
+Keputusan pemilik sistem 2026-11-11. Go tidak diubah (prefix `/api/v1/urmin/*`
+sudah dilayani Express di server).
+
+- `GET /api/v1/urmin/registry/?kind=arsip` — `source` menerima nilai baru
+  **`surat_keluar`**: surat keluar dengan `stage='approved'` dan
+  `approved_at <= now()-7 hari`. Barisnya adalah register surat keluar itu
+  sendiri (`kind:"surat_keluar"`, bukan salinan), plus field tambahan
+  `archivedAt` = `approved_at + 7 hari`. `source=''` (Semua Arsip) memuat
+  arsip register **dan** surat keluar tersebut, diurutkan menurut
+  `archivedAt`/`createdAt`. `manual` dan `disposisi` tidak berubah. Nilai lain
+  tetap `400 invalid_source`. Hak baca tetap Engine B per baris.
+  `?kind=surat_keluar` tidak berubah (tanpa `archivedAt`).
+- Endpoint 120 (`POST /dispositions/{id}/review`, `approved`) **tidak lagi**
+  membuat entri arsip. Entri `sumber:'disposisi'` yang sudah ada tidak disentuh.
+- Endpoint 143 (`POST /dispositions/{id}/archive`) — setelah gerbang 404/403
+  yang sama, menjawab **`409 disposition_archive_disabled`**. Tombolnya sudah
+  tidak ada di UI sejak 2026-11-05.
+- Konsekuensi: pembaca arsip Urmin (R5H5 `archiveReader`) hanya bisa membaca
+  bukti tindak lanjut disposisi yang **sudah punya** entri arsip lama.
+  `verify/r5h5-flow.js` bagian 5 cek "pembaca arsip MEMBACA daftar bukti"
+  kini gagal karena hal ini. Golden 143 (`already_archived`) juga berubah.
+- Uji: `verify/r5h9-flow.js`.
