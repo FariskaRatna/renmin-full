@@ -93,6 +93,10 @@ export const MANIFEST = [
   'sql/042_surat_keluar_opsi.sql',
   'sql/043_arahan_paur.sql',
   'sql/044_berkas_pendukung.sql',
+  'sql/045_ttd_kabag.sql',
+  'sql/046_nomor_reservasi.sql',
+  'sql/047_opsi_dropdown.sql',
+  'sql/048_opsi_agenda_hadir.sql',
 ]
 
 /**
