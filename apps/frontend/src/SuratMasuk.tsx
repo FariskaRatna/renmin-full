@@ -8,6 +8,7 @@ import './SuratMasukR5F6.css'
 import './SuratMasukR5F7.css'
 import './SuratMasukStatusR5H5.css'
 import { Pager, usePaged } from './PaginationR5H5'
+import { clickRow } from './ClickableRowR5H7'
 
 type Derajat = 'biasa'|'kilat'
 type Item = {id:string;agendaNo:number;letterNumber:string;sender:string;letterDate:string;receivedDate:string;subject:string;classification:'biasa'|'penting';derajat:Derajat;status:'draft'|'registered';createdBy:string;version:number;createdAt:string;updatedAt:string}
@@ -281,7 +282,7 @@ export default function SuratMasuk({initialID,initialCreate,isKabagrenmin=false}
  useEffect(()=>{if(initialCreate&&!isKabagrenmin)setCreating(true)},[initialCreate,isKabagrenmin])
  useEffect(()=>{
   if(!modalOpen)return
-  const onKey=(e:KeyboardEvent)=>{if(e.key==='Escape'&&!busy&&!uploadBusy){if(submitConfirm)setSubmitConfirm(false);else{setCreating(false);setEditing(false);setUploadOpen(false)}}}
+  const onKey=(e:KeyboardEvent)=>{if(e.key==='Escape'&&!busy&&!uploadBusy){e.preventDefault();if(submitConfirm)setSubmitConfirm(false);else{setCreating(false);setEditing(false);setUploadOpen(false)}}}
   document.addEventListener('keydown',onKey)
   const before=document.body.style.overflow;document.body.style.overflow='hidden'
   return()=>{document.removeEventListener('keydown',onKey);document.body.style.overflow=before}
@@ -300,6 +301,15 @@ export default function SuratMasuk({initialID,initialCreate,isKabagrenmin=false}
  function beginEdit(){if(!detail||!canEdit)return;setEditing(true);setCreating(false);setForm(formOf(detail));setIntakeFiles([]);setIntakeError('');setError('')}
  function change<K extends keyof Draft>(key:K,val:Draft[K]){setForm(prev=>({...prev,[key]:val}))}
  function closeForm(){if(busy)return;setCreating(false);setEditing(false);setSubmitConfirm(false);setIntakeFiles([]);setPreviewFile(null)}
+ // R5H8: menutup jendela detail. Esc juga menutupnya, kecuali saat jendela lain
+ // (form, unggah, pratinjau, konfirmasi) sedang terbuka di atasnya.
+ function closeDetail(){setDetail(null);setSelected(null)}
+ useEffect(()=>{
+  if(!detail||modalOpen||previewFile)return
+  const onKey=(e:KeyboardEvent)=>{if(e.key==='Escape'&&!e.defaultPrevented&&!document.querySelector('.sdl-confirm-shade, .sdl-sm-r5f6__backdrop:not(.sdl-sm-detail-shade)'))closeDetail()}
+  document.addEventListener('keydown',onKey)
+  return()=>document.removeEventListener('keydown',onKey)
+ },[detail,modalOpen,previewFile])
  function beginUpload(id?:string){
   setPreviewFile(null);setUploadTarget(id||'');setFileQueue([]);setUploadReason('');setUploadProgress(0);setUploadError('');setUploadAccess(null);setUploadOpen(true)
  }
@@ -375,17 +385,19 @@ export default function SuratMasuk({initialID,initialCreate,isKabagrenmin=false}
     <div className="sdl-sm-r5f6__toolbar-actions"><button type="button" className="btn" onClick={()=>beginUpload(detail?.status==='registered'?detail.id:undefined)}>Upload Lampiran</button>{!isKabagrenmin&&<button className="btn primary" disabled={!canCreate||busy} title={canCreate?'Buat draft surat masuk':'Tidak ada izin membuat surat'} onClick={beginCreate}>+ Tambah Surat</button>}</div>
    </div>
    {limited&&<p className="sm-hint">Daftar dibatasi 200 surat terbaru sesuai akses akun. Surat lama dapat dicari melalui kolom pencarian.</p>}
-   <div className="table-scroll"><table className="data-table sm-table"><thead><tr><th>Agenda</th><th>Nomor Surat</th><th>Surat Dari</th><th>Tanggal Surat</th><th>Status</th><th>Aksi</th></tr></thead><tbody>{pagedList.map(i=><tr key={i.id} className={selected===i.id?'sm-selected':''}><td>SM-{new Date(i.createdAt).getFullYear()}-{i.agendaNo}</td><td><span className="sm-title-row"><strong>{i.letterNumber}</strong><DerajatTag value={i.derajat??'biasa'}/></span></td><td>{i.sender}</td><td>{readableDate(i.letterDate)}</td><td><StatusCell workflow={workflowStatuses[i.id]} registerStatus={i.status} since={workflowSince[i.id]} mine={awaitingIds.has(i.id)}/></td><td><div className="sdl-sm-r5f6__row-actions sm-row-actions"><button className="sm-row-action" type="button" title="Lihat detail surat" onClick={()=>open(i.id).catch(e=>setError(e instanceof Error?e.message:'Gagal membuka surat'))}><RowIcon d="info"/> Detail</button>{i.status==='registered'&&<button className="sm-row-action sm-row-action--file" type="button" title="Unggah lampiran surat" onClick={()=>beginUpload(i.id)}><RowIcon d="upload"/> Upload</button>}</div></td></tr>)}</tbody></table></div>
+   <div className="table-scroll"><table className="data-table sm-table"><thead><tr><th>Agenda</th><th>Nomor Surat</th><th>Surat Dari</th><th>Tanggal Surat</th><th>Status</th><th>Aksi</th></tr></thead><tbody>{pagedList.map(i=>{const rowProps=clickRow(()=>{open(i.id).catch(e=>setError(e instanceof Error?e.message:'Gagal membuka surat'))},{label:`Buka detail surat ${i.letterNumber}`,active:selected===i.id});return <tr key={i.id} {...rowProps} className={`${rowProps.className}${selected===i.id?' sm-selected':''}`}><td>SM-{new Date(i.createdAt).getFullYear()}-{i.agendaNo}</td><td><span className="sm-title-row"><strong>{i.letterNumber}</strong><DerajatTag value={i.derajat??'biasa'}/></span></td><td>{i.sender}</td><td>{readableDate(i.letterDate)}</td><td><StatusCell workflow={workflowStatuses[i.id]} registerStatus={i.status} since={workflowSince[i.id]} mine={awaitingIds.has(i.id)}/></td><td><div className="sdl-sm-r5f6__row-actions sm-row-actions">{i.status==='registered'&&<button className="sm-row-action sm-row-action--file" type="button" title="Unggah lampiran surat" onClick={()=>beginUpload(i.id)}><RowIcon d="upload"/> Upload</button>}</div></td></tr>})}</tbody></table></div>
    <Pager pager={pager} label="surat"/>
    {!loading&&list.length===0&&<div className="sm-empty">Belum ada surat yang bisa ditampilkan.</div>}{loading&&<div className="sm-empty">Memuat daftar surat...</div>}
   </section>
-  {detail&&<section className="panel sm-panel"><div className="sm-section-title sdl-sm-r5f6__detail-head"><div><span className="eyebrow">DETAIL SURAT MASUK</span><span className="sm-title-row"><h3>{detail.letterNumber}</h3><DerajatTag value={detail.derajat??'biasa'}/></span><p>Agenda SM-{new Date(detail.createdAt).getFullYear()}-{detail.agendaNo} · Versi {detail.version} · {routeLabels[intakeRecord?.workflowStatus||'']||(detail.status==='draft'?'Draft':'Terdaftar')}</p></div><div className="sdl-sm-r5f6__row-actions">{canEdit&&<button className="btn" type="button" onClick={beginEdit}>Edit Draft</button>}{detail.status==='registered'&&<button className="btn primary" type="button" onClick={()=>beginUpload(detail.id)}>Upload Lampiran</button>}</div></div>
+  {/* R5H8: detail surat masuk sebagai jendela pop-up (permintaan pemilik), di
+      bawah jendela form/unggah (z-index 300 < 350) yang bisa dibuka dari sini. */}
+  {detail&&<div className="sdl-sm-r5f6__backdrop sdl-sm-detail-shade" role="presentation" onMouseDown={e=>{if(e.target===e.currentTarget)closeDetail()}}><section className="sdl-sm-r5f6__dialog sdl-sm-detail-dialog" role="dialog" aria-modal="true" aria-label={`Detail surat masuk ${detail.letterNumber}`}><div className="panel sm-panel sdl-sm-detail-body"><div className="sm-section-title sdl-sm-r5f6__detail-head"><div><span className="eyebrow">DETAIL SURAT MASUK</span><span className="sm-title-row"><h3>{detail.letterNumber}</h3><DerajatTag value={detail.derajat??'biasa'}/></span><p>Agenda SM-{new Date(detail.createdAt).getFullYear()}-{detail.agendaNo} · Versi {detail.version} · {routeLabels[intakeRecord?.workflowStatus||'']||(detail.status==='draft'?'Draft':'Terdaftar')}</p></div><div className="sdl-sm-r5f6__row-actions">{canEdit&&<button className="btn" type="button" onClick={beginEdit}>Edit Draft</button>}{detail.status==='registered'&&<button className="btn primary" type="button" onClick={()=>beginUpload(detail.id)}>Upload Lampiran</button>}<button type="button" className="sdl-sm-r5f6__close" aria-label="Tutup detail" onClick={closeDetail}>×</button></div></div>
    <dl className="sm-details"><div><dt>Surat Dari</dt><dd>{detail.sender}</dd></div><div><dt>Tanggal Surat</dt><dd>{detail.letterDate}</dd></div><div><dt>Tanggal Diinput</dt><dd>{detail.receivedDate}</dd></div><div><dt>Klasifikasi</dt><dd>{classificationLabel(detail.classification)}</dd></div>{intakeRecord&&<><div><dt>Jenis Surat</dt><dd>{kindLabels[intakeRecord.letterKind]||intakeRecord.letterKind}</dd></div><div><dt>Batas Respons</dt><dd>{intakeRecord.responseDue?readableDate(intakeRecord.responseDue):'Tanpa batas respons'}</dd></div>{intakeRecord.eventStart&&<div className="sm-span"><dt>Pelaksanaan</dt><dd>{intakeRecord.eventStart.replace('T',' ').slice(0,16)} WIB · {intakeRecord.eventLocation||'Lokasi belum dicatat'}</dd></div>}</>}<div className="sm-span"><dt>Perihal</dt><dd>{detail.subject}</dd></div></dl>
    {detail.status==='draft'&&canEdit&&<div className="sm-register"><strong>Draft Surat</strong><p>Lengkapi informasi, pilihan disposisi dan lampiran dalam satu form sebelum pengajuan.</p><button className="btn primary" type="button" onClick={beginEdit}>Lengkapi & Ajukan</button></div>}
    {detail.status==='registered'&&<DisposisiSuratR5H6 key={`${detail.id}:${awaitingIds.has(detail.id)}`} letter={detail} onChanged={()=>{void reload().catch(()=>{});void open(detail.id).catch(()=>{})}}/>}
    <SuratR3B key={`${detail.id}:${attachmentRevision}`} incomingId={detail.id} registered={detail.status==='registered'} onRequestUpload={()=>beginUpload(detail.id)}/>
    <h4 className="sm-history-title">Riwayat Surat</h4><div className="sm-history">{history.map((h,i)=><div className="sm-history-row" key={`${h.version}-${i}`}><span className="sm-history-dot"/><div><strong>{h.action==='created'?'Draft dibuat':h.action==='edited'?'Draft diperbarui':'Surat diregister'}</strong><small>{h.actor} · {new Date(h.at).toLocaleString('id-ID')} · Versi {h.version}</small><p>{h.reason}</p></div></div>)}</div>
-  </section>}
+  </div></section></div>}
 
   {previewFile&&<LampiranPreviewR5F15 file={previewFile} onClose={()=>setPreviewFile(null)}/>}
   {(creating||editing)&&<div className="sdl-sm-r5f6__backdrop" role="presentation" onMouseDown={e=>{if(e.target===e.currentTarget)closeForm()}}><section className="sdl-sm-r5f6__dialog sdl-sm-r5f7__dialog" role="dialog" aria-modal="true" aria-labelledby="sdl-sm-form-title"><header className="sdl-sm-r5f6__modal-head"><div><span className="eyebrow">SURAT MASUK</span><h2 id="sdl-sm-form-title">{creating?'Tambah Surat Masuk':'Lengkapi Draft Surat'}</h2><p>Isi informasi surat, lampiran, dan tentukan alur pengajuan.</p></div><button type="button" className="sdl-sm-r5f6__close" aria-label="Tutup" disabled={busy} onClick={closeForm}>×</button></header>

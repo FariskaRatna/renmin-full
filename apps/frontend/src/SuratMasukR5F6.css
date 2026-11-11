@@ -38,3 +38,11 @@
 .sdl-sm-r5f6__section-row .sm-history-title{margin:0}
 @media(max-width:700px){.sdl-sm-r5f6__backdrop{padding:8px}.sdl-sm-r5f6__dialog{max-height:96dvh;border-radius:13px}.sdl-sm-r5f6__toolbar-actions{margin-left:0;width:100%}.sdl-sm-r5f6__toolbar-actions .btn{flex:1 1 auto}.sdl-sm-r5f6__fields{grid-template-columns:1fr;padding:17px;gap:14px}.sdl-sm-r5f6__wide{grid-column:1}.sdl-sm-r5f6__upload-content{padding:18px}.sdl-sm-r5f6__modal-head{padding:18px}.sdl-sm-r5f6__actions{padding:13px 18px}}
 @media(prefers-reduced-motion:reduce){.sdl-sm-r5f6__drop{transition:none}}
+
+/* R5H8: detail surat masuk sebagai jendela pop-up. Di bawah jendela form dan
+ * unggah (350) yang bisa dibuka dari dalamnya; isinya yang di-scroll, kepala
+ * (nomor surat + tombol) tetap menempel di atas. */
+.sdl-sm-r5f6__backdrop.sdl-sm-detail-shade{z-index:300}
+.sdl-sm-detail-dialog{width:min(900px,100%)}
+.sdl-sm-detail-dialog .sdl-sm-detail-body{margin:0;border:0;border-radius:0;box-shadow:none;overflow:auto;min-height:0;flex:1}
+.sdl-sm-detail-dialog .sdl-sm-r5f6__detail-head{position:sticky;top:-1px;z-index:2;background:var(--card);padding-top:6px;padding-bottom:12px;border-bottom:1px solid var(--border)}
