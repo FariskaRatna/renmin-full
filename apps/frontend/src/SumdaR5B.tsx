@@ -1,6 +1,8 @@
 import { confirmDialog, showToast } from './UIFeedback'
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import { Pager, usePaged } from './PaginationR5H5'
+import { useOpsiDropdown, withOpsi } from './OpsiDropdownR5H8'
+import { SearchSelect } from './SearchSelectR5H8'
 import './SumdaR5B.css'
 
 type Kind = 'personel' | 'pendidikan' | 'inventaris'
@@ -88,6 +90,9 @@ const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0,2).
 
 export default function SumdaR5B({kind,openFiles}: {kind:Kind;openFiles:(id:string)=>void}) {
   const def = schema[kind]
+  // R5H8: pilihan dropdown dari Master Data (bawaan kode bila tidak tersedia).
+  const opsiDropdown = useOpsiDropdown('subbagsumda')
+  const formFields = useMemo(()=>withOpsi(def.fields,kind,opsiDropdown),[def,kind,opsiDropdown])
   const [records,setRecords] = useState<Entry[]>([])
   const [selected,setSelected] = useState<Entry|null>(null)
   const [form,setForm] = useState<Draft>(() => blank(kind))
@@ -229,7 +234,7 @@ export default function SumdaR5B({kind,openFiles}: {kind:Kind;openFiles:(id:stri
             <label className="sumda-field"><span>{def.name} <b aria-label="wajib diisi">*</b></span><input required minLength={3} maxLength={200} value={form.title} onChange={e=>setForm(v=>({...v,title:e.target.value}))} placeholder={`Masukkan ${def.name.toLowerCase()}`}/></label>
           </div></div>
           <div className="sumda-form-block"><div className="sumda-form-section"><span className="sumda-form-step">02</span><div><h3>Detail {def.singular}</h3><p>Lengkapi informasi pendukung yang relevan.</p></div></div>{kind==='personel'&&rankError&&<div className="sumda-message sumda-message-error" role="alert">{rankError}</div>}<div className="sumda-form-grid">
-            {def.fields.map(f=><label className={`sumda-field ${f.input==='textarea'?'sumda-field-wide':''}`} key={f.key}><span>{f.label}</span>{f.input==='select'?<select value={form.fields[f.key]||''} onChange={e=>changeField(f.key,e.target.value)} disabled={f.key==='pangkat'&&ranks.length===0}><option value="">Pilih {f.label.toLowerCase()}</option>{f.key==='pangkat'?<>{form.fields.pangkat&&!ranks.some(x=>x.code===form.fields.pangkat)&&<option value={form.fields.pangkat}>Legacy: {form.fields.pangkat} (ubah ke pangkat valid)</option>}{ranks.map(x=><option key={x.code} value={x.code}>{x.shortName} — {x.fullName}</option>)}</>:f.choices?.map(x=><option key={x} value={x}>{x}</option>)}</select>:f.input==='textarea'?<textarea rows={3} maxLength={200} value={form.fields[f.key]||''} onChange={e=>changeField(f.key,e.target.value)} placeholder={f.placeholder||'Tambahkan keterangan...'}/>:<input type={f.input||'text'} min={f.input==='number'?1:undefined} step={f.input==='number'?1:undefined} maxLength={f.input==='number'?undefined:200} value={form.fields[f.key]||''} onChange={e=>changeField(f.key,e.target.value)} placeholder={f.placeholder||''}/>}</label>)}
+            {formFields.map(f=><label className={`sumda-field ${f.input==='textarea'?'sumda-field-wide':''}`} key={f.key}><span>{f.label}</span>{f.key==='pangkat'?<SearchSelect value={form.fields.pangkat||''} disabled={ranks.length===0} options={ranks.map(x=>({value:x.code,label:`${x.shortName} — ${x.fullName}`}))} onChange={v=>changeField('pangkat',v)} placeholder="Pilih pangkat polri" ariaLabel={f.label}/>:f.input==='select'?<SearchSelect value={form.fields[f.key]||''} options={(f.choices||[]).map(x=>({value:x,label:x}))} onChange={v=>changeField(f.key,v)} placeholder={`Pilih ${f.label.toLowerCase()}`} ariaLabel={f.label}/>:f.input==='textarea'?<textarea rows={3} maxLength={200} value={form.fields[f.key]||''} onChange={e=>changeField(f.key,e.target.value)} placeholder={f.placeholder||'Tambahkan keterangan...'}/>:<input type={f.input||'text'} min={f.input==='number'?1:undefined} step={f.input==='number'?1:undefined} maxLength={f.input==='number'?undefined:200} value={form.fields[f.key]||''} onChange={e=>changeField(f.key,e.target.value)} placeholder={f.placeholder||''}/>}</label>)}
           </div></div>
           <div className="sumda-form-block"><div className="sumda-form-section"><span className="sumda-form-step">03</span><div><h3>Pengaturan akses data</h3><p>Pilih klasifikasi sesuai dokumen yang dicatat.</p></div></div><div className="sumda-form-grid"><label className="sumda-field"><span>Klasifikasi</span><select value={form.classification} onChange={e=>setForm(v=>({...v,classification:e.target.value as 'biasa'|'penting'}))}><option value="biasa">Biasa</option><option value="penting">Penting</option></select></label><div className="sumda-classification-help"><Icon name="info" size={18}/><span>Data penting hanya dapat diakses oleh akun dengan grant klasifikasi yang sesuai.</span></div></div></div>
         </form>

@@ -1,0 +1,39 @@
+/* R5H8: dropdown yang bisa dicari (SearchSelectR5H8.tsx). Tingginya mengikuti
+ * input formulir sumda-field supaya sejajar dengan kolom lain. */
+.sdl-ss{position:relative;width:100%;font-weight:400}
+.sdl-ss__trigger{all:unset;box-sizing:border-box;width:100%;min-height:42px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 12px;border:1px solid var(--border,#d6e0ea);border-radius:10px;background:var(--card,#fff);color:var(--ink,#243f57);font-size:13px;cursor:pointer}
+.sdl-ss__trigger span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sdl-ss__trigger svg{flex:none;color:var(--muted,#607184);transition:transform .15s}
+.sdl-ss.is-open .sdl-ss__trigger svg{transform:rotate(180deg)}
+.sdl-ss__trigger:hover{border-color:#7caba6}
+.sdl-ss__trigger:focus-visible,.sdl-ss.is-open .sdl-ss__trigger{outline:3px solid rgba(37,142,133,.25);border-color:#2a8a82}
+.sdl-ss__trigger:disabled{opacity:.6;cursor:not-allowed}
+.sdl-ss__placeholder{color:#8a9bb0}
+.sdl-ss__panel{position:absolute;z-index:60;left:0;right:0;top:calc(100% + 4px);background:var(--card,#fff);border:1px solid var(--border,#d6e0ea);border-radius:10px;box-shadow:0 12px 28px rgba(20,40,60,.16);overflow:hidden}
+.sdl-ss__search{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--border,#e2e9f0);background:var(--subtle,#f5f8fa);color:var(--muted,#607184)}
+.sdl-ss__search input{all:unset;flex:1;min-width:0;font-size:13px;color:var(--ink,#243f57)}
+.sdl-ss__list{list-style:none;margin:0;padding:4px;max-height:240px;overflow:auto}
+.sdl-ss__list li{font-weight:500;padding:8px 10px;border-radius:7px;font-size:13px;cursor:pointer;color:var(--ink,#243f57);line-height:1.4}
+.sdl-ss__list li.is-active{background:#e8f3f1}
+.sdl-ss__list li.is-selected{font-weight:700;color:#166a66}
+.sdl-ss__list li.sdl-ss__clear{color:var(--muted,#607184);font-style:italic}
+.sdl-ss__list li.sdl-ss__empty{cursor:default;color:var(--muted,#607184)}
+[data-theme=dark] .sdl-ss__trigger,[data-theme=dark] .sdl-ss__panel{background:#152435;border-color:#34506a;color:#d6e2ee}
+[data-theme=dark] .sdl-ss__search{background:#1b2a3c;border-color:#34506a}
+[data-theme=dark] .sdl-ss__search input,[data-theme=dark] .sdl-ss__list li{color:#d6e2ee}
+[data-theme=dark] .sdl-ss__list li.is-active{background:#21405a}
+[data-theme=dark] .sdl-ss__list li.is-selected{color:#8fe0d4}
+
+/* Kotak cari di atas pemilih banyak (Tembusan, Verifikator, Yang Menghadiri). */
+.sdl-multipick__search{display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:7px 10px;border:1px solid var(--border,#d6e0ea);border-radius:9px;background:var(--subtle,#f5f8fa);color:var(--muted,#607184)}
+.sdl-multipick__search input{all:unset;flex:1;min-width:0;font-size:13px;color:var(--ink,#243f57)}
+[data-theme=dark] .sdl-multipick__search{background:#1b2a3c;border-color:#34506a}
+[data-theme=dark] .sdl-multipick__search input{color:#d6e2ee}
+
+/* Kotak cari berada di dalam label.sumda-field, sehingga aturan
+ * `.sumda-r5b .sumda-field :is(input,...)` (dengan !important) ikut mengenainya
+ * dan menggambar kotak di dalam kotak. Dinetralkan di sini. */
+.sumda-r5b .sumda-field .sdl-ss__search input,
+.sumda-r5b .sumda-field .sdl-multipick__search input,
+:root[data-theme=dark] .sumda-r5b .sumda-field .sdl-ss__search input,
+:root[data-theme=dark] .sumda-r5b .sumda-field .sdl-multipick__search input{border:0!important;background:transparent!important;box-shadow:none!important;min-height:0;padding:4px 0;border-radius:0}

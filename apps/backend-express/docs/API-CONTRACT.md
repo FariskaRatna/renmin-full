@@ -1448,3 +1448,56 @@ Tiap larik diurut `name`; larik kosong `[]`, bukan `null`. Gagal DB → 503
 `rujukanSurat` dan `rujukanArahan` **tidak** punya master data: layar mengisi
 pilihannya dari `GET /urmin/surat-masuk/` dan `GET /leadership/directives/inbox`
 (+ `/sent` untuk Kabagrenmin), yaitu data nyata yang sudah disaring backend.
+
+## R5H7 — tanda tangan Kabagrenmin pada surat keluar (2026-11-10, EXPRESS SAJA)
+
+Tambahan, **tidak punya padanan Go** dan tidak diliput golden harness. Tidak
+mengubah satu pun endpoint lama. Rancangan: `docs/R5H7-TTD-KABAG-SURAT-KELUAR.md`;
+uji: `verify/r5h7-flow.js`, `verify/r5h7-pdf-sign.js`. Migrasi `045_ttd_kabag.sql`.
+
+| Method | Path | Guard | Catatan |
+|---|---|---|---|
+| GET | `/api/v1/urmin/ttd/me` | O + `canManageOutgoing` | `{saved:false}` atau `{saved:true,image,updatedAt}` |
+| PUT | `/api/v1/urmin/ttd/me` | O + `canManageOutgoing` | `{image:"data:image/png;base64,..."}` ≤ 200 KB, didekode ulang `sharp` |
+| DELETE | `/api/v1/urmin/ttd/me` | O + `canManageOutgoing` | `{saved:false}` |
+| POST | `/api/v1/urmin/registry/:id/sign-approve` | O + Engine B read + `canManageOutgoing` | `{version,note?,useSaved,image?,saveAsMine?,placements:{fileId:[{page,x,y,w,h}]}}` → `{ok,status:"approved",signedFiles}` |
+| GET | `/api/v1/urmin/registry/:id/signed-files` | O + Engine B read | `{items:[{id,sourceFileId,name,size,signedAt,signer,marks}]}` |
+| GET | `/api/v1/urmin/registry/:id/signed-files/:fileID` | O + Engine B read | PDF, `attachment`, sha256 diverifikasi saat unduh |
+
+Galat `sign-approve`: 400 `invalid_input` / `invalid_placements` /
+`placements_mismatch` / `invalid_signature_image`; 403 `access_denied`; 409
+`workflow_state_changed` / `document_integrity_changed` / `already_signed` /
+`no_saved_signature` / `pdf_required_before_submit`; 422 `{error:pdf_unreadable|pdf_encrypted|page_out_of_range,file}`;
+503 `signature_key_unavailable`.
+
+`POST /:id/approve` lama tetap ada (Go masih jalur rollback); layar tidak
+memakainya lagi untuk Kabagrenmin.
+
+### Pesan Kode Register saat "Tambah" (migrasi 046, Express saja)
+
+| Method | Path | Guard | Catatan |
+|---|---|---|---|
+| POST | `/api/v1/urmin/registry/nomor-urut` | O + Engine B `create` urmin | `{id,urut,tahun}`. Pesanan terbuka milik akun yang sama pada tahun yang sama DIKEMBALIKAN lagi (tidak membakar deret) |
+| POST | `/api/v1/urmin/registry/?reservasi=<uuid>` | sama dengan `POST /` | Query opsional; body TIDAK berubah. Nomor surat memakai `urut` pesanan. 400 `invalid_reservation` (bukan UUID); 409 `reservation_invalid` (bukan milik aktor / terpakai / tahun lain) |
+
+Tanpa `?reservasi` perilakunya identik dengan sebelumnya (nomor diambil saat
+draf disimpan) -- yang dipakai Go bila `/urmin` di-rollback.
+
+
+## R5H8 — pilihan dropdown umum sebagai master data (2026-11-11, EXPRESS SAJA)
+
+Sepuluh pilihan dropdown yang tadinya tertulis di kode frontend kini dikelola
+Superadmin. Tidak mengubah satu pun endpoint lama. Rancangan:
+`docs/R5H8-MASTER-DATA-DROPDOWN.md`. Migrasi `047_opsi_dropdown.sql`.
+
+| Metode | Path | Guard | Isi |
+|---|---|---|---|
+| GET | `/api/v1/urmin/opsi-dropdown/` | O | `{"arsip-jenis":[{code,name}],"arsip-status":[...],"agenda-hadir":[...]}` urut `seq` (`agenda-hadir`: migrasi 048, nama tanpa koma) |
+| GET | `/api/v1/subbagsumda/opsi-dropdown/` | O | `personel-status`, `kondisi-barang` |
+| GET | `/api/v1/subbagbinfung/opsi-dropdown/` | O | `sop-jenis`, `sop-status`, `pid-kategori`, `pid-tingkat-akses`, `pid-status`, `rb-status` |
+| GET/POST/PATCH/DELETE | `/api/v1/admin/master/{set}` untuk 11 `set` di atas | RE | Bentuk sama dengan himpunan lama (`{code,name}`; 409 `duplicate`, `code_in_use`; 400 `code_immutable`). Daftar Superadmin diurut `seq`, bukan `code` |
+
+`/api/v1/admin/master/*` masih dilayani Go di produksi; Go menjawab 404 untuk
+sepuluh `set` baru. Di server, tambahkan `/api/v1/admin/master/*` ke
+`SDL_EXPRESS_PATHS` (atau langkah 5 `/api/*`). Formulir yang tidak bisa membaca
+`opsi-dropdown` memakai daftar bawaannya sendiri.

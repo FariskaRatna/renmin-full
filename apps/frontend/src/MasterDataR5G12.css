@@ -30,3 +30,11 @@
   .sdl-master__search input{min-width:0;flex:1 1 140px}
   .sdl-master__actions{justify-content:flex-start}
 }
+
+/* R5H8: tab kelompok master data. */
+.sdl-master__tabs{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.sdl-master__tabs button{border:1px solid var(--border,#d7e2eb);border-radius:999px;background:var(--card,#fff);color:var(--ink,#385269);padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;min-height:34px}
+.sdl-master__tabs button:hover{border-color:#4b9a91}
+.sdl-master__tabs button:focus-visible{outline:3px solid rgba(37,142,133,.35);outline-offset:2px}
+.sdl-master__tabs button.is-active{background:#166a66;color:#fff;border-color:#166a66}
+[data-theme=dark] .sdl-master__tabs button.is-active{background:#1d8881;border-color:#1d8881}

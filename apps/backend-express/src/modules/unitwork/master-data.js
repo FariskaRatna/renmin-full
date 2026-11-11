@@ -1,6 +1,7 @@
 import { Router } from 'express'
 
 import { BODY_LIMITS, parsePayload, rawBody } from '../../http/payload.js'
+import { OPSI_DROPDOWN, opsiDropdownInUse } from './opsi-dropdown.js'
 import { SURAT_OPSI, suratOpsiInUse } from './surat-opsi.js'
 
 /**
@@ -65,6 +66,13 @@ const SETS = {
 // noComma: nama di daftar pilih-banyak tidak boleh memuat koma.
 for (const o of SURAT_OPSI) {
   SETS[o.set] = { table: o.table, codeRe: /^[A-Z][A-Z0-9_]{1,23}$/, nameMax: 120, inUseSQL: suratOpsiInUse(o), noComma: o.multi }
+}
+
+// R5H8: sepuluh pilihan dropdown umum (migrasi 047). Berbagi SATU tabel,
+// dibedakan `scope` (= set_key); setiap query di bawah menambahkan
+// `AND set_key=...` untuk himpunan berskop. EXPRESS SAJA.
+for (const o of OPSI_DROPDOWN) {
+  SETS[o.set] = { table: 'sdl_opsi_dropdown', scope: o.set, codeRe: /^[A-Z][A-Z0-9_]{1,23}$/, nameMax: 120, inUseSQL: opsiDropdownInUse(o), noComma: Boolean(o.multi) }
 }
 
 /** Padanan kodeArsipParts (master_data.go). "HUM.1.2." -> ["HUM", 2] */
@@ -136,12 +144,19 @@ export function createMasterDataRouter({ pool }) {
     }
     let rows
     try {
-      const result = await pool.query(
-        `SELECT code,name FROM ${set.table}
-          WHERE ($1='' OR name ILIKE '%'||$1||'%' OR code ILIKE '%'||$1||'%')
-          ORDER BY code LIMIT 201`,
-        [q],
-      )
+      const result = set.scope
+        ? await pool.query(
+          `SELECT code,name FROM sdl_opsi_dropdown
+            WHERE set_key=$2 AND ($1='' OR name ILIKE '%'||$1||'%' OR code ILIKE '%'||$1||'%')
+            ORDER BY seq LIMIT 201`,
+          [q, set.scope],
+        )
+        : await pool.query(
+          `SELECT code,name FROM ${set.table}
+            WHERE ($1='' OR name ILIKE '%'||$1||'%' OR code ILIKE '%'||$1||'%')
+            ORDER BY code LIMIT 201`,
+          [q],
+        )
       rows = result.rows
     } catch {
       deny(res, 503, 'database_unavailable')
@@ -168,6 +183,8 @@ export function createMasterDataRouter({ pool }) {
           'INSERT INTO sdl_surat_kode_arsip(code,name,prefix,depth) VALUES($1,$2,$3,$4)',
           [v.code, v.name, prefix, depth],
         )
+      } else if (set.scope) {
+        await pool.query('INSERT INTO sdl_opsi_dropdown(set_key,code,name) VALUES($3,$1,$2)', [v.code, v.name, set.scope])
       } else {
         await pool.query(`INSERT INTO ${set.table}(code,name) VALUES($1,$2)`, [v.code, v.name])
       }
@@ -200,7 +217,9 @@ export function createMasterDataRouter({ pool }) {
     try {
       result = set.table === 'sdl_surat_kode_arsip'
         ? await pool.query('UPDATE sdl_surat_kode_arsip SET name=$2 WHERE code=$1', [code, v.name])
-        : await pool.query(`UPDATE ${set.table} SET name=$2,updated_at=now() WHERE code=$1`, [code, v.name])
+        : set.scope
+          ? await pool.query('UPDATE sdl_opsi_dropdown SET name=$2,updated_at=now() WHERE code=$1 AND set_key=$3', [code, v.name, set.scope])
+          : await pool.query(`UPDATE ${set.table} SET name=$2,updated_at=now() WHERE code=$1`, [code, v.name])
     } catch (error) {
       if (error?.code === '23505') { deny(res, 409, 'duplicate'); return }
       deny(res, 503, 'database_unavailable')
@@ -232,7 +251,9 @@ export function createMasterDataRouter({ pool }) {
         deny(res, 409, 'code_in_use')
         return
       }
-      const result = await pool.query(`DELETE FROM ${set.table} WHERE code=$1`, [code])
+      const result = set.scope
+        ? await pool.query('DELETE FROM sdl_opsi_dropdown WHERE code=$1 AND set_key=$2', [code, set.scope])
+        : await pool.query(`DELETE FROM ${set.table} WHERE code=$1`, [code])
       if ((result.rowCount ?? 0) !== 1) {
         deny(res, 404, 'not_found')
         return

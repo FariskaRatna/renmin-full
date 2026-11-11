@@ -10,8 +10,10 @@ import { createBinfungRouter } from './modules/unitwork/binfung.js'
 import { createSumdaRouter } from './modules/unitwork/sumda.js'
 import { createKodeArsipRouter, createJenisSuratRouter } from './modules/unitwork/kode-arsip.js'
 import { createSuratOpsiRouter } from './modules/unitwork/surat-opsi.js'
+import { createOpsiDropdownRouter } from './modules/unitwork/opsi-dropdown.js'
 import { createMasterDataRouter } from './modules/unitwork/master-data.js'
 import { createUrminRegisterRouter } from './modules/unitwork/urmin-register.js'
+import { createTtdRouter } from './modules/unitwork/outgoing-sign.js'
 import { createUnitWorkRouter } from './modules/unitwork/work.js'
 import { createPortalRouter } from './modules/portal/index.js'
 import { createBudgetRouter } from './modules/subbagren/budget.js'
@@ -85,6 +87,13 @@ export function createApp({ pool, config, mailer: injectedMailer }) {
   v1.use('/urmin/kode-arsip', operational, createKodeArsipRouter({ pool }))
   v1.use('/urmin/jenis-surat', operational, createJenisSuratRouter({ pool }))
   v1.use('/urmin/surat-opsi', operational, createSuratOpsiRouter({ pool }))
+  // R5H8: pilihan dropdown umum per unit (migrasi 047, Express saja). Prefix
+  // per unit supaya ikut peralihan Caddy yang sudah ada (urmin, subbag*).
+  v1.use('/urmin/opsi-dropdown', operational, createOpsiDropdownRouter({ pool, unit: 'urmin' }))
+  v1.use('/subbagsumda/opsi-dropdown', operational, createOpsiDropdownRouter({ pool, unit: 'subbagsumda' }))
+  v1.use('/subbagbinfung/opsi-dropdown', operational, createOpsiDropdownRouter({ pool, unit: 'subbagbinfung' }))
+  // R5H7: tanda tangan tersimpan Kabagrenmin (Express saja).
+  v1.use('/urmin/ttd', operational, createTtdRouter({ pool, config }))
   v1.use('/unit-work', operational, createUnitWorkRouter({ pool, config }))
   v1.use('/subbagren/usulan', operational, createUsulanRouter({ pool, config }))
   v1.use('/subbagren/budget', operational, createBudgetRouter({ pool, config }))

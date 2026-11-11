@@ -23,8 +23,28 @@ import './MasterDataR5G12.css'
 
 type Row = { code: string; name: string }
 type SetKey = 'jenis-surat' | 'kode-arsip' | 'disposisi' | 'jalur-surat' | 'penandatangan' | 'pemberi-nomor' | 'verifikator' | 'tembusan' | 'tipe-surat'
+  | 'arsip-jenis' | 'arsip-status' | 'agenda-hadir' | 'personel-status' | 'kondisi-barang' | 'sop-jenis' | 'sop-status' | 'pid-kategori' | 'pid-tingkat-akses' | 'pid-status' | 'rb-status'
+type Group = 'persuratan' | 'sumda' | 'binfung'
 
-const SETS: { key: SetKey; title: string; blurb: string; codeLabel: string; codeHint: string; nameLabel: string }[] = [
+// R5H8: kelompok tampilan halaman Master Data, satu tab per kelompok.
+const GROUPS: { key: Group; label: string }[] = [
+  { key: 'persuratan', label: 'Persuratan (Urmin)' },
+  { key: 'sumda', label: 'Subbagsumda' },
+  { key: 'binfung', label: 'Subbagbinfung' },
+]
+
+/**
+ * R5H8: kode dibuat dari nama bila dikosongkan, untuk himpunan berpola kode
+ * ^[A-Z][A-Z0-9_]{1,23}$. "Rusak Ringan" -> RUSAK_RINGAN. Kodenya hanya kunci
+ * internal; yang tersimpan di data dan terbaca pengguna adalah namanya.
+ */
+function autoCode(name: string): string {
+  let c = name.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+  if (!/^[A-Z]/.test(c)) c = `X_${c}`
+  return c.slice(0, 24).replace(/_+$/, '')
+}
+
+const SETS: { key: SetKey; title: string; blurb: string; codeLabel: string; codeHint: string; nameLabel: string; group?: Group; autoCode?: boolean }[] = [
   {
     key: 'jenis-surat',
     title: 'Jenis Surat',
@@ -97,7 +117,27 @@ const SETS: { key: SetKey; title: string; blurb: string; codeLabel: string; code
     codeHint: 'Huruf besar, angka, garis bawah; diawali huruf. Contoh: INTERNAL',
     nameLabel: 'Nama tipe surat',
   },
+  // R5H8: sepuluh pilihan dropdown umum (migrasi 047). Yang tersimpan di data
+  // adalah NAMA pilihan; mengganti nama tidak mengubah data lama.
+  ...([
+    ['arsip-jenis', 'Jenis Arsip', 'Pilihan "Jenis Arsip" pada formulir Arsip (Urmin).', 'persuratan'],
+    ['arsip-status', 'Status Arsip', 'Pilihan "Status" pada formulir Arsip (Urmin).', 'persuratan'],
+    ['agenda-hadir', 'Yang Menghadiri', 'Pilihan "Yang Menghadiri" pada Agenda & Rapat (boleh lebih dari satu). Nama tidak boleh memuat koma.', 'persuratan'],
+    ['personel-status', 'Status Personel', 'Pilihan "Status Personel" pada Data Administrasi Personel.', 'sumda'],
+    ['kondisi-barang', 'Kondisi Barang', 'Pilihan "Kondisi Barang" pada Inventaris & BMN.', 'sumda'],
+    ['sop-jenis', 'Jenis Dokumen SOP', 'Pilihan "Jenis Dokumen" pada SOP, Regulasi & Metode.', 'binfung'],
+    ['sop-status', 'Status Dokumen SOP', 'Pilihan "Status" pada SOP, Regulasi & Metode.', 'binfung'],
+    ['pid-kategori', 'Kategori Informasi', 'Pilihan "Kategori" pada Informasi & Dokumentasi (PID).', 'binfung'],
+    ['pid-tingkat-akses', 'Tingkat Akses Informasi', 'Pilihan "Tingkat Akses" pada PID. Hanya label; tidak membatasi siapa yang bisa membuka data.', 'binfung'],
+    ['pid-status', 'Status Informasi', 'Pilihan "Status" pada Informasi & Dokumentasi (PID).', 'binfung'],
+    ['rb-status', 'Status Rencana Aksi', 'Pilihan "Status" pada Reformasi Birokrasi & SPIP.', 'binfung'],
+  ] as const).map(([key, title, blurb, group]) => ({
+    key, title, blurb, group, autoCode: true,
+    codeLabel: 'Kode (opsional)', codeHint: 'Kosongkan: dibuat otomatis dari nama', nameLabel: 'Nama pilihan',
+  })),
 ]
+// Himpunan lama berpola kode yang sama juga boleh dikosongkan kodenya.
+for (const s of SETS) if (!['jenis-surat', 'kode-arsip'].includes(s.key)) s.autoCode = true
 
 async function call<T>(url: string, method = 'GET', body?: unknown): Promise<T> {
   const headers: Record<string, string> = {}
@@ -118,7 +158,7 @@ async function call<T>(url: string, method = 'GET', body?: unknown): Promise<T> 
       e.error === 'duplicate' ? 'Kode atau nama itu sudah ada.'
       : e.error === 'invalid_code' ? 'Format kodenya tidak sesuai.'
       : e.error === 'invalid_name' ? 'Nama harus 2 karakter atau lebih.'
-      : e.error === 'code_in_use' ? 'Kode ini masih dipakai surat atau arahan yang tercatat, jadi belum bisa dihapus.'
+      : e.error === 'code_in_use' ? 'Pilihan ini masih dipakai data yang tercatat, jadi belum bisa dihapus. Ganti namanya saja bila perlu.'
       : e.error === 'code_immutable' ? 'Kode tidak dapat diubah. Hapus lalu buat baru bila memang perlu.'
       : e.error === 'not_found' ? 'Datanya sudah tidak ada.'
       : response.status === 403 ? 'Hanya Superadmin yang dapat mengelola master data.'
@@ -165,7 +205,8 @@ function MasterSet({ spec }: { spec: typeof SETS[number] }) {
     if (busy) return
     setBusy(true)
     try {
-      await call(`/api/v1/admin/master/${spec.key}`, 'POST', { code: newCode.trim(), name: newName.trim() })
+      const code = newCode.trim() || (spec.autoCode ? autoCode(newName.trim()) : '')
+      await call(`/api/v1/admin/master/${spec.key}`, 'POST', { code, name: newName.trim() })
       showToast(`${spec.title} berhasil ditambahkan.`, 'success')
       setNewCode(''); setNewName('')
       await load(search)
@@ -189,7 +230,7 @@ function MasterSet({ spec }: { spec: typeof SETS[number] }) {
   async function remove(row: Row) {
     if (busy) return
     const ok = await confirmDialog(
-      `Hapus ${row.code} — ${row.name}? Surat yang terlanjur memakai kode ini tidak ikut berubah, tapi kodenya akan kehilangan keterangan di master.`,
+      spec.group ? `Hapus pilihan "${row.name}"? Pilihan ini tidak akan muncul lagi di formulir.` : `Hapus ${row.code} — ${row.name}? Surat yang terlanjur memakai kode ini tidak ikut berubah, tapi kodenya akan kehilangan keterangan di master.`,
       { confirmLabel: 'Hapus', danger: true })
     if (!ok) return
     setBusy(true)
@@ -216,12 +257,12 @@ function MasterSet({ spec }: { spec: typeof SETS[number] }) {
 
     <form className="sdl-master__add" onSubmit={add}>
       <label><span>{spec.codeLabel}</span>
-        <input value={newCode} required maxLength={16} onChange={e=>setNewCode(e.target.value)} placeholder={spec.codeHint}/>
+        <input value={newCode} required={!spec.autoCode} maxLength={spec.autoCode?24:16} onChange={e=>setNewCode(e.target.value)} placeholder={spec.autoCode&&!spec.group?`${spec.codeHint} (boleh dikosongkan)`:spec.codeHint}/>
       </label>
       <label><span>{spec.nameLabel}</span>
         <input value={newName} required minLength={2} maxLength={250} onChange={e=>setNewName(e.target.value)} placeholder="Nama lengkap"/>
       </label>
-      <button type="submit" className="btn primary" disabled={busy||!newCode.trim()||newName.trim().length<2}>Tambah</button>
+      <button type="submit" className="btn primary" disabled={busy||(!spec.autoCode&&!newCode.trim())||newName.trim().length<2}>Tambah</button>
     </form>
 
     {limited && <p className="sdl-master__limit">Menampilkan 200 data teratas. Pakai pencarian untuk mempersempit.</p>}
@@ -252,19 +293,25 @@ function MasterSet({ spec }: { spec: typeof SETS[number] }) {
 }
 
 export default function MasterDataR5G12() {
+  const [group, setGroup] = useState<Group>('persuratan')
   return <div className="sdl-master__wrap">
     <section className="panel sdl-master__intro">
-      <h2>Master Data Persuratan</h2>
+      <h2>Master Data</h2>
       <p>
-        Dua daftar yang mengisi nomor surat dinas. Menambah di sini langsung terpakai di formulir
-        Surat Keluar tanpa perlu menunggu pembaruan aplikasi.
+        Pilihan dropdown yang dipakai formulir. Menambah atau mengganti nama di sini langsung
+        terpakai di formulir tanpa perlu menunggu pembaruan aplikasi. Pilihan yang masih dipakai
+        data tidak bisa dihapus.
       </p>
       <p className="sdl-master__note">
-        <strong>Derajat</strong> (Biasa, Kilat) dan <strong>Klasifikasi</strong> (Biasa, Penting) tidak
-        dikelola di sini. Keduanya terikat aturan database: derajat dipakai tabel surat masuk, dan
-        klasifikasi menentukan siapa boleh membuka dokumen.
+        <strong>Derajat</strong>, <strong>Klasifikasi</strong>, <strong>Jenis Surat Masuk</strong>, dan{' '}
+        <strong>Lingkup Surat</strong> tidak dikelola di sini karena terikat aturan sistem: derajat dan
+        jenis surat masuk dikunci database, lingkup ikut membentuk nomor surat, dan klasifikasi
+        menentukan siapa boleh membuka dokumen.
       </p>
+      <div className="sdl-master__tabs" role="tablist" aria-label="Kelompok master data">
+        {GROUPS.map(g => <button key={g.key} type="button" role="tab" aria-selected={group===g.key} className={group===g.key?'is-active':''} onClick={()=>setGroup(g.key)}>{g.label}</button>)}
+      </div>
     </section>
-    {SETS.map(spec => <MasterSet key={spec.key} spec={spec}/>)}
+    {SETS.filter(spec => (spec.group ?? 'persuratan') === group).map(spec => <MasterSet key={spec.key} spec={spec}/>)}
   </div>
 }
