@@ -1,0 +1,57 @@
+/* R5H7: jendela Tanda Tangani & Setujui (Kabagrenmin). Layar penuh, di atas
+ * dialog Proses (.sumda-dialog-backdrop z-index 200). */
+.ttd-r5h7{--t-bg:#f4f6fa;--t-card:#fff;--t-ink:#17304f;--t-muted:#6f8199;--t-line:#dbe3ee;--t-accent:#2f6fc4;--t-gold:#b99058;
+  position:fixed;inset:0;z-index:300;display:flex;flex-direction:column;background:var(--t-bg);color:var(--t-ink);font-size:13px}
+[data-theme=dark] .ttd-r5h7,.sdl-shell[data-theme="dark"] .ttd-r5h7{--t-bg:#0f1c2e;--t-card:#182a42;--t-ink:#eef3fa;--t-muted:#a9b9cd;--t-line:#2f4562;--t-accent:#5f9be6}
+.ttd-r5h7 button{font:inherit;cursor:pointer}
+.ttd-r5h7 button:disabled{cursor:not-allowed;opacity:.5}
+.ttd-r5h7__head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;padding:16px 22px;background:var(--t-card);border-bottom:1px solid var(--t-line)}
+.ttd-r5h7__eyebrow{font-size:10px;letter-spacing:1.6px;font-weight:900;color:var(--t-gold)}
+.ttd-r5h7__head h2{margin:4px 0 2px;font-size:18px}
+.ttd-r5h7__head p{margin:0;color:var(--t-muted);font-size:12px}
+.ttd-r5h7__close{border:1px solid var(--t-line);background:var(--t-card);color:var(--t-ink);border-radius:9px;width:36px;height:36px;font-size:20px;line-height:1}
+.ttd-r5h7__body{flex:1;min-height:0;display:grid;grid-template-columns:220px minmax(0,1fr) 300px}
+.ttd-r5h7__files,.ttd-r5h7__panel{display:flex;flex-direction:column;gap:10px;padding:16px;background:var(--t-card);overflow:auto}
+.ttd-r5h7__files{border-right:1px solid var(--t-line)}
+.ttd-r5h7__panel{border-left:1px solid var(--t-line)}
+.ttd-r5h7__file{display:flex;gap:9px;align-items:flex-start;width:100%;padding:9px;border:1px solid var(--t-line);border-radius:10px;background:transparent;color:inherit;text-align:left}
+.ttd-r5h7__file.is-on{border-color:var(--t-accent);box-shadow:0 0 0 1px var(--t-accent) inset}
+.ttd-r5h7__file b{display:block;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:150px}
+.ttd-r5h7__file small{color:var(--t-muted);font-size:11px}
+.ttd-r5h7__mark{flex:none;display:grid;place-items:center;width:20px;height:20px;border-radius:50%;background:#fdeceb;color:#a23b33;font-size:11px;font-weight:900}
+.ttd-r5h7__mark.is-done{background:#e7f7f1;color:#187c61}
+.ttd-r5h7__viewer{display:flex;flex-direction:column;min-width:0;min-height:0;padding:12px}
+.ttd-r5h7__toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:10px}
+.ttd-r5h7__toolbar button{padding:7px 11px;border:1px solid var(--t-line);border-radius:9px;background:var(--t-card);color:var(--t-ink)}
+.ttd-r5h7__toolbar span{color:var(--t-muted);font-weight:700;padding:0 4px}
+.ttd-r5h7__toolbar .ttd-r5h7__add{margin-left:auto;background:var(--t-accent);border-color:var(--t-accent);color:#fff;font-weight:750}
+.ttd-r5h7__scroll{flex:1;min-height:0;overflow:auto;display:flex;justify-content:center;align-items:flex-start;padding:6px}
+.ttd-r5h7__stage{position:relative;box-shadow:0 6px 24px #0b1a2e30;background:#fff;touch-action:none;user-select:none}
+.ttd-r5h7__stage canvas{display:block}
+.ttd-r5h7__rendering{position:absolute;top:8px;left:8px;padding:4px 8px;border-radius:6px;background:#17304fcc;color:#fff;font-size:11px}
+.ttd-r5h7__box{position:absolute;border:1.5px dashed var(--t-accent);border-radius:4px;background:#2f6fc414;cursor:move;touch-action:none}
+.ttd-r5h7__box.is-on{border-style:solid;background:#2f6fc424}
+.ttd-r5h7__box img{width:100%;height:100%;object-fit:contain;object-position:center bottom;pointer-events:none}
+.ttd-r5h7__del{position:absolute;top:-11px;right:-11px;width:22px;height:22px;border-radius:50%;border:0;background:#c0392b;color:#fff;font-size:14px;line-height:1;display:none}
+.ttd-r5h7__box.is-on .ttd-r5h7__del,.ttd-r5h7__box:hover .ttd-r5h7__del{display:block}
+.ttd-r5h7__grip{position:absolute;right:-6px;bottom:-6px;width:14px;height:14px;border-radius:3px;background:var(--t-accent);cursor:nwse-resize;touch-action:none}
+.ttd-r5h7__hint{color:var(--t-muted);font-size:11.5px;margin:8px 4px 0}
+.ttd-r5h7__tabs{display:flex;gap:4px;padding:4px;border-radius:10px;background:var(--t-bg)}
+.ttd-r5h7__tabs button{flex:1;padding:7px;border:0;border-radius:8px;background:transparent;color:var(--t-muted);font-weight:750}
+.ttd-r5h7__tabs button.is-on{background:var(--t-card);color:var(--t-ink);box-shadow:0 1px 4px #13284720}
+.ttd-r5h7__saved{display:grid;place-items:center;min-height:120px;border:1px solid var(--t-line);border-radius:10px;background:#fff}
+.ttd-r5h7__saved img{max-width:100%;max-height:140px}
+.ttd-r5h7__pad{width:100%;height:160px;border:1px dashed #9fb0c5;border-radius:10px;background:#fff;touch-action:none}
+.ttd-r5h7__padrow{display:flex;flex-direction:column;gap:8px;font-size:12px}
+.ttd-r5h7__padrow button{align-self:flex-start;padding:6px 10px;border:1px solid var(--t-line);border-radius:8px;background:var(--t-card);color:var(--t-ink)}
+.ttd-r5h7__padrow label{display:flex;gap:8px;align-items:center}
+.ttd-r5h7__note{display:flex;flex-direction:column;gap:6px;font-weight:750;font-size:12px}
+.ttd-r5h7__note i{font-weight:400;color:var(--t-muted)}
+.ttd-r5h7__note textarea{border:1px solid var(--t-line);border-radius:9px;padding:8px 10px;background:var(--t-card);color:var(--t-ink);font:inherit;resize:vertical}
+.ttd-r5h7__summary{display:flex;flex-direction:column;gap:3px;padding-top:10px;border-top:1px solid var(--t-line)}
+.ttd-r5h7__summary span{font-weight:750}
+.ttd-r5h7__summary small{color:#a23b33}
+.ttd-r5h7__error{margin:0;padding:9px 11px;border-radius:9px;background:#fdeceb;color:#a23b33;font-size:12px}
+.ttd-r5h7__submit{padding:12px;border:0;border-radius:10px;background:var(--t-gold);color:#132842;font-weight:850}
+.ttd-r5h7__cancel{padding:9px;border:1px solid var(--t-line);border-radius:10px;background:transparent;color:var(--t-ink)}
+@media(max-width:1000px){.ttd-r5h7__body{grid-template-columns:1fr;overflow:auto}.ttd-r5h7__files{flex-direction:row;flex-wrap:wrap;border-right:0;border-bottom:1px solid var(--t-line)}.ttd-r5h7__file{width:auto}.ttd-r5h7__panel{border-left:0;border-top:1px solid var(--t-line)}.ttd-r5h7__scroll{min-height:60vh}}

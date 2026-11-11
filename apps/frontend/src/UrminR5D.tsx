@@ -5,6 +5,9 @@ import './UrminR5D.css'
 import './SuratKeluarR5F9.css'
 import './SuratMasukStatusR5H5.css'
 import { Pager, usePaged } from './PaginationR5H5'
+import { TtdNaskahR5H7 } from './TtdNaskahR5H7'
+import { useOpsiDropdown, withOpsi } from './OpsiDropdownR5H8'
+import { SearchSelect } from './SearchSelectR5H8'
 
 type Kind = 'surat_keluar' | 'agenda' | 'arsip'
 type OutgoingStatus = 'all' | 'draft' | 'submitted' | 'approved' | 'rejected' | 'legacy'
@@ -39,6 +42,10 @@ type KodeArsip = { code: string; name: string; depth: number }
  * ada satu pun paur di dalam sistem.
  */
 const JABATAN_HADIR = ['Kabagrenmin', 'Urmin', 'Subbagren', 'Subbagsumda', 'Subbagbinfung']
+// R5H8: dropdown yang isinya dari Master Data (atau dari data nyata, seperti
+// rujukan) memakai SearchSelect: bisa dicari. Derajat dan Lingkup Surat tetap
+// <select> biasa -- daftarnya tetap dan pendek.
+const SEARCHABLE_URMIN = new Set(['rujukanArahan','rujukanSurat','jalurSurat','penandatangan','pemberiNomor','tipeSurat','jenisArsip','statusArsip'])
 type StoredFile = { id: string; name: string; mediaType: string; size: number; createdAt: string; purpose?: 'pendukung' }
 type QueuedFile = { id: string; file: File; url: string }
 type FilePreview = { name: string; mime: string; url: string; temporary: boolean }
@@ -161,6 +168,7 @@ function errorMessage(raw: string) { return ({
   kode_arsip_required: 'Pilih KKA (Kode Klasifikasi Arsip); dibutuhkan untuk menyusun nomor surat.',
   unit_nomor_required: 'Pilih Lingkup Surat; dibutuhkan untuk menyusun nomor surat.',
   workflow_state_changed: 'Status surat berubah. Muat ulang dan coba lagi.',
+  reservation_invalid: 'Kode register yang dipesan sudah tidak berlaku (terpakai atau berganti tahun). Tutup form lalu tekan Tambah lagi.',
   invalid_urminregister_record: 'Periksa kode, nama, tanggal, jumlah, dan panjang isian.',
   not_found: 'Data tidak ditemukan atau sudah diarsipkan.',
   file_limit_5mib: 'Maksimal 5 MiB untuk setiap foto atau PDF.',
@@ -256,18 +264,30 @@ function nomorUrut(nomorSurat?: string): string {
  * dengan kehadiran sama menghasilkan string yang sama persis.
  */
 function MultiPick({ field, value, onChange }: { field: Field; value: string; onChange: (v: string) => void }) {
+  const [term, setTerm] = useState('')
   const picked = value.split(',').map(s=>s.trim()).filter(Boolean)
+  const choices = field.choices||[]
+  // R5H8: nilai tersimpan yang sudah tidak ada di Master Data (diganti nama)
+  // tetap tampil dan tetap tersimpan, di belakang pilihan yang masih ada.
+  const stale = picked.filter(p=>!choices.includes(p))
   const toggle = (choice: string) => {
     const next = picked.includes(choice) ? picked.filter(x=>x!==choice) : [...picked, choice]
-    onChange((field.choices||[]).filter(c=>next.includes(c)).join(', '))
+    onChange([...choices.filter(c=>next.includes(c)), ...stale.filter(c=>next.includes(c))].join(', '))
   }
+  const needle = term.trim().toLocaleLowerCase('id-ID')
+  const shown = [...choices, ...stale].filter(c=>!needle||c.toLocaleLowerCase('id-ID').includes(needle))
   return <div className="sumda-field sumda-field-wide">
     <span>{field.label}</span>
+    {choices.length > 5 && <div className="sdl-multipick__search">
+      <Icon name="search" size={15}/>
+      <input value={term} onChange={e=>setTerm(e.target.value)} placeholder={`Cari ${field.label.toLowerCase()}...`} maxLength={100} aria-label={`Cari ${field.label}`}/>
+    </div>}
     <div className="sdl-multipick" role="group" aria-label={field.label}>
-      {(field.choices||[]).map(choice=>{
+      {shown.length===0&&<small className="sdl-multipick__hint">Tidak ada yang cocok.</small>}
+      {shown.map(choice=>{
         const on = picked.includes(choice)
         return <button type="button" key={choice} className={`sdl-multipick__chip${on?' is-on':''}`} aria-pressed={on} onClick={()=>toggle(choice)}>
-          <Icon name={on?'check':'plus'} size={15}/> {choice}
+          <Icon name={on?'check':'plus'} size={15}/> {choice}{stale.includes(choice)?' (nilai lama)':''}
         </button>
       })}
     </div>
@@ -346,13 +366,9 @@ function JenisSuratPick({ field, value, onChange }: { field: Field; value: strin
       .catch(() => { if (live) setFailed(true) })
     return () => { live = false }
   }, [])
-  const known = items.some(i => i.code === value)
   return <label className="sumda-field"><span>{field.label}</span>
-    <select value={value} onChange={e=>onChange(e.target.value)}>
-      <option value="">Pilih jenis surat</option>
-      {items.map(i => <option key={i.code} value={i.code}>{i.code} — {i.name}</option>)}
-      {value && !known && <option value={value}>{value} (nilai lama)</option>}
-    </select>
+    <SearchSelect value={value} onChange={onChange} placeholder="Pilih jenis surat" ariaLabel={field.label}
+      options={items.map(i => ({ value: i.code, label: `${i.code} — ${i.name}` }))}/>
     <small className="sdl-kodearsip__hint">{failed
       ? 'Daftar jenis surat belum bisa dimuat.'
       : items.length === 0
@@ -583,7 +599,9 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate,isKabag
   const sudahKeKabag = (items:Entry[]) => kabagOutgoing ? items.filter(item=>['submitted','approved','rejected'].includes(outgoingStatus(item))) : items
   const def = schema[kind]
   const {choices:dynamicChoices,suratOfArahan,arahanIdOf} = useSuratKeluarChoices(kind==='surat_keluar')
-  const formFields = useMemo(()=>def.fields.map(f=>dynamicChoices[f.key]?{...f,choices:dynamicChoices[f.key]}:f),[def,dynamicChoices])
+  // R5H8: Jenis/Status Arsip dan Yang Menghadiri dari Master Data (bawaan kode bila tidak tersedia).
+  const opsiDropdown = useOpsiDropdown('urmin', kind==='arsip'||kind==='agenda')
+  const formFields = useMemo(()=>withOpsi(def.fields.map(f=>dynamicChoices[f.key]?{...f,choices:dynamicChoices[f.key]}:f),kind,opsiDropdown),[def,dynamicChoices,kind,opsiDropdown])
   const [records,setRecords] = useState<Entry[]>([])
   const [selected,setSelected] = useState<Entry|null>(null)
   const [form,setForm] = useState<Draft>(() => blank(kind))
@@ -591,6 +609,9 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate,isKabag
   // sendiri). Ini pilihan layar saja -- tidak ada kunci baru di backend: "tanpa
   // rujukan" berarti rujukanArahan/rujukanSurat/rujukanArahanId dikosongkan.
   const [tanpaRujukan,setTanpaRujukan] = useState(false)
+  // R5H7: Kode Register Internal yang dipesan saat "Tambah" ditekan (Express
+  // POST /nomor-urut). Dipakai saat draf pertama kali disimpan (?reservasi=).
+  const [pesanan,setPesanan] = useState<{id:string;urut:number}|null>(null)
   const [editing,setEditing] = useState(false)
   const [search,setSearch] = useState('')
   const [appliedSearch,setAppliedSearch] = useState('')
@@ -607,6 +628,13 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate,isKabag
   const [workflowRecord,setWorkflowRecord]=useState<Entry|null>(null)
   // R5H6: jumlah PDF naskah surat di jendela Proses; syarat tombol Ajukan.
   const [naskahPdf,setNaskahPdf]=useState<number|null>(null)
+  // R5H7: naskah PDF yang harus ditandatangani Kabag, jendela penanda tangan,
+  // dan hasil bertanda tangan (setelah disetujui).
+  const [naskahFiles,setNaskahFiles]=useState<{id:string;name:string}[]>([])
+  const [ttdOpen,setTtdOpen]=useState(false)
+  // R5H8: naskah asli (sebelum TTD) tertutup bila sudah ada naskah bertanda tangan.
+  const [naskahAsliOpen,setNaskahAsliOpen]=useState(false)
+  const [signedFiles,setSignedFiles]=useState<{id:string;name:string;size:number;signedAt:string;signer:string;marks:number}[]>([])
   // R5H5: jendela Berkas surat keluar yang dibuka dari daftar.
   const [berkasRecord,setBerkasRecord]=useState<Entry|null>(null)
   // R5H5: jendela berkas untuk arsip yang berasal dari disposisi.
@@ -632,6 +660,15 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate,isKabag
   },[])
 
 
+  // R5H8: detail surat keluar berupa jendela pop-up (permintaan pemilik),
+  // sama dengan form Tambah. Esc menutupnya -- kecuali saat jendela tanda
+  // tangan, pratinjau berkas, dialog konfirmasi, atau proses sedang berjalan.
+  useEffect(()=>{
+    if(!workflowRecord)return
+    const k=(e:KeyboardEvent)=>{if(e.key==='Escape'&&!e.defaultPrevented&&!ttdOpen&&!preview&&!workflowBusy&&!berkasRecord&&!document.querySelector('.sdl-confirm-shade'))setWorkflowRecord(null)}
+    window.addEventListener('keydown',k)
+    return()=>window.removeEventListener('keydown',k)
+  },[workflowRecord,ttdOpen,preview,workflowBusy,berkasRecord])
   async function load(q = '', src = source) {
     const data = await call<{items:Entry[];limited:boolean}>(`${url}?kind=${kind}&q=${encodeURIComponent(q)}${src?`&source=${src}`:''}`)
     setRecords(sudahKeKabag(data.items))
@@ -706,7 +743,8 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate,isKabag
     setSavedFiles(result.files.filter(f=>f.purpose!=='pendukung'))
   }
   function newRecord() {
-    dismissPreview();clearQueued();setSavedFiles([]);setSelected(null);setForm(blank(kind));setTanpaRujukan(false)
+    dismissPreview();clearQueued();setSavedFiles([]);setSelected(null);setForm(blank(kind));setTanpaRujukan(false);setPesanan(null)
+    if(kind==='surat_keluar')void call<{id:string;urut:number}>(`${url}nomor-urut`,'POST',{}).then(p=>setPesanan({id:p.id,urut:p.urut})).catch(e=>showToast(`Kode register belum bisa dipesan; nomor akan terbit saat disimpan. ${e instanceof Error?e.message:''}`,'error'))
     setEditing(true);setError('');setNotice('');setInlineError('');setProgress('')
   }
   function edit(p:Entry) {
@@ -802,7 +840,8 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate,isKabag
         if(changed) await call(`${url}${selected.id}`,'PATCH',form)
         row=changed?await call<Entry>(`${url}${selected.id}`):selected
       } else {
-        const created=await call<{id:string;workRecordId:string}>(url,'POST',form)
+        const created=await call<{id:string;workRecordId:string}>(kind==='surat_keluar'&&pesanan?`${url}?reservasi=${encodeURIComponent(pesanan.id)}`:url,'POST',form)
+        setPesanan(null)
         // Immediately remember the created record: failed uploads must NEVER create duplicates.
         row={id:created.id,workRecordId:created.workRecordId,kind,code:form.code,title:form.title,classification:form.classification,fields:{...form.fields},version:1,createdAt:new Date().toISOString()}
         setSelected(row)
@@ -827,11 +866,28 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate,isKabag
       setEditing(false);setSelected(null)
     },'Surat dan lampiran berhasil disimpan.')
   }
+  // R5H7: naskah bertanda tangan (Express saja). Gagal memuat tidak
+  // menggagalkan jendela Proses -- bagiannya hanya tidak tampil.
+  async function loadSigned(id:string) {
+    try{const r=await call<{items:{id:string;name:string;size:number;signedAt:string;signer:string;marks:number}[]}>(`${url}${encodeURIComponent(id)}/signed-files`);setSignedFiles(r.items||[])}
+    catch{setSignedFiles([])}
+  }
+  async function afterSigned(message:string) {
+    setTtdOpen(false)
+    if(!workflowRecord)return
+    try{
+      setWorkflowDetail(await call<WorkflowDetail>(`${url}${encodeURIComponent(workflowRecord.id)}/workflow`))
+      await loadSigned(workflowRecord.id)
+      await load(appliedSearch)
+    }catch{/* status sudah tersimpan; tampilan diperbarui saat dibuka ulang */}
+    showToast(message,'success')
+  }
   async function openWorkflow(p:Entry) {
-    setWorkflowRecord(p);setWorkflowDetail(null);setWorkflowNote('');setNaskahPdf(null);setWorkflowBusy(true)
+    setWorkflowRecord(p);setWorkflowDetail(null);setWorkflowNote('');setNaskahPdf(null);setNaskahFiles([]);setSignedFiles([]);setTtdOpen(false);setNaskahAsliOpen(false);setWorkflowBusy(true)
     try {
       const item=await call<WorkflowDetail>(`${url}${encodeURIComponent(p.id)}/workflow`)
       setWorkflowDetail(item)
+      if(item.status==='approved') void loadSigned(p.id)
     } catch(e) {showToast(e instanceof Error?e.message:'Gagal memuat alur persetujuan','error');setWorkflowRecord(null)}
     finally {setWorkflowBusy(false)}
   }
@@ -880,6 +936,17 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate,isKabag
   }
   const RUJUKAN_KEYS = ['rujukanArahan','rujukanSurat']
 
+  const renderField=(f:Field)=>(f.input==='multi'?<MultiPick key={f.key} field={f} value={form.fields[f.key]||''} onChange={v=>changeField(f.key,v)}/>:f.input==='kodearsip'?<KodeArsipPick key={f.key} field={f} value={form.fields[f.key]||''} onChange={v=>changeField(f.key,v)}/>:f.input==='jenissurat'?<JenisSuratPick key={f.key} field={f} value={form.fields[f.key]||''} onChange={v=>changeField(f.key,v)}/>:f.input==='nomorsurat'?<label className="sumda-field" key={f.key}><span>{f.label}</span>
+              {/* R5G13: dibangkitkan backend saat draf dibuat, jadi ia
+                  ditampilkan, bukan diminta. Dibiarkan sebagai teks statis dan
+                  bukan input terkunci supaya tidak terlihat seperti kolom yang
+                  seharusnya bisa diisi. */}
+              <output className="sdl-nomorsurat">{form.fields[f.key]||'Terbit otomatis setelah disimpan'}</output>
+              <small className="sdl-kodearsip__hint">Disusun dari Derajat, Jenis Surat, Kode Arsip, dan Lingkup Surat di bawah. Nomor urut diambil saat draf disimpan dan tidak dapat dipakai ulang.</small>
+            </label>:f.key==='rujukanSurat'&&rujukanSuratLocked?<label className="sumda-field" key={f.key}><span>{f.label}</span>
+              <output className="sdl-nomorsurat">{form.fields.rujukanSurat||suratOfArahan[form.fields.rujukanArahan||'']}</output>
+              <small className="sdl-kodearsip__hint">Mengikuti surat asal dari Rujukan Disposisi. Kosongkan Rujukan Disposisi untuk memilih surat lain.</small>
+            </label>:<label className={`sumda-field ${f.input==='textarea'?'sumda-field-wide':''}`} key={f.key}><span>{f.label}</span>{f.input==='select'&&SEARCHABLE_URMIN.has(f.key)?<SearchSelect value={form.fields[f.key]||''} options={(f.choices||[]).map(x=>({value:x,label:x}))} onChange={v=>changeField(f.key,v)} placeholder={`Pilih ${f.label.toLowerCase()}`} ariaLabel={f.label}/>:f.input==='select'?<select value={form.fields[f.key]||''} onChange={e=>changeField(f.key,e.target.value)}><option value="">Pilih {f.label.toLowerCase()}</option>{f.choices?.map(x=><option key={x} value={x}>{x}</option>)}{/* R5G11: nilai tersimpan yang sudah tidak ada di daftar tetap ditampilkan sebagai pilihan. Tanpa ini, mempersempit pilihan Derajat membuat surat lama tampil kosong di layar padahal datanya masih ada — lalu tersimpan kosong begitu disunting karena alasan lain. */}{form.fields[f.key]&&!f.choices?.includes(form.fields[f.key])&&<option value={form.fields[f.key]}>{form.fields[f.key]} (nilai lama)</option>}</select>:f.input==='textarea'?<textarea rows={3} maxLength={200} value={form.fields[f.key]||''} onChange={e=>changeField(f.key,e.target.value)} placeholder={f.placeholder||'Tambahkan keterangan...'}/>:<input type={f.input||'text'} min={f.input==='number'?0:undefined} step={f.input==='number'?1:undefined} maxLength={f.input==='number'?undefined:200} value={form.fields[f.key]||''} onChange={e=>changeField(f.key,e.target.value)} placeholder={f.placeholder||''}/>}</label>)
   return <div className="sumda-r5b urmin-r5d">
     {kind!=='surat_keluar'&&<section className="sumda-overview" aria-label="Ringkasan data">
       <div className="sumda-overview-mark"><Icon name={def.icon} size={24}/></div>
@@ -921,7 +988,8 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate,isKabag
       {limited&&<div className="sumda-inline-note"><Icon name="info" size={16}/> Data yang dimuat dibatasi 100 entri; filter status hanya berlaku pada data yang ditampilkan. Gunakan pencarian untuk menemukan surat lain.</div>}
       {loading ? <div className="sumda-empty" role="status"><div className="sumda-empty-icon"><Icon name="refresh" size={24}/></div><h4>Memuat data...</h4><p></p></div>
       : displayed.length===0 ? <div className="sumda-empty"><div className="sumda-empty-icon"><Icon name={appliedSearch?'search':def.icon} size={30}/></div><h4>{kind==='surat_keluar'&&outgoingFilter!=='all'?'Tidak ada surat pada status ini':appliedSearch?'Tidak ada hasil yang cocok':'Belum ada data terdaftar'}</h4><p>{kind==='surat_keluar'&&outgoingFilter!=='all'?'Ubah filter status atau cari menggunakan kode register.':appliedSearch?'Coba kata kunci lain atau reset pencarian.':'Belum ada data. Tambahkan data pertama Anda.'}</p><button type="button" className="sumda-button sumda-button-primary" onClick={kind==='surat_keluar'&&outgoingFilter!=='all'?()=>setOutgoingFilter('all'):appliedSearch?resetSearch:newRecord}>{kind==='surat_keluar'&&outgoingFilter!=='all'?'Semua status':appliedSearch?'Tampilkan semua':`Tambah ${def.singular} pertama`}</button></div>
-      : <div className="sumda-table-scroll"><table className="sumda-table"><thead>{kind==='surat_keluar'?<tr><th>Register / Nomor Surat</th><th>Perihal</th><th>Kepada</th><th>Tanggal Surat</th><th>Status Surat</th><th className="sumda-actions-title">Aksi</th></tr>:<tr>{kind!=='agenda'&&<th>{def.code}</th>}<th>Judul / Keterangan</th><th>Informasi</th>{kind!=='agenda'&&<th>Klasifikasi</th>}<th>Tanggal input</th><th className="sumda-actions-title">Aksi</th></tr>}</thead><tbody>{pagedRows.map(p=><tr key={p.id} className={selected?.id===p.id?'sdl-urmin-focus-row':undefined}>
+      : <div className="sumda-table-scroll"><table className="sumda-table"><thead>{kind==='surat_keluar'?<tr><th>Register / Nomor Surat</th><th>Perihal</th><th>Kepada</th><th>Tanggal Surat</th><th>Status Surat</th>{!kabagOutgoing&&<th className="sumda-actions-title">Aksi</th>}</tr>:<tr>{kind!=='agenda'&&<th>{def.code}</th>}<th>Judul / Keterangan</th><th>Informasi</th>{kind!=='agenda'&&<th>Klasifikasi</th>}<th>Tanggal input</th><th className="sumda-actions-title">Aksi</th></tr>}</thead><tbody>{pagedRows.map(p=><tr key={p.id} className={[selected?.id===p.id?'sdl-urmin-focus-row':'',kind==='surat_keluar'?'sdl-outgoing-row':'',kind==='surat_keluar'&&workflowRecord?.id===p.id?'is-open':''].filter(Boolean).join(' ')||undefined}
+          {...(kind==='surat_keluar'?{tabIndex:0,role:'button','aria-label':`Buka detail ${p.title}`,onClick:()=>void openWorkflow(p),onKeyDown:(e:{key:string;target:EventTarget;currentTarget:EventTarget;preventDefault:()=>void})=>{if((e.key==='Enter'||e.key===' ')&&e.target===e.currentTarget){e.preventDefault();void openWorkflow(p)}}}:{})}>
          {kind==='surat_keluar'?<>
            <td><div className="sdl-outgoing-nomor"><span className="sumda-code">{nomorUrut(p.fields.nomorSurat)||p.code}</span><small className="sdl-outgoing-secondary">{p.fields.nomorSurat||'Nomor surat belum diisi'}</small></div></td>
            <td><strong className="sdl-outgoing-title">{p.title}</strong>{p.classification==='penting'&&<small className="sdl-outgoing-important">Penting</small>}</td>
@@ -939,7 +1007,7 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate,isKabag
            {kind!=='agenda'&&<td><span className={`sumda-classification ${p.classification==='penting'?'is-important':''}`}>{p.classification==='penting'?'Penting':'Biasa'}</span></td>}
            <td className="sumda-secondary-cell">{readableDate(p.createdAt)}</td>
          </>}
-         <td><div className="sumda-actions">{kind==='surat_keluar'&&<button type="button" className="sumda-action" onClick={()=>void openWorkflow(p)}><Icon name="info" size={16}/> Proses</button>}{!kabagOutgoing&&<><button type="button" className="sumda-action" title="Edit data" onClick={()=>edit(p)} disabled={kind==='surat_keluar'&&!(['draft','rejected'].includes(outgoingStatus(p)))}><Icon name="edit" size={16}/> <span>Edit</span></button><button type="button" className="sumda-action sumda-action-attachment" title={kind==='surat_keluar'?'Lihat dan tambah berkas surat':'Buka lampiran dan disposisi'} onClick={()=>kind==='surat_keluar'?setBerkasRecord(p):kind==='arsip'&&p.fields.sumber==='disposisi'?setArsipRecord(p):openFiles(p.workRecordId)}><Icon name="attachment" size={16}/> <span>{kind==='surat_keluar'?'Berkas':'File & Disposisi'}</span></button><button type="button" className="sumda-action sumda-action-danger" title="Arsipkan data" onClick={()=>remove(p)} disabled={busy||(kind==='surat_keluar'&&!(['draft','rejected'].includes(outgoingStatus(p))))}><Icon name="archive" size={16}/><span className="sumda-sr-only">Arsipkan</span></button></>}</div></td>
+         {!kabagOutgoing&&<td onClick={e=>e.stopPropagation()} onKeyDown={e=>e.stopPropagation()}><div className="sumda-actions">{<><button type="button" className="sumda-action" title="Edit data" onClick={()=>edit(p)} disabled={kind==='surat_keluar'&&!(['draft','rejected'].includes(outgoingStatus(p)))}><Icon name="edit" size={16}/> <span>Edit</span></button><button type="button" className="sumda-action sumda-action-attachment" title={kind==='surat_keluar'?'Lihat dan tambah berkas surat':'Buka lampiran dan disposisi'} onClick={()=>kind==='surat_keluar'?setBerkasRecord(p):kind==='arsip'&&p.fields.sumber==='disposisi'?setArsipRecord(p):openFiles(p.workRecordId)}><Icon name="attachment" size={16}/> <span>{kind==='surat_keluar'?'Berkas':'File & Disposisi'}</span></button><button type="button" className="sumda-action sumda-action-danger" title="Arsipkan data" onClick={()=>remove(p)} disabled={busy||(kind==='surat_keluar'&&!(['draft','rejected'].includes(outgoingStatus(p))))}><Icon name="archive" size={16}/><span className="sumda-sr-only">Arsipkan</span></button></>}</div></td>}
         </tr>)}</tbody></table></div>}
       <Pager pager={pager} label={def.singular.toLowerCase()}/>
       <footer className="sumda-list-footer"><span><Icon name="list" size={15}/> {loading?'Memuat...':`${displayed.length} dari ${records.length} data ditampilkan${limited?' (hasil terbatas)':''}`}</span><span></span></footer>
@@ -967,21 +1035,53 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate,isKabag
         </div>
       </section>
     </div>}
+    {/* R5H7: detail surat keluar tampil sebagai PANEL di bawah daftar, sama
+        seperti detail Surat Masuk -- bukan jendela Proses. Isinya: informasi
+        surat, status + tindakan, naskah bertanda tangan, naskah, berkas
+        pendukung, riwayat. */}
     {workflowRecord&&<div className="sumda-dialog-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget&&!workflowBusy)setWorkflowRecord(null)}}>
-      <section className="sumda-dialog sdl-outgoing-workflow-modal" role="dialog" aria-modal="true" aria-labelledby="sdl-outgoing-workflow-title">
-        <div className="sumda-dialog-head"><div className="sumda-dialog-emblem"><Icon name="surat_keluar" size={22}/></div><div><span className="sumda-eyebrow">ALUR SURAT KELUAR</span><h2 id="sdl-outgoing-workflow-title">{workflowRecord.title}</h2><p>{workflowRecord.code}</p></div><button type="button" className="sumda-dialog-close" disabled={workflowBusy} onClick={()=>setWorkflowRecord(null)} aria-label="Tutup"><Icon name="close" size={20}/></button></div>
+      <section className="sumda-dialog sdl-outgoing-workflow-modal sdl-outgoing-detail-modal" role="dialog" aria-modal="true" aria-labelledby="sdl-outgoing-workflow-title">
+        <div className="sumda-dialog-head"><div className="sumda-dialog-emblem"><Icon name="surat_keluar" size={22}/></div><div><span className="sumda-eyebrow">DETAIL SURAT KELUAR</span><h2 id="sdl-outgoing-workflow-title">{workflowRecord.title}</h2><p>{workflowRecord.fields.nomorSurat||workflowRecord.code}</p></div><button type="button" className="sumda-dialog-close" disabled={workflowBusy} onClick={()=>setWorkflowRecord(null)} aria-label="Tutup"><Icon name="close" size={20}/></button></div>
         <div className="sdl-outgoing-workflow-content">
           {workflowDetail?<>
-            <div className="sdl-outgoing-workflow-status"><strong>{workflowLabel[workflowDetail.status]||workflowDetail.status}</strong><span>{workflowDetail.status==='approved'?'Menunggu integrasi tanda tangan elektronik tersertifikasi. Surat belum dapat dikirim.':workflowDetail.status==='submitted'?'Menunggu keputusan Kabagrenmin.':workflowDetail.status==='rejected'?'Perbaiki surat dan lampiran, lalu ajukan kembali.':workflowDetail.status==='legacy'?'Status lama memerlukan verifikasi sebelum masuk alur resmi baru.':'Lampirkan PDF dan ajukan untuk persetujuan.'}</span></div>
+            <dl className="sm-details sdl-outgoing-info">
+              <div><dt>Nomor Surat</dt><dd>{workflowRecord.fields.nomorSurat||'—'}</dd></div>
+              <div><dt>Kepada</dt><dd>{workflowRecord.fields.tujuan||'—'}</dd></div>
+              <div><dt>Tanggal Naskah Dinas</dt><dd>{workflowRecord.fields.tanggalSurat?readableDate(workflowRecord.fields.tanggalSurat):'—'}</dd></div>
+              <div><dt>Derajat · Klasifikasi</dt><dd>{workflowRecord.fields.sifatSurat||'Biasa'} · {workflowRecord.classification==='penting'?'Rahasia':'Biasa'}</dd></div>
+              <div><dt>Jenis Surat</dt><dd>{workflowRecord.fields.jenisSurat||'—'}</dd></div>
+              <div><dt>KKA</dt><dd>{workflowRecord.fields.kodeArsip||'—'}</dd></div>
+              <div><dt>Pemberi Tanda Tangan</dt><dd>{workflowRecord.fields.penandatangan||'—'}</dd></div>
+              <div><dt>Dibuat</dt><dd>{readableDate(workflowRecord.createdAt)}</dd></div>
+              <div className="sm-span"><dt>Dasar Surat</dt><dd>{workflowRecord.fields.rujukanArahan||workflowRecord.fields.rujukanSurat?<>{workflowRecord.fields.rujukanArahan&&<span className="sdl-outgoing-ref">Disposisi: {workflowRecord.fields.rujukanArahan}</span>}{workflowRecord.fields.rujukanSurat&&<span className="sdl-outgoing-ref">Surat: {workflowRecord.fields.rujukanSurat}</span>}</>:'Tanpa rujukan'}</dd></div>
+              <div className="sm-span"><dt>Perihal</dt><dd>{workflowRecord.fields.perihal||workflowRecord.title}</dd></div>
+            </dl>
+            <div className="sdl-outgoing-workflow-status"><strong>{workflowDetail.status==='approved'&&signedFiles.length>0?'Disetujui · Ditandatangani Kabagrenmin':workflowLabel[workflowDetail.status]||workflowDetail.status}</strong><span>{workflowDetail.status==='approved'&&signedFiles.length>0?'Tanda tangan visual, bukan TTE tersertifikasi.':workflowDetail.status==='approved'?'Menunggu integrasi tanda tangan elektronik tersertifikasi. Surat belum dapat dikirim.':workflowDetail.status==='submitted'?'Menunggu keputusan Kabagrenmin.':workflowDetail.status==='rejected'?'Perbaiki surat dan lampiran, lalu ajukan kembali.':workflowDetail.status==='legacy'?'Status lama memerlukan verifikasi sebelum masuk alur resmi baru.':'Lampirkan PDF dan ajukan untuk persetujuan.'}</span></div>
             {((workflowDetail.canSubmit&&!kabagOutgoing)||workflowDetail.canReview)&&<label className="sumda-field"><span>{workflowDetail.canReview?'Catatan keputusan':'Catatan pengajuan (opsional)'}</span><textarea rows={3} maxLength={500} value={workflowNote} onChange={e=>setWorkflowNote(e.target.value)} placeholder={workflowDetail.canReview?'Isi arahan atau alasan jika dikembalikan...':'Catatan untuk Kabagrenmin...'}/></label>}
             <div className="sdl-outgoing-workflow-actions">
               {workflowDetail.canSubmit&&!kabagOutgoing&&<button type="button" disabled={workflowBusy||naskahPdf===0} title={naskahPdf===0?'Unggah minimal satu PDF di bagian Naskah Surat & Lampiran.':undefined} className="sumda-button sumda-button-primary" onClick={()=>void workflowAction('submit')}>Ajukan ke Kabagrenmin</button>}
-              {workflowDetail.canReview&&<><button type="button" disabled={workflowBusy} className="sumda-button sumda-button-primary" onClick={()=>void workflowAction('approve')}>Setujui Surat</button><button type="button" disabled={workflowBusy} className="sumda-button sumda-button-cancel" onClick={()=>void workflowAction('reject')}>Kembalikan untuk Revisi</button></>}
+              {workflowDetail.canReview&&<><button type="button" disabled={workflowBusy} className="sumda-button sumda-button-primary" onClick={()=>{if(!naskahFiles.length){showToast('Surat ini tidak memiliki naskah PDF untuk ditandatangani. Kembalikan untuk revisi.','error');return}setTtdOpen(true)}}>Tanda Tangani &amp; Setujui</button><button type="button" disabled={workflowBusy} className="sumda-button sumda-button-cancel" onClick={()=>void workflowAction('reject')}>Kembalikan untuk Revisi</button></>}
             </div>
             {workflowDetail.canSubmit&&!kabagOutgoing&&naskahPdf===0&&<p className="urmin-upload-error" role="alert">Belum bisa diajukan: unggah minimal satu <b>PDF</b> di bagian <b>Naskah Surat &amp; Lampiran</b> di bawah. Berkas Pendukung tidak dihitung.</p>}
-            <h3 className="sdl-outgoing-workflow-subtitle">Naskah Surat &amp; Lampiran</h3>
-            <p className="urmin-file-hint">{kabagOutgoing?'Naskah yang diajukan untuk Anda periksa.':'Ikut diperiksa dan disetujui Kabagrenmin; terkunci setelah diajukan.'}</p>
-            <BerkasSuratKeluar key={`naskah-${workflowRecord.workRecordId}`} mode="naskah" editable={['draft','rejected'].includes(workflowDetail.status)&&!kabagOutgoing} workRecordId={workflowRecord.workRecordId} onPreview={f=>void showSaved(f,workflowRecord.workRecordId)} onFiles={list=>setNaskahPdf(list.filter(f=>f.mediaType==='application/pdf').length)}/>
+            {signedFiles.length>0&&<div className="sdl-signed-block"><h3 className="sdl-outgoing-workflow-subtitle">Naskah Bertanda Tangan</h3>
+            <p className="urmin-file-hint">Ditandatangani {signedFiles[0].signer} · {readableDate(signedFiles[0].signedAt)}</p>
+            <div className="urmin-file-grid">{signedFiles.map(f=><div className="urmin-file-card" key={f.id}>
+              <div className="urmin-file-thumb"><Icon name="file" size={26}/><span>PDF</span></div>
+              <div className="urmin-file-name" title={f.name}>{f.name}</div><small>{f.marks} tanda tangan · {(f.size/1024).toFixed(0)} KB</small>
+              <div className="urmin-file-actions"><a href={`${url}${encodeURIComponent(workflowRecord.id)}/signed-files/${encodeURIComponent(f.id)}`} download={f.name}>Unduh</a></div>
+            </div>)}</div></div>}
+            {/* R5H8: setelah ditandatangani, naskah ASLI (sebelum TTD) disembunyikan
+                agar tidak tertukar dengan naskah bertanda tangan; bisa dibuka bila
+                perlu. Komponen tetap terpasang (hanya `hidden`) supaya daftar
+                naskah tetap termuat. */}
+            {signedFiles.length>0
+              ?<button type="button" className="sdl-naskah-asli-toggle" aria-expanded={naskahAsliOpen} aria-controls="sdl-naskah-asli" onClick={()=>setNaskahAsliOpen(v=>!v)}>
+                <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 6 6 6-6 6"/></svg>
+                <span>{naskahAsliOpen?'Sembunyikan':'Lihat'} dokumen asli</span>
+              </button>
+              :<><h3 className="sdl-outgoing-workflow-subtitle">Naskah Surat &amp; Lampiran</h3>
+              <p className="urmin-file-hint">{kabagOutgoing?'Naskah yang diajukan untuk Anda periksa.':'Ikut diperiksa dan disetujui Kabagrenmin; terkunci setelah diajukan.'}</p></>}
+            <div id="sdl-naskah-asli" hidden={signedFiles.length>0&&!naskahAsliOpen}><BerkasSuratKeluar key={`naskah-${workflowRecord.workRecordId}`} mode="naskah" editable={['draft','rejected'].includes(workflowDetail.status)&&!kabagOutgoing} workRecordId={workflowRecord.workRecordId} onPreview={f=>void showSaved(f,workflowRecord.workRecordId)} onFiles={list=>{const pdfs=list.filter(f=>f.mediaType==='application/pdf');setNaskahPdf(pdfs.length);setNaskahFiles(pdfs.map(f=>({id:f.id,name:f.name})))}}/></div>
             {/* R5H6: Kabagrenmin memutus berdasarkan naskah surat; berkas pendukung
                 adalah urusan operator dan tidak ditampilkan kepadanya. */}
             {!kabagOutgoing&&<><h3 className="sdl-outgoing-workflow-subtitle">Berkas Pendukung</h3>
@@ -989,18 +1089,18 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate,isKabag
             <BerkasSuratKeluar workRecordId={workflowRecord.workRecordId} onPreview={f=>void showSaved(f,workflowRecord.workRecordId)}/></>}
             <h3 className="sdl-outgoing-workflow-subtitle">Riwayat Persetujuan</h3>
             {workflowDetail.events.length===0?<p className="sdl-outgoing-workflow-empty">Belum ada proses persetujuan.</p>:<div className="sdl-outgoing-workflow-timeline">{workflowDetail.events.map(ev=><div key={ev.id}><strong>{ev.action==='submitted'?'Diajukan':ev.action==='approved'?'Disetujui':'Dikembalikan'}</strong><small>{ev.actor} · {readableDate(ev.at)}</small>{ev.note&&<p>{ev.note}</p>}</div>)}</div>}
-          </>:<p className="sdl-outgoing-workflow-empty">Memuat riwayat...</p>}
+          </>:<p className="sdl-outgoing-workflow-empty">Memuat detail surat...</p>}
         </div>
       </section>
     </div>}
     {editing&&<div className="sumda-dialog-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget&&!busy)closeEditor()}}>
       <section className="sumda-dialog" role="dialog" aria-modal="true" aria-labelledby="urmin-dialog-title" aria-describedby="urmin-dialog-hint">
-        <div className="sumda-dialog-head"><div className="sumda-dialog-emblem"><Icon name={def.icon} size={22}/></div><div><span className="sumda-eyebrow">{selected?'UBAH DATA':'ENTRI BARU'} / URMIN</span><h2 id="urmin-dialog-title">{selected?'Edit':'Tambah'} {def.singular}</h2><p id="urmin-dialog-hint">{kind==='surat_keluar'?'Lengkapi data dan lampiran PDF, lalu ajukan melalui tombol Proses setelah tersimpan.':'Isi data di bawah ini. Kolom dengan tanda * wajib diisi.'}</p></div><button type="button" className="sumda-dialog-close" onClick={closeEditor} aria-label="Tutup formulir" disabled={busy}><Icon name="close" size={20}/></button></div>
+        <div className="sumda-dialog-head"><div className="sumda-dialog-emblem"><Icon name={def.icon} size={22}/></div><div><span className="sumda-eyebrow">{selected?'UBAH DATA':'ENTRI BARU'} / URMIN</span><h2 id="urmin-dialog-title">{selected?'Edit':'Tambah'} {def.singular}</h2><p id="urmin-dialog-hint">{kind==='surat_keluar'?'Lengkapi data dan naskah PDF, lalu ajukan dari detail surat (klik suratnya di daftar) setelah tersimpan.':'Isi data di bawah ini. Kolom dengan tanda * wajib diisi.'}</p></div><button type="button" className="sumda-dialog-close" onClick={closeEditor} aria-label="Tutup formulir" disabled={busy}><Icon name="close" size={20}/></button></div>
         <form id="urmin-register-edit-form" className="sumda-dialog-form" onSubmit={save}>
           <div className="sumda-form-block"><div className="sumda-form-section"><span className="sumda-form-step">01</span><div><h3>Informasi utama</h3><p>Identitas dan nama {def.singular.toLowerCase()}.</p></div></div><div className="sumda-form-grid">
             {/* R5G4: agenda tidak lagi meminta kode. Nilainya tetap terkirim —
                 backend mewajibkannya — hanya dibangkitkan, bukan diketik. */}
-            {kind==='surat_keluar'&&<label className="sumda-field"><span>{def.code}</span><output className="sdl-nomorsurat">{nomorUrut(form.fields.nomorSurat)||(selected?form.code:'Terbit otomatis setelah disimpan')}</output><small className="sdl-kodearsip__hint">Sama dengan nomor urut pada Nomor Surat, diambil dari satu deret untuk seluruh subbag. Tidak perlu diisi.</small></label>}
+            {kind==='surat_keluar'&&<label className="sumda-field"><span>{def.code}</span><output className="sdl-nomorsurat">{nomorUrut(form.fields.nomorSurat)||(pesanan&&!selected?String(pesanan.urut):(selected?form.code:'Memesan nomor…'))}</output><small className="sdl-kodearsip__hint">{pesanan&&!selected?'Sudah dipesan untuk Anda dan tidak akan dipakai orang lain. Boleh dipakai untuk naskah PDF sekarang; nomor yang sama dipakai saat surat disimpan.':'Sama dengan nomor urut pada Nomor Surat, diambil dari satu deret untuk seluruh subbag. Tidak perlu diisi.'}</small></label>}
             {kind!=='agenda'&&kind!=='surat_keluar'&&<label className="sumda-field"><span>{def.code} <b aria-label="wajib diisi">*</b></span><input autoFocus required minLength={2} maxLength={64} value={form.code} onChange={e=>setForm(v=>({...v,code:e.target.value}))} placeholder={`Masukkan ${def.code.toLowerCase()}`}/></label>}
             <label className="sumda-field"><span>{def.name} <b aria-label="wajib diisi">*</b></span><input required minLength={3} maxLength={200} value={form.title} onChange={e=>setForm(v=>({...v,title:e.target.value}))} placeholder={`Masukkan ${def.name.toLowerCase()}`}/></label>
           </div></div>
@@ -1013,17 +1113,7 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate,isKabag
                   </button>)}
               </div>
             </div>}
-            {formFields.filter(f=>!(kind==='surat_keluar'&&tanpaRujukan&&RUJUKAN_KEYS.includes(f.key))).map(f=>f.input==='multi'?<MultiPick key={f.key} field={f} value={form.fields[f.key]||''} onChange={v=>changeField(f.key,v)}/>:f.input==='kodearsip'?<KodeArsipPick key={f.key} field={f} value={form.fields[f.key]||''} onChange={v=>changeField(f.key,v)}/>:f.input==='jenissurat'?<JenisSuratPick key={f.key} field={f} value={form.fields[f.key]||''} onChange={v=>changeField(f.key,v)}/>:f.input==='nomorsurat'?<label className="sumda-field" key={f.key}><span>{f.label}</span>
-              {/* R5G13: dibangkitkan backend saat draf dibuat, jadi ia
-                  ditampilkan, bukan diminta. Dibiarkan sebagai teks statis dan
-                  bukan input terkunci supaya tidak terlihat seperti kolom yang
-                  seharusnya bisa diisi. */}
-              <output className="sdl-nomorsurat">{form.fields[f.key]||'Terbit otomatis setelah disimpan'}</output>
-              <small className="sdl-kodearsip__hint">Disusun dari Derajat, Jenis Surat, Kode Arsip, dan Lingkup Surat di bawah. Nomor urut diambil saat draf disimpan dan tidak dapat dipakai ulang.</small>
-            </label>:f.key==='rujukanSurat'&&rujukanSuratLocked?<label className="sumda-field" key={f.key}><span>{f.label}</span>
-              <output className="sdl-nomorsurat">{form.fields.rujukanSurat||suratOfArahan[form.fields.rujukanArahan||'']}</output>
-              <small className="sdl-kodearsip__hint">Mengikuti surat asal dari Rujukan Disposisi. Kosongkan Rujukan Disposisi untuk memilih surat lain.</small>
-            </label>:<label className={`sumda-field ${f.input==='textarea'?'sumda-field-wide':''}`} key={f.key}><span>{f.label}</span>{f.input==='select'?<select value={form.fields[f.key]||''} onChange={e=>changeField(f.key,e.target.value)}><option value="">Pilih {f.label.toLowerCase()}</option>{f.choices?.map(x=><option key={x} value={x}>{x}</option>)}{/* R5G11: nilai tersimpan yang sudah tidak ada di daftar tetap ditampilkan sebagai pilihan. Tanpa ini, mempersempit pilihan Derajat membuat surat lama tampil kosong di layar padahal datanya masih ada — lalu tersimpan kosong begitu disunting karena alasan lain. */}{form.fields[f.key]&&!f.choices?.includes(form.fields[f.key])&&<option value={form.fields[f.key]}>{form.fields[f.key]} (nilai lama)</option>}</select>:f.input==='textarea'?<textarea rows={3} maxLength={200} value={form.fields[f.key]||''} onChange={e=>changeField(f.key,e.target.value)} placeholder={f.placeholder||'Tambahkan keterangan...'}/>:<input type={f.input||'text'} min={f.input==='number'?0:undefined} step={f.input==='number'?1:undefined} maxLength={f.input==='number'?undefined:200} value={form.fields[f.key]||''} onChange={e=>changeField(f.key,e.target.value)} placeholder={f.placeholder||''}/>}</label>)}
+            {formFields.filter(f=>!(kind==='surat_keluar'&&tanpaRujukan&&RUJUKAN_KEYS.includes(f.key))).map(renderField)}
           </div></div>
           {/* R5G4: agenda tidak memakai klasifikasi; seluruh agenda tercatat
               'biasa'. Blok ini disembunyikan, bukan dihapus — dua kind lain
@@ -1065,5 +1155,6 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate,isKabag
         {preview.mime==='application/pdf'?<iframe src={preview.url} title={`PDF ${preview.name}`}/>:<div className="urmin-preview-image"><img src={preview.url} alt={preview.name}/></div>}
       </section>
     </div>}
+    {ttdOpen&&workflowRecord&&workflowDetail&&<TtdNaskahR5H7 registerId={workflowRecord.id} workRecordId={workflowRecord.workRecordId} version={workflowDetail.version} title={workflowRecord.title} files={naskahFiles} onClose={()=>setTtdOpen(false)} onDone={m=>void afterSigned(m)}/>}
   </div>
 }

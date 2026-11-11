@@ -58,3 +58,39 @@
 /* R5H5: nomor urut dan nomor surat berdampingan dalam satu baris. */
 .urmin-r5d .sdl-outgoing-nomor{display:flex;align-items:center;gap:8px;white-space:nowrap}
 .urmin-r5d .sdl-outgoing-nomor .sdl-outgoing-secondary{display:inline;margin-top:0;white-space:nowrap}
+
+/* R5H7: detail surat keluar sebagai panel di bawah daftar (bukan jendela).
+ * Isi tidak lagi dibatasi tinggi 65vh -- halaman yang menggulir. */
+.urmin-r5d .sdl-outgoing-detail{margin-top:18px;padding:0;overflow:visible;scroll-margin-top:96px}
+.urmin-r5d .sdl-outgoing-detail .sdl-outgoing-workflow-content{max-height:none;overflow:visible;padding:22px 26px 26px}
+@media(max-width:640px){.urmin-r5d .sdl-outgoing-detail .sdl-outgoing-workflow-content{padding:16px}}
+.urmin-r5d .sdl-outgoing-info{margin:0}
+.urmin-r5d .sdl-outgoing-ref{display:block}
+.urmin-r5d .sdl-outgoing-ref+.sdl-outgoing-ref{margin-top:4px}
+
+/* R5H7: baris surat keluar diklik langsung untuk membuka detail (tanpa tombol
+ * Detail). Sel Aksi menghentikan klik supaya Edit/Berkas/Arsip tidak ikut
+ * membuka detail. */
+.urmin-r5d .sdl-outgoing-row{cursor:pointer;transition:background .12s}
+.urmin-r5d .sdl-outgoing-row:hover>td{background:var(--sm-hover,#f3f7fc)}
+.urmin-r5d .sdl-outgoing-row.is-open>td{background:#eaf2fd}
+.urmin-r5d .sdl-outgoing-row:focus-visible{outline:2px solid #4a86d6;outline-offset:-2px}
+[data-theme=dark] .urmin-r5d .sdl-outgoing-row:hover>td{background:#1d2f47}
+[data-theme=dark] .urmin-r5d .sdl-outgoing-row.is-open>td{background:#17304f}
+
+/* R5H8: blok naskah bertanda tangan dirapatkan (judul, keterangan, berkas),
+ * dan tombol ringkas "Lihat dokumen asli" di panel Detail. */
+.urmin-r5d .sdl-signed-block{display:grid;gap:8px}
+.urmin-r5d .sdl-signed-block .urmin-file-hint{margin:0}
+.urmin-r5d .sdl-naskah-asli-toggle{all:unset;box-sizing:border-box;display:inline-flex;align-items:center;gap:6px;justify-self:start;padding:7px 12px;border:1px solid var(--border,#cbd8e3);border-radius:8px;background:var(--subtle,#f5f8fa);color:var(--ink,#3b566d);font-size:12px;font-weight:700;cursor:pointer}
+.urmin-r5d .sdl-naskah-asli-toggle:hover{border-color:#7caba6}
+.urmin-r5d .sdl-naskah-asli-toggle:focus-visible{outline:3px solid rgba(37,142,133,.35);outline-offset:2px}
+.urmin-r5d .sdl-naskah-asli-toggle svg{flex:none;transition:transform .15s;color:var(--muted,#607184)}
+.urmin-r5d .sdl-naskah-asli-toggle[aria-expanded=true] svg{transform:rotate(90deg)}
+[data-theme=dark] .urmin-r5d .sdl-naskah-asli-toggle{background:#1b2a3c;color:#d6e2ee;border-color:#36506a}
+
+/* R5H8: detail surat keluar sebagai jendela pop-up. Isinya yang di-scroll,
+ * kepala jendela (judul + tombol tutup) tetap terlihat. */
+.urmin-r5d .sdl-outgoing-detail-modal{max-width:900px}
+.urmin-r5d .sdl-outgoing-detail-modal .sdl-outgoing-workflow-content{flex:1;min-height:0;max-height:none;overflow:auto;padding:22px 26px 26px}
+@media(max-width:640px){.urmin-r5d .sdl-outgoing-detail-modal .sdl-outgoing-workflow-content{padding:16px}}
