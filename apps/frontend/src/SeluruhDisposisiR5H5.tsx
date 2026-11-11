@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import './TugasDisposisiR5F3.css'
+import { clickRow } from './ClickableRowR5H7'
 
 /**
  * R5H5: tab "Seluruh Disposisi" — monitoring semua surat masuk yang diajukan
@@ -111,17 +112,16 @@ export default function SeluruhDisposisiR5H5({ onOpenLetter }: { onOpenLetter?: 
       {loadState === 'loading' && !items.length ? <div className="sdl-tasks-r5f3__empty" role="status">Memuat surat...</div>
         : loadState === 'error' ? <div className="sdl-tasks-r5f3__empty" role="alert"><strong>Daftar belum tersedia.</strong><p>Periksa sesi dan coba kembali.</p><button type="button" className="btn" onClick={() => void load()}>Coba Lagi</button></div>
         : displayed.length === 0 ? <div className="sdl-tasks-r5f3__empty"><strong>{toKabag.length ? 'Tidak ada surat sesuai filter' : 'Belum ada surat yang diajukan ke Kabagrenmin'}</strong><p>{toKabag.length ? 'Coba ubah pencarian atau filter.' : 'Surat masuk yang diajukan untuk disposisi akan muncul di sini.'}</p></div>
-        : <div className="table-scroll"><table className="data-table sdl-tasks-r5f3__table"><thead><tr><th>Agenda</th><th>Surat / Perihal</th><th>Surat Dari</th><th>Diajukan</th><th>Status</th><th>Aksi</th></tr></thead><tbody>
+        : <div className="table-scroll"><table className="data-table sdl-tasks-r5f3__table"><thead><tr><th>Agenda</th><th>Surat / Perihal</th><th>Surat Dari</th><th>Diajukan</th><th>Status</th></tr></thead><tbody>
           {displayed.map(i => {
             const status = statuses[i.id]
             const days = waitedDays(since[i.id])
-            return <tr key={i.id}>
+            return <tr key={i.id} {...clickRow(() => onOpenLetter?.(i.id), { label: `Buka surat ${i.letterNumber}`, disabled: !onOpenLetter })}>
               <td>SM-{new Date(i.createdAt).getFullYear()}-{i.agendaNo}</td>
               <td><strong>{i.letterNumber}</strong><small>{i.subject}</small></td>
               <td>{i.sender}<small>{dateOnly(i.letterDate)}</small></td>
               <td>{datetime(since[i.id])}{status === 'awaiting_kabag' && days !== null && <small>Menunggu {days === 0 ? 'hari ini' : `${days} hari`}</small>}</td>
               <td><span className={`r3c-status ${statusClass[status]}`}>{statusLabels[status]}</span></td>
-              <td>{onOpenLetter ? <button type="button" className="btn" onClick={() => onOpenLetter(i.id)}>Lihat Surat</button> : '—'}</td>
             </tr>
           })}
         </tbody></table></div>}

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { showToast } from './UIFeedback'
 import { Pager, usePaged } from './PaginationR5H5'
+import { clickRow } from './ClickableRowR5H7'
 import { BuatDisposisi } from './DisposisiR3C'
 
 type Distribution = {
@@ -214,14 +215,13 @@ export function InboxDistribusi({ initialID, workspaceMode = 'inbox' }: { initia
       {listState === 'loading' && items.length === 0 ? <div className="sdl-inbox__empty" role="status"><strong>Memuat surat...</strong></div>
         : listState === 'error' ? <div className="sdl-inbox__empty" role="alert"><strong>Daftar belum dapat diperbarui</strong><p>Periksa sesi dan coba kembali.</p><button className="btn" type="button" onClick={() => void refresh()}>Coba Lagi</button></div>
         : visible.length === 0 ? <div className="sdl-inbox__empty"><span className="sdl-inbox__empty-icon" aria-hidden="true">✉</span><strong>{items.length === 0 ? 'Belum ada distribusi' : 'Tidak ada hasil'}</strong><p>{items.length === 0 ? 'Surat yang dialamatkan kepada Anda akan muncul di sini.' : 'Ubah pencarian atau status untuk melihat distribusi lain.'}</p></div>
-        : <div className="table-scroll"><table className="data-table sdl-inbox__table"><thead><tr><th>Agenda</th><th>Surat</th><th>Penerima</th><th>Status</th><th>Dikirim</th><th>Aksi</th></tr></thead><tbody>{pagedVisible.map(item => <tr key={item.id} className={selectedID === item.id ? 'sdl-inbox__selected' : undefined}>
+        : <div className="table-scroll"><table className="data-table sdl-inbox__table"><thead><tr><th>Agenda</th><th>Surat</th><th>Penerima</th><th>Status</th><th>Dikirim</th></tr></thead><tbody>{pagedVisible.map(item => { const rowProps = clickRow(() => void open(item.id), { label: `Buka detail ${item.letterNumber}`, active: selectedID === item.id }); return <tr key={item.id} {...rowProps} className={`${rowProps.className}${selectedID === item.id ? ' sdl-inbox__selected' : ''}`}>
           <td><strong>SM-{jakartaYear(item.sentAt)}-{item.agendaNo}</strong></td>
           <td><strong>{item.subject}</strong><small>{item.letterNumber}</small></td>
           <td>{unitLabel[item.unit] ?? item.unit}</td>
           <td><span className={`sdl-inbox__status ${item.status === 'sent' ? 'is-pending' : 'is-received'}`}>{statusLabel(item.status)}</span></td>
           <td>{readableDate(item.sentAt)}</td>
-          <td><button className="btn" type="button" onClick={() => void open(item.id)} aria-label={`Lihat detail ${item.letterNumber}`}>Detail</button></td>
-        </tr>)}</tbody></table></div>}<Pager pager={pager} label="surat"/>
+        </tr> })}</tbody></table></div>}<Pager pager={pager} label="surat"/>
     </section>
     {current && <section className="panel sdl-inbox__detail" aria-label="Detail surat terpilih">
       <div className="sdl-inbox__detail-head"><div><span className="sdl-work-kicker">DETAIL DISTRIBUSI</span><h2>{current.letterNumber}</h2><p>{current.subject}</p></div><button type="button" className="btn" onClick={closeDetail}>Tutup Detail</button></div>

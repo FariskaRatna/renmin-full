@@ -1,0 +1,8 @@
+/* R5H7: baris tabel yang diklik langsung untuk membuka detail. */
+tr.sdl-click-row{cursor:pointer;transition:background .12s}
+tr.sdl-click-row:hover>td{background:var(--sm-hover,#f3f7fc)}
+tr.sdl-click-row.is-active>td{background:#eaf2fd}
+tr.sdl-click-row:focus-visible{outline:2px solid #4a86d6;outline-offset:-2px}
+tr.sdl-click-row.is-disabled{cursor:progress}
+[data-theme=dark] tr.sdl-click-row:hover>td{background:#1d2f47}
+[data-theme=dark] tr.sdl-click-row.is-active>td{background:#17304f}

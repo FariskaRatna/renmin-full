@@ -3,6 +3,7 @@ import { confirmDialog, showToast } from './UIFeedback'
 import { LeadershipMonitorR3D3 } from './LeadershipR3D3'
 import { DisposisiAutoCompleteR5F20 } from './DisposisiAutoCompleteR5F20'
 import './TugasDisposisiR5F3.css'
+import { clickRow } from './ClickableRowR5H7'
 import { DisposisiSuratR5H6 } from './DisposisiSuratR5H6'
 import { SuratR3B } from './SuratR3B'
 
@@ -506,33 +507,30 @@ export default function TugasDisposisiR5F3({ currentUserId, initialID, workspace
       {loadState === 'loading' && !items.length ? <div className="sdl-tasks-r5f3__empty" role="status">Memuat tugas...</div>
         : loadState === 'error' ? <div className="sdl-tasks-r5f3__empty" role="alert"><strong>Daftar tugas belum tersedia.</strong><p>Periksa sesi dan coba kembali.</p><button type="button" className="btn" onClick={() => void refresh()}>Coba Lagi</button></div>
         : totalRows === 0 ? <div className="sdl-tasks-r5f3__empty"><strong>{hasAnyRow ? 'Tidak ada tugas sesuai filter' : 'Belum ada surat atau tugas disposisi'}</strong><p>{hasAnyRow ? 'Coba ubah pencarian atau filter.' : 'Surat yang ditujukan kepada Anda akan muncul di sini begitu didistribusikan.'}</p></div>
-        : <div className="table-scroll"><table className="data-table sdl-tasks-r5f3__table"><thead><tr><th>Surat / Perihal</th><th>Penugasan</th><th>Tenggat</th><th>Status</th><th>Review / Target</th><th>Aksi</th></tr></thead><tbody>
+        : <div className="table-scroll"><table className="data-table sdl-tasks-r5f3__table"><thead><tr><th>Surat / Perihal</th><th>Penugasan</th><th>Tenggat</th><th>Status</th><th>Review / Target</th></tr></thead><tbody>
           {/* Surat yang menunggu tindakan ditaruh PALING ATAS: ia belum jadi
               tugas, dan justru itu yang perlu dikerjakan lebih dulu. */}
-          {lettersShown.map(letter => <tr key={`letter-${letter.id}`} className="sdl-tasks-r5f3__letter-row">
+          {lettersShown.map(letter => { const rp = clickRow(() => onOpenLetter?.(letter.incomingId), { label: `Buka surat ${letter.letterNumber}`, disabled: !onOpenLetter }); return <tr key={`letter-${letter.id}`} {...rp} className={`${rp.className} sdl-tasks-r5f3__letter-row`}>
             <td><strong>{letter.letterNumber}</strong><small>{letter.subject}</small></td>
             <td><strong>Belum ditugaskan</strong><small>Dari unit {letter.unit}</small></td>
             <td>—</td>
             <td><span className="r3c-status pending">Surat Masuk</span></td>
             <td><span className="r3d-sla unknown">Menunggu tindakan</span><small>{dateOnly(letter.sentAt)}</small></td>
-            <td>{onOpenLetter ? <button type="button" className="btn" onClick={() => onOpenLetter(letter.incomingId)}>Lihat Surat</button> : '—'}</td>
-          </tr>)}
-          {directivesShown.map(d => <tr key={`arahan-${d.id}`} className="sdl-tasks-r5f3__letter-row">
+          </tr> })}
+          {directivesShown.map(d => { const rp = clickRow(() => void openDisposition(d), { label: `Buka disposisi ${d.sheet?.letterNumber || d.title}`, disabled: !d.incomingId, active: openDispo?.id === d.id }); return <tr key={`arahan-${d.id}`} {...rp} className={`${rp.className} sdl-tasks-r5f3__letter-row`}>
             <td><strong>{d.sheet?.letterNumber || d.title}</strong><small>{d.sheet?.letterNumber ? d.title : (d.sheet?.subject || 'Disposisi pimpinan')}</small></td>
             <td><strong>Disposisi · {d.issuerName}</strong><small>{d.priority === 'kilat' ? 'Kilat' : d.priority === 'penting' ? 'Penting' : 'Biasa'}</small></td>
             <td>{d.dueAt ? datetime(d.dueAt) : '—'}</td>
             <td><span className={`r3c-status ${d.myAcknowledgedAt ? 'completed' : d.myReadAt ? 'in_progress' : 'pending'}`}>{d.myAcknowledgedAt ? 'Disposisi Diterima' : d.myReadAt ? 'Disposisi Dibaca' : 'Disposisi Baru'}</span></td>
             <td><span className="r3d-sla unknown">{d.myAcknowledgedAt ? 'Sudah dikonfirmasi' : 'Perlu konfirmasi'}</span><small>{datetime(d.createdAt)}</small></td>
-            <td>{d.incomingId ? <button type="button" className="btn" onClick={() => void openDisposition(d)}>Buka</button> : '—'}</td>
-          </tr>)}
-          {displayed.map(t => <tr key={t.id} className={selectedID === t.id ? 'sdl-tasks-r5f3__active' : undefined}>
+          </tr> })}
+          {displayed.map(t => { const rp = clickRow(() => void openDetail(t.id), { label: `Buka detail tugas ${t.letterNumber}`, disabled: busy, active: selectedID === t.id }); return <tr key={t.id} {...rp} className={`${rp.className}${selectedID === t.id ? ' sdl-tasks-r5f3__active' : ''}`}>
           <td><strong>{t.depth > 0 ? `↳ L${t.depth} · ` : ''}{t.letterNumber}</strong><small>{t.subject}</small></td>
           <td><strong>{t.assigneeName}</strong><small>Dari {t.issuerName}</small></td>
           <td>{dateOnly(t.dueDate)}</td>
           <td><span className={`r3c-status ${t.status}`}>{statusNames[t.status]}</span></td>
           <td><span className={`r3d-sla ${t.slaStatus}`}>{slaNames[t.slaStatus]}</span><small>{reviewNames[t.reviewStatus]}</small></td>
-          <td><button type="button" className="btn" disabled={busy} onClick={() => void openDetail(t.id)}>Detail</button></td>
-        </tr>)}</tbody></table></div>}
+        </tr> })}</tbody></table></div>}
       {loadState === 'ready' && totalRows > 0 && <div className="sdl-tasks-r5f3__pager">
         <span>Menampilkan {pageStart + 1}–{Math.min(pageEnd, totalRows)} dari {totalRows}</span>
         <div>
