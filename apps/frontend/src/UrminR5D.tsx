@@ -23,7 +23,9 @@ const workflowListLabel:Record<string,string>={draft:'Draft',submitted:'Menunggu
 const workflowTone:Record<string,string>={draft:'neutral',submitted:'warn',approved:'ok',rejected:'danger',legacy:'info'}
 function outgoingStatus(item:Entry) {return item.workflowStatus || 'draft'}
 type WorkflowDetail={status:string;version:number;canSubmit:boolean;canReview:boolean;signingAvailable:boolean;emailDeliveryAvailable:boolean;events:{id:string;action:string;actor:string;note:string;at:string}[]}
-type Entry = { id: string; kind: Kind; code: string; title: string; classification: 'biasa' | 'penting'; fields: Record<string, string>; workRecordId: string; version: number; createdAt: string; workflowStatus?:string }
+// R5H9: 'surat_keluar' = surat keluar disetujui > 7 hari (baris register surat keluar itu sendiri).
+type ArsipSource = ''|'manual'|'disposisi'|'surat_keluar'
+type Entry = { id: string; kind: Kind; code: string; title: string; classification: 'biasa' | 'penting'; fields: Record<string, string>; workRecordId: string; version: number; createdAt: string; workflowStatus?:string; archivedAt?:string }
 type Field = { key: string; label: string; input?: 'number' | 'date' | 'select' | 'textarea' | 'multi' | 'kodearsip' | 'jenissurat' | 'nomorsurat'; choices?: string[]; placeholder?: string }
 /** R5G10: satu baris master kode arsip (endpoint 147). */
 type KodeArsip = { code: string; name: string; depth: number }
@@ -249,6 +251,16 @@ function suratKeluarCode(now = new Date()): string {
  * berulang tiap tahun dan ref_code wajib unik per kind, sementara kontrak API
  * beku selama migrasi. Surat lama tanpa nomor surat menampilkan kodenya sendiri.
  */
+// R5H9: kode yang DITAMPILKAN di daftar Arsip. Kode tersimpan tidak diubah
+// (tetap unik, tetap bisa dicari, tampil utuh saat kursor diarahkan).
+// Arsip disposisi lama menyimpan "ARS-DISP-<nomor surat>-<32 heksa id tugas>";
+// heksa itu hanya penjamin keunikan, jadi yang ditampilkan nomor suratnya.
+function kodeArsipTampil(p: Entry): string {
+  if (p.kind === 'surat_keluar') return p.fields.nomorSurat || p.code
+  if (p.fields.sumber === 'disposisi') return p.fields.letterNumber ? `Disp. ${p.fields.letterNumber}` : p.code.replace(/-[0-9A-F]{32}$/, '')
+  return p.code
+}
+
 function nomorUrut(nomorSurat?: string): string {
   const m = (nomorSurat || '').match(/-(\d+)\/(?:XII|XI|X|IX|VIII|VII|VI|V|IV|III|II|I)\//)
   return m ? m[1] : ''
@@ -623,7 +635,7 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate,isKabag
   const [sort,setSort] = useState<'latest'|'az'>('latest')
   // R5G7: kategori arsip. '' = semua, 'manual' = diinput sendiri,
   // 'disposisi' = lahir dari pengarsipan disposisi (endpoint 143).
-  const [source,setSource] = useState<''|'manual'|'disposisi'>('')
+  const [source,setSource] = useState<ArsipSource>('')
   const [outgoingFilter,setOutgoingFilter] = useState<OutgoingStatus>('all')
   const [workflowRecord,setWorkflowRecord]=useState<Entry|null>(null)
   // R5H6: jumlah PDF naskah surat di jendela Proses; syarat tombol Ajukan.
@@ -731,6 +743,15 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate,isKabag
     previewRef.current=null
     setPreview(null)
   }
+  // R5H8: Esc menutup pratinjau berkas -- hanya pratinjaunya. preventDefault
+  // menandai Esc sudah ditangani, supaya jendela detail/form di belakangnya
+  // tidak ikut tertutup.
+  useEffect(()=>{
+    if(!preview)return
+    const k=(e:KeyboardEvent)=>{if(e.key==='Escape'&&!e.defaultPrevented){e.preventDefault();dismissPreview()}}
+    window.addEventListener('keydown',k)
+    return()=>window.removeEventListener('keydown',k)
+  },[preview])
   async function closeEditor() {
     if(busy) return
     if(queuedRef.current.length && !await confirmDialog('Batalkan lampiran yang belum disimpan?',{confirmLabel:'Tutup Form',danger:true})) return
@@ -800,6 +821,18 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate,isKabag
       dismissPreview()
       setPreview({name:file.name,mime:file.mediaType,url:objectURL,temporary:true})
     } catch(e) {const msg=e instanceof Error?e.message:'Gagal membuka lampiran';setInlineError(msg);showToast(msg,'error')}
+  }
+  // R5H8: pratinjau naskah bertanda tangan. Endpoint-nya mengirim header
+  // attachment (untuk Unduh), jadi -- sama dengan showSaved -- dibaca ke Blob
+  // URL supaya PDF bisa ditampilkan di jendela pratinjau.
+  async function showSigned(recordID:string,file:{id:string;name:string}) {
+    try {
+      const response=await fetch(`${url}${encodeURIComponent(recordID)}/signed-files/${encodeURIComponent(file.id)}`,{credentials:'same-origin',cache:'no-store'})
+      if(!response.ok) throw Error(`Gagal membuka naskah bertanda tangan (HTTP ${response.status})`)
+      const objectURL=URL.createObjectURL(new Blob([await response.arrayBuffer()],{type:'application/pdf'}))
+      dismissPreview()
+      setPreview({name:file.name,mime:'application/pdf',url:objectURL,temporary:true})
+    } catch(e) {showToast(e instanceof Error?e.message:'Gagal membuka naskah bertanda tangan','error')}
   }
   // R5H5: pratinjau berkas dari sumber lain (arsip disposisi), lewat Blob URL
   // yang sama seperti showSaved supaya PDF bisa ditanam.
@@ -971,10 +1004,11 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate,isKabag
         <div className="sumda-toolbar-controls">
           {kind==='arsip'&&<>
             <label className="sumda-sort-label" htmlFor="urmin-arsip-source">Kategori</label>
-            <select id="urmin-arsip-source" value={source} onChange={e=>setSource(e.target.value as ''|'manual'|'disposisi')} aria-label="Kategori arsip">
+            <select id="urmin-arsip-source" value={source} onChange={e=>setSource(e.target.value as ArsipSource)} aria-label="Kategori arsip">
               <option value="">Semua Arsip</option>
               <option value="manual">Input Manual</option>
-              <option value="disposisi">Dari Disposisi</option>
+              <option value="surat_keluar">Dari Surat Keluar</option>
+              <option value="disposisi">Dari Disposisi (lama)</option>
             </select>
           </>}
           <label className="sumda-sort-label" htmlFor={`urmin-sort-${kind}`}>Urutkan</label>
@@ -988,8 +1022,8 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate,isKabag
       {limited&&<div className="sumda-inline-note"><Icon name="info" size={16}/> Data yang dimuat dibatasi 100 entri; filter status hanya berlaku pada data yang ditampilkan. Gunakan pencarian untuk menemukan surat lain.</div>}
       {loading ? <div className="sumda-empty" role="status"><div className="sumda-empty-icon"><Icon name="refresh" size={24}/></div><h4>Memuat data...</h4><p></p></div>
       : displayed.length===0 ? <div className="sumda-empty"><div className="sumda-empty-icon"><Icon name={appliedSearch?'search':def.icon} size={30}/></div><h4>{kind==='surat_keluar'&&outgoingFilter!=='all'?'Tidak ada surat pada status ini':appliedSearch?'Tidak ada hasil yang cocok':'Belum ada data terdaftar'}</h4><p>{kind==='surat_keluar'&&outgoingFilter!=='all'?'Ubah filter status atau cari menggunakan kode register.':appliedSearch?'Coba kata kunci lain atau reset pencarian.':'Belum ada data. Tambahkan data pertama Anda.'}</p><button type="button" className="sumda-button sumda-button-primary" onClick={kind==='surat_keluar'&&outgoingFilter!=='all'?()=>setOutgoingFilter('all'):appliedSearch?resetSearch:newRecord}>{kind==='surat_keluar'&&outgoingFilter!=='all'?'Semua status':appliedSearch?'Tampilkan semua':`Tambah ${def.singular} pertama`}</button></div>
-      : <div className="sumda-table-scroll"><table className="sumda-table"><thead>{kind==='surat_keluar'?<tr><th>Register / Nomor Surat</th><th>Perihal</th><th>Kepada</th><th>Tanggal Surat</th><th>Status Surat</th>{!kabagOutgoing&&<th className="sumda-actions-title">Aksi</th>}</tr>:<tr>{kind!=='agenda'&&<th>{def.code}</th>}<th>Judul / Keterangan</th><th>Informasi</th>{kind!=='agenda'&&<th>Klasifikasi</th>}<th>Tanggal input</th><th className="sumda-actions-title">Aksi</th></tr>}</thead><tbody>{pagedRows.map(p=><tr key={p.id} className={[selected?.id===p.id?'sdl-urmin-focus-row':'',kind==='surat_keluar'?'sdl-outgoing-row':'',kind==='surat_keluar'&&workflowRecord?.id===p.id?'is-open':''].filter(Boolean).join(' ')||undefined}
-          {...(kind==='surat_keluar'?{tabIndex:0,role:'button','aria-label':`Buka detail ${p.title}`,onClick:()=>void openWorkflow(p),onKeyDown:(e:{key:string;target:EventTarget;currentTarget:EventTarget;preventDefault:()=>void})=>{if((e.key==='Enter'||e.key===' ')&&e.target===e.currentTarget){e.preventDefault();void openWorkflow(p)}}}:{})}>
+      : <div className="sumda-table-scroll"><table className="sumda-table"><thead>{kind==='surat_keluar'?<tr><th>Register / Nomor Surat</th><th>Perihal</th><th>Kepada</th><th>Tanggal Surat</th><th>Status Surat</th>{!kabagOutgoing&&<th className="sumda-actions-title">Aksi</th>}</tr>:<tr>{kind!=='agenda'&&<th>{def.code}</th>}<th>Judul / Keterangan</th><th>Informasi</th>{kind!=='agenda'&&<th>Klasifikasi</th>}<th>Tanggal input</th><th className="sumda-actions-title">Aksi</th></tr>}</thead><tbody>{pagedRows.map(p=><tr key={p.id} className={[selected?.id===p.id?'sdl-urmin-focus-row':'',kind==='surat_keluar'||p.kind==='surat_keluar'?'sdl-outgoing-row':'',kind==='surat_keluar'&&workflowRecord?.id===p.id?'is-open':''].filter(Boolean).join(' ')||undefined}
+          {...(kind==='surat_keluar'||p.kind==='surat_keluar'?{tabIndex:0,role:'button','aria-label':`Buka detail ${p.title}`,onClick:()=>void openWorkflow(p),onKeyDown:(e:{key:string;target:EventTarget;currentTarget:EventTarget;preventDefault:()=>void})=>{if((e.key==='Enter'||e.key===' ')&&e.target===e.currentTarget){e.preventDefault();void openWorkflow(p)}}}:{})}>
          {kind==='surat_keluar'?<>
            <td><div className="sdl-outgoing-nomor"><span className="sumda-code">{nomorUrut(p.fields.nomorSurat)||p.code}</span><small className="sdl-outgoing-secondary">{p.fields.nomorSurat||'Nomor surat belum diisi'}</small></div></td>
            <td><strong className="sdl-outgoing-title">{p.title}</strong>{p.classification==='penting'&&<small className="sdl-outgoing-important">Penting</small>}</td>
@@ -997,17 +1031,17 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate,isKabag
            <td className="sumda-secondary-cell">{p.fields.tanggalSurat?readableDate(`${p.fields.tanggalSurat}T12:00:00`):'–'}</td>
            <td><div className="sm-status"><span className={`sm-badge tone-${workflowTone[outgoingStatus(p)]||'neutral'}`} title={workflowLabel[outgoingStatus(p)]||'Draft'}>{workflowListLabel[outgoingStatus(p)]||'Draft'}</span></div></td>
          </>:<>
-           {kind!=='agenda'&&<td><span className="sumda-code">{p.code}</span></td>}
+           {kind!=='agenda'&&<td>{kind==='arsip'?<span className="sumda-code sdl-arsip-code" title={p.code}>{kodeArsipTampil(p)}</span>:<span className="sumda-code">{p.code}</span>}</td>}
            <td><div className="sumda-person-cell"><span className="sumda-avatar" aria-hidden="true">{initials(p.title)}</span><div><strong>{p.title}</strong>
              {/* R5G7: penanda tetap muncul walau sedang menampilkan "Semua
                  Arsip", supaya asal entri terbaca tanpa mengganti kategori. */}
-             {kind==='arsip'&&<small className={`sdl-arsip-source${p.fields.sumber==='disposisi'?' is-disposisi':''}`}>{p.fields.sumber==='disposisi'?'Dari Disposisi':'Input Manual'}</small>}
+             {kind==='arsip'&&<small className={`sdl-arsip-source${p.kind==='surat_keluar'?' is-surat-keluar':p.fields.sumber==='disposisi'?' is-disposisi':''}`}>{p.kind==='surat_keluar'?'Dari Surat Keluar':p.fields.sumber==='disposisi'?'Dari Disposisi':'Input Manual'}</small>}
            </div></div></td>
-           <td className="sumda-secondary-cell">{detail(p)||'–'}</td>
+           <td className="sumda-secondary-cell">{p.kind==='surat_keluar'?(p.fields.tujuan?`Kepada ${p.fields.tujuan}`:'Surat keluar disetujui'):(detail(p)||'–')}</td>
            {kind!=='agenda'&&<td><span className={`sumda-classification ${p.classification==='penting'?'is-important':''}`}>{p.classification==='penting'?'Penting':'Biasa'}</span></td>}
-           <td className="sumda-secondary-cell">{readableDate(p.createdAt)}</td>
+           <td className="sumda-secondary-cell" title={p.archivedAt?'Masuk arsip 7 hari setelah disetujui':undefined}>{readableDate(p.archivedAt||p.createdAt)}</td>
          </>}
-         {!kabagOutgoing&&<td onClick={e=>e.stopPropagation()} onKeyDown={e=>e.stopPropagation()}><div className="sumda-actions">{<><button type="button" className="sumda-action" title="Edit data" onClick={()=>edit(p)} disabled={kind==='surat_keluar'&&!(['draft','rejected'].includes(outgoingStatus(p)))}><Icon name="edit" size={16}/> <span>Edit</span></button><button type="button" className="sumda-action sumda-action-attachment" title={kind==='surat_keluar'?'Lihat dan tambah berkas surat':'Buka lampiran dan disposisi'} onClick={()=>kind==='surat_keluar'?setBerkasRecord(p):kind==='arsip'&&p.fields.sumber==='disposisi'?setArsipRecord(p):openFiles(p.workRecordId)}><Icon name="attachment" size={16}/> <span>{kind==='surat_keluar'?'Berkas':'File & Disposisi'}</span></button><button type="button" className="sumda-action sumda-action-danger" title="Arsipkan data" onClick={()=>remove(p)} disabled={busy||(kind==='surat_keluar'&&!(['draft','rejected'].includes(outgoingStatus(p))))}><Icon name="archive" size={16}/><span className="sumda-sr-only">Arsipkan</span></button></>}</div></td>}
+         {!kabagOutgoing&&<td onClick={e=>e.stopPropagation()} onKeyDown={e=>e.stopPropagation()}><div className="sumda-actions">{kind==='arsip'&&p.kind==='surat_keluar'?<button type="button" className="sumda-action" title="Buka detail surat keluar" onClick={()=>void openWorkflow(p)}><Icon name="eye" size={16}/> <span>Detail</span></button>:<><button type="button" className="sumda-action" title="Edit data" onClick={()=>edit(p)} disabled={kind==='surat_keluar'&&!(['draft','rejected'].includes(outgoingStatus(p)))}><Icon name="edit" size={16}/> <span>Edit</span></button><button type="button" className="sumda-action sumda-action-attachment" title={kind==='surat_keluar'?'Lihat dan tambah berkas surat':'Buka lampiran dan disposisi'} onClick={()=>kind==='surat_keluar'?setBerkasRecord(p):kind==='arsip'&&p.fields.sumber==='disposisi'?setArsipRecord(p):openFiles(p.workRecordId)}><Icon name="attachment" size={16}/> <span>{kind==='surat_keluar'?'Berkas':'File & Disposisi'}</span></button><button type="button" className="sumda-action sumda-action-danger" title="Arsipkan data" onClick={()=>remove(p)} disabled={busy||(kind==='surat_keluar'&&!(['draft','rejected'].includes(outgoingStatus(p))))}><Icon name="archive" size={16}/><span className="sumda-sr-only">Arsipkan</span></button></>}</div></td>}
         </tr>)}</tbody></table></div>}
       <Pager pager={pager} label={def.singular.toLowerCase()}/>
       <footer className="sumda-list-footer"><span><Icon name="list" size={15}/> {loading?'Memuat...':`${displayed.length} dari ${records.length} data ditampilkan${limited?' (hasil terbatas)':''}`}</span><span></span></footer>
@@ -1068,7 +1102,7 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate,isKabag
             <div className="urmin-file-grid">{signedFiles.map(f=><div className="urmin-file-card" key={f.id}>
               <div className="urmin-file-thumb"><Icon name="file" size={26}/><span>PDF</span></div>
               <div className="urmin-file-name" title={f.name}>{f.name}</div><small>{f.marks} tanda tangan · {(f.size/1024).toFixed(0)} KB</small>
-              <div className="urmin-file-actions"><a href={`${url}${encodeURIComponent(workflowRecord.id)}/signed-files/${encodeURIComponent(f.id)}`} download={f.name}>Unduh</a></div>
+              <div className="urmin-file-actions"><button type="button" onClick={()=>void showSigned(workflowRecord.id,f)}><Icon name="eye" size={15}/> Lihat</button><a href={`${url}${encodeURIComponent(workflowRecord.id)}/signed-files/${encodeURIComponent(f.id)}`} download={f.name}>Unduh</a></div>
             </div>)}</div></div>}
             {/* R5H8: setelah ditandatangani, naskah ASLI (sebelum TTD) disembunyikan
                 agar tidak tertukar dengan naskah bertanda tangan; bisa dibuka bila

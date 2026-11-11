@@ -85,3 +85,8 @@
 :root[data-theme=dark] .urmin-dasar__dot{background:transparent}
 :root[data-theme=dark] .urmin-dasar__opt.is-on .urmin-dasar__dot{border-color:#5f9be6;background:radial-gradient(circle,#5f9be6 0 4px,transparent 4.5px)}
 @media(max-width:640px){.urmin-dasar{grid-template-columns:1fr}}
+/* R5H9: arsip dari surat keluar yang disetujui > 7 hari */
+.sdl-arsip-source.is-surat-keluar{background:#eef3fc;color:#2c4f8a;border-color:#b5c8ea}
+@media(prefers-color-scheme:dark){.sdl-arsip-source.is-surat-keluar{background:#1b2a44;color:#8fb0e6;border-color:#36507d}}
+/* R5H9: kode arsip ringkas; boleh turun baris alih-alih melebarkan tabel */
+.sumda-code.sdl-arsip-code{white-space:normal;overflow-wrap:anywhere;max-width:190px;line-height:1.45}
