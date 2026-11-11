@@ -2,9 +2,10 @@ import { Router } from 'express'
 
 import { isUniqueViolation, withTransaction } from '../../db.js'
 import { BODY_LIMITS, parsePayload, rawBody } from '../../http/payload.js'
-import { nomorSuratKurang, rakitNomorSurat } from './nomor-surat.js'
+import { kunciPesanan, nomorSuratKurang, pesanNomorUrut, rakitNomorSurat, tandaiPesananTerpakai } from './nomor-surat.js'
 import { permit } from './permit.js'
 import { registerOutgoingRoutes } from './outgoing-review.js'
+import { registerOutgoingSignRoutes } from './outgoing-sign.js'
 import {
   AccessDeniedError,
   NotFoundError,
@@ -116,7 +117,15 @@ function administrativeStatusAllowed(input) {
   return status === '' || status === 'Draft'
 }
 
-export function createUrminRegisterRouter({ pool }) {
+/** R5H7: pesanan nomor tidak ada / bukan milik aktor / terpakai / tahun lain. */
+class ReservationInvalidError extends Error {
+  constructor() {
+    super('reservation_invalid')
+    this.name = 'ReservationInvalidError'
+  }
+}
+
+export function createUrminRegisterRouter({ pool, config }) {
   const router = Router()
   const json = rawBody(BODY_LIMITS.UNIT_WORK)
 
@@ -170,7 +179,33 @@ export function createUrminRegisterRouter({ pool }) {
 
   // Rute workflow didaftarkan lebih dulu. Semuanya memakai segmen statis
   // setelah /:id, jadi Express mencocokkannya sebelum '/:id' polos.
+  // ---- POST /nomor-urut (R5H7, Express saja) ----
+  // Pesan Kode Register Internal saat "Tambah Surat Keluar" ditekan. Hanya
+  // untuk akun yang boleh membuat surat keluar. Pesanan terbuka milik akun
+  // yang sama dikembalikan lagi (lihat pesanNomorUrut).
+  router.post('/nomor-urut', handle(async (req, res) => {
+    let allowed
+    try {
+      allowed = await permit(pool, req.actor, { unit: UNIT, classification: 'biasa', owner: req.actor, recordId: '', action: 'create' })
+    } catch (error) {
+      sqlError(res, error)
+      return
+    }
+    if (!allowed) {
+      fail(res, 403, 'access_denied')
+      return
+    }
+    try {
+      const pesanan = await withTransaction(pool, (client) => pesanNomorUrut(client, req.actor, new Date()))
+      respond(res, 200, pesanan)
+    } catch (error) {
+      sqlError(res, error)
+    }
+  }))
+
   registerOutgoingRoutes(router, { pool, json, handle, loadOwned })
+  // R5H7: tanda tangan Kabagrenmin (Express saja).
+  registerOutgoingSignRoutes(router, { pool, config, handle, loadOwned })
 
   // ---- GET / ----
   router.get('/', handle(async (req, res) => {
@@ -272,6 +307,14 @@ export function createUrminRegisterRouter({ pool }) {
       return
     }
 
+    // R5H7: ?reservasi=<uuid> -- nomor urut yang sudah dipesan saat "Tambah".
+    // Lewat query, bukan body, supaya bentuk JSON endpoint ini tidak berubah.
+    const reservasi = input.kind === 'surat_keluar' && req.query.reservasi !== undefined ? String(req.query.reservasi) : null
+    if (reservasi !== null && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(reservasi)) {
+      fail(res, 400, 'invalid_reservation')
+      return
+    }
+
     // R5G13: surat keluar menerima nomornya di sini, saat draf dibuat.
     // Keputusan pemilik sistem, berikut konsekuensinya: draf yang batal
     // meninggalkan lubang pada deret, dan lubang itu tidak diisi ulang.
@@ -290,7 +333,13 @@ export function createUrminRegisterRouter({ pool }) {
         // kegagalan penyimpanan akan membakar satu nomor.
         const fields = { ...input.fields }
         if (input.kind === 'surat_keluar') {
-          fields.nomorSurat = await rakitNomorSurat(client, fields, new Date())
+          const now = new Date()
+          let urut
+          if (reservasi !== null) {
+            urut = await kunciPesanan(client, reservasi, req.actor, now)
+            if (urut === null) throw new ReservationInvalidError()
+          }
+          fields.nomorSurat = await rakitNomorSurat(client, fields, now, urut)
         }
 
         const work = await client.query(
@@ -310,6 +359,7 @@ export function createUrminRegisterRouter({ pool }) {
         // Hanya surat keluar yang punya siklus persetujuan.
         if (input.kind === 'surat_keluar') {
           await client.query('INSERT INTO sdl_outgoing_workflows(register_id) VALUES($1::uuid)', [id])
+          if (reservasi !== null) await tandaiPesananTerpakai(client, reservasi, id)
         }
 
         await client.query(
@@ -321,6 +371,10 @@ export function createUrminRegisterRouter({ pool }) {
       })
       respond(res, 201, created)
     } catch (error) {
+      if (error instanceof ReservationInvalidError) {
+        fail(res, 409, 'reservation_invalid')
+        return
+      }
       writeError(res, error)
     }
   }))

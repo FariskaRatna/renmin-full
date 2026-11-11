@@ -267,6 +267,12 @@ const DOCUMENT_TABLES = [
   'sdl_urmin_incoming',
   'sdl_urmin_email_outbox',
   'sdl_urmin_intake_mail_outbox',
+  // R5H7: hasil tanda tangan merujuk registry + berkas kerja (CASCADE juga
+  // akan mengosongkannya; ditulis eksplisit supaya terlihat).
+  'sdl_outgoing_signed_files',
+  // R5H7 (046): pesanan nomor urut. Wajib ikut dikosongkan bersama deret
+  // nomornya; pesanan lama akan bentrok UNIQUE(tahun,urut) setelah deret direset.
+  'sdl_surat_nomor_reservasi',
   'sdl_outgoing_events',
   'sdl_outgoing_workflows',
   'sdl_urmin_registry',

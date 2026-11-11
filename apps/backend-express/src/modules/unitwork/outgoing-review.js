@@ -36,7 +36,7 @@ const PAYLOAD_FIELDS = ['version', 'note']
  * diperbaiki di kedua backend bersamaan. `sdl_user_roles` tetap dibaca di
  * bawah, tapi hanya untuk apa yang memang jadi tugasnya: menolak Superadmin.
  */
-async function canManageOutgoing(pool, actorId, classification) {
+export async function canManageOutgoing(pool, actorId, classification) {
   const { rows } = await pool.query(
     `SELECT EXISTS(
        SELECT 1 FROM sdl_users u
@@ -68,7 +68,7 @@ async function canManageOutgoing(pool, actorId, classification) {
  * mengurutkan kunci map dan meng-escape <, >, &. Lihat go-json.js, dan
  * `npm run verify:gojson` yang membuktikan paritasnya.
  */
-async function contentHash(client, registerId, workRecordId) {
+export async function contentHash(client, registerId, workRecordId) {
   const registry = await client.query(
     'SELECT ref_code,title,fields FROM sdl_urmin_registry WHERE id::text=$1 AND deleted_at IS NULL',
     [registerId],

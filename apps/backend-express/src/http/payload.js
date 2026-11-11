@@ -105,4 +105,7 @@ export const BODY_LIMITS = Object.freeze({
   ATTACHMENT_UPLOAD: 10 * 1024 * 1024 + 65536, // urmin/r3b.go:244
   INTAKE: 10 * (10 * 1024 * 1024) + 1024 * 1024, // urmin/r5f7.go:165
   DIRECTIVE_FILE: 100 * 1024 * 1024 + 1, // directives/attachments.go:26
+  // R5H7, Express saja: gambar tanda tangan (PNG <= 200 KB sebagai base64)
+  // + penempatan + catatan.
+  TTD: 320 * 1024,
 })
