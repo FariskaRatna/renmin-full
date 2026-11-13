@@ -32,3 +32,14 @@
 .sm-dispo__table th,.sm-dispo__table td{padding:10px 14px;font-size:12px;text-align:left;vertical-align:middle}
 .sm-dispo__table td:last-child{color:var(--muted);white-space:nowrap}
 .sm-dispo__actions{display:flex;justify-content:flex-end;margin-top:12px}
+
+/* Tombol "Kirim Disposisi": biru tua seperti tombol utama lain (termasuk
+ * "Ya, Kirim" di konfirmasinya), bukan emas gelap yang kurang kontras.
+ * Saat nonaktif tampil abu-abu jelas, bukan emas yang memudar. */
+.sm-dispo .sdl-arahan__send{background:#243f6c;color:#fff;box-shadow:0 5px 15px rgba(37,68,116,.18)}
+.sm-dispo .sdl-arahan__send:hover:not(:disabled){background:#2f5290}
+.sm-dispo .sdl-arahan__send:focus-visible{outline:3px solid rgba(47,82,144,.4);outline-offset:2px}
+.sm-dispo .sdl-arahan__send:disabled{opacity:1;background:#e3e8ef;color:#7a8799;box-shadow:none}
+:root[data-theme=dark] .sm-dispo .sdl-arahan__send{background:#3d68b0}
+:root[data-theme=dark] .sm-dispo .sdl-arahan__send:hover:not(:disabled){background:#4a78c4}
+:root[data-theme=dark] .sm-dispo .sdl-arahan__send:disabled{background:#2a3647;color:#8796a8}
