@@ -2,9 +2,9 @@
 .sdl-inbox-h10{display:grid;gap:14px}
 .sdl-inbox-h10__panel{padding:18px 20px}
 .sdl-inbox-h10__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
-.sdl-inbox-h10__head h2{margin:0;font-size:16px}
+.sdl-inbox-h10__head h2{margin:0;font-size:16px;font-weight:800}
 .sdl-inbox-h10__head p{margin:3px 0 0;font-size:12px;color:var(--muted)}
-.sdl-inbox-h10__sub{margin:8px 2px 0;font-size:14px}
+.sdl-inbox-h10__sub{margin:8px 2px 0;font-size:14px;font-weight:800}
 
 .sdl-inbox-h10__filters{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px}
 .sdl-inbox-h10__filters button{font:inherit;font-size:12px;font-weight:700;cursor:pointer;border:1px solid var(--border);background:var(--card);color:var(--ink);border-radius:999px;padding:6px 12px}
