@@ -1526,3 +1526,34 @@ sudah dilayani Express di server).
   `verify/r5h5-flow.js` bagian 5 cek "pembaca arsip MEMBACA daftar bukti"
   kini gagal karena hal ini. Golden 143 (`already_archived`) juga berubah.
 - Uji: `verify/r5h9-flow.js`.
+
+## R5H11 — Program Anggaran → Kegiatan → Pagu (2026-11-13, EXPRESS SAJA)
+
+Keputusan pemilik sistem 2026-11-13. Tidak mengubah endpoint lama; pagu lama
+R4A3 (`/subbagren/budget`, berbasis Usulan) tetap apa adanya. Migrasi
+`049_progar_pagu.sql`; rancangan `docs/R5H11-PROGAR-PAGU.md`; uji
+`verify/r5h11-flow.js`.
+
+Hak akses: permission pada grant unit `subbagren` (scope tidak dipakai).
+`R` = `subbagren.progar.read`, `M` = `subbagren.progar.manage`,
+`A` = `subbagren.pagu.approve`. Semua di balik guard Operasional.
+
+| Method | Path | Hak | Catatan |
+|---|---|---|---|
+| GET | `/api/v1/subbagren/progar/capabilities` | — | `{canRead,canManage,canApprove}` |
+| GET | `/api/v1/subbagren/progar/?tahun=YYYY` | R | `{tahun,programs:[{id,tahun,kode,nama,keterangan,version,createdAt,kegiatan:[{id,kode,nama,keterangan,version,pagu,ditolak}]}],totals:{disetujui,draft}}`; tahun kosong = tahun berjalan; 400 `invalid_year` |
+| POST | `/api/v1/subbagren/progar/program` | M | `{tahun,kode,nama,keterangan}` → 201 `{id}` |
+| PUT | `/api/v1/subbagren/progar/program/:id` | M | `{kode,nama,keterangan,version}` |
+| DELETE | `/api/v1/subbagren/progar/program/:id` | M | 409 `program_has_kegiatan` |
+| POST | `/api/v1/subbagren/progar/program/:id/kegiatan` | M | `{kode,nama,keterangan}` → 201 `{id}` |
+| PUT | `/api/v1/subbagren/progar/kegiatan/:id` | M | `{kode,nama,keterangan,version}` |
+| DELETE | `/api/v1/subbagren/progar/kegiatan/:id` | M | 409 `kegiatan_has_pagu` (pagu draft/disetujui) |
+| POST | `/api/v1/subbagren/progar/pagu` | M | `{kegiatanId,jumlah,dasar,keterangan}`; `jumlah` string digit rupiah ≤ 10^15; 409 `pagu_exists` |
+| PUT | `/api/v1/subbagren/progar/pagu/:id` | M | `{jumlah,dasar,keterangan,version}`; hanya draft, 409 `pagu_not_draft` |
+| POST | `/api/v1/subbagren/progar/pagu/:id/review` | A | `{keputusan:"disetujui"\|"ditolak",catatan,version}`; tolak wajib catatan ≥ 8; 403 `self_review_forbidden` bila peninjau = pencatat (juga CHECK di DB) |
+
+Objek pagu: `{id,jumlah,dasar,keterangan,status,version,createdBy,createdByName,createdAt,reviewedByName,reviewedAt,reviewNote}`.
+`pagu` = pagu hidup (draft/disetujui) atau `null`; `ditolak` = penolakan
+terakhir bila tidak ada pagu hidup. Galat umum: 400 `invalid_body` /
+`invalid_input`, 403 `access_denied`, 404 `not_found`, 409 `duplicate` /
+`version_conflict`, 503 `database_unavailable`.
