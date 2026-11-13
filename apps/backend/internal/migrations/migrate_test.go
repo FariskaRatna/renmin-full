@@ -59,6 +59,8 @@ func TestEmbeddedMigrationOrderAndSafety(t *testing.T) {
 		"sql/047_opsi_dropdown.sql",
 		"sql/048_opsi_agenda_hadir.sql",
 		"sql/049_progar_pagu.sql",
+		"sql/050_realisasi_kegiatan.sql",
+		"sql/051_dokumen_kinerja.sql",
 	}
 	items, err := load()
 	if err != nil {
