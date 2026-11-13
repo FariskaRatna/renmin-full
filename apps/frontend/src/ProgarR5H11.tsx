@@ -20,8 +20,8 @@ type Program = { id: string; tahun: number; kode: string; nama: string; keterang
 type Tree = { tahun: number; programs: Program[]; totals: { disetujui: string; draft: string } }
 type Caps = { canRead: boolean; canManage: boolean; canApprove: boolean }
 
-type FieldDef = { key: string; label: string; type?: 'text' | 'textarea' | 'rupiah'; required?: boolean; max: number; hint?: string; placeholder?: string }
-type Dialog = { title: string; eyebrow: string; fields: FieldDef[]; values: Record<string, string>; submitLabel: string; danger?: boolean; context?: string; onSubmit: (v: Record<string, string>) => Promise<void> }
+export type FieldDef = { key: string; label: string; type?: 'text' | 'textarea' | 'rupiah' | 'date' | 'select' | 'decimal'; options?: { value: string; label: string }[]; required?: boolean; max: number; hint?: string; placeholder?: string; half?: boolean }
+export type Dialog = { title: string; eyebrow: string; fields: FieldDef[]; values: Record<string, string>; submitLabel: string; danger?: boolean; context?: string; onSubmit: (v: Record<string, string>) => Promise<void> }
 
 const BASE = '/api/v1/subbagren/progar'
 
@@ -243,7 +243,7 @@ export default function ProgarR5H11({ mode, userId, onOpenProgram }: { mode: 'pr
   </div>
 }
 
-function FormDialog({ dialog, onClose }: { dialog: Dialog; onClose: () => void }) {
+export function FormDialog({ dialog, onClose }: { dialog: Dialog; onClose: () => void }) {
   const [values, setValues] = useState(dialog.values)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -274,12 +274,18 @@ function FormDialog({ dialog, onClose }: { dialog: Dialog; onClose: () => void }
     <form className="sdl-progar__dialog" role="dialog" aria-modal="true" aria-labelledby="sdl-progar-dialog-title" onSubmit={e => void submit(e)}>
       <header><span className="sdl-progar__eyebrow">{dialog.eyebrow}</span><h2 id="sdl-progar-dialog-title">{dialog.title}</h2>{dialog.context && <p>{dialog.context}</p>}</header>
       <div className="sdl-progar__fields">
-        {dialog.fields.map((f, i) => <label key={f.key}>
+        {dialog.fields.map((f, i) => <label key={f.key} className={f.half ? 'is-half' : undefined}>
           <span>{f.label}{f.required && <b aria-hidden="true"> *</b>}</span>
           {f.type === 'textarea'
             ? <textarea rows={3} maxLength={f.max} value={values[f.key] ?? ''} autoFocus={i === 0} onChange={e => setValues(v => ({ ...v, [f.key]: e.target.value }))} />
             : f.type === 'rupiah'
               ? <div className="sdl-progar__money"><span aria-hidden="true">Rp</span><input inputMode="numeric" autoFocus={i === 0} value={values[f.key] ? rupiah(values[f.key]).slice(3) : ''} placeholder="0" onChange={e => setValues(v => ({ ...v, [f.key]: digitsOnly(e.target.value).slice(0, 16) }))} /></div>
+              : f.type === 'select'
+                ? <select autoFocus={i === 0} value={values[f.key] ?? ''} onChange={e => setValues(v => ({ ...v, [f.key]: e.target.value }))}>{(f.options ?? []).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
+              : f.type === 'decimal'
+                ? <input inputMode="decimal" autoFocus={i === 0} maxLength={f.max} placeholder={f.placeholder ?? '0'} value={values[f.key] ?? ''} onChange={e => setValues(v => ({ ...v, [f.key]: e.target.value.replace(/[^0-9.,]/g, '') }))} />
+              : f.type === 'date'
+                ? <input type="date" autoFocus={i === 0} value={values[f.key] ?? ''} onChange={e => setValues(v => ({ ...v, [f.key]: e.target.value }))} />
               : <input maxLength={f.max} autoFocus={i === 0} value={values[f.key] ?? ''} placeholder={f.placeholder} onChange={e => setValues(v => ({ ...v, [f.key]: e.target.value }))} />}
           {f.hint && <small>{f.hint}</small>}
         </label>)}

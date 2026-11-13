@@ -17,10 +17,12 @@ import MasterData from './MasterDataR5G12'
 import UserManagement from './UserManagement'
 import SuratMasuk from './SuratMasuk'
 import UsulanR4A from './UsulanR4A'
-import BudgetR4A3 from './BudgetR4A3'
 import { InboxDistribusi } from './InboxDistribusiR5F2'
 import { InboxSaya } from './InboxSayaR5H10'
 import ProgarR5H11 from './ProgarR5H11'
+import RealisasiR5H12 from './RealisasiR5H12'
+import DokumenR5H13 from './DokumenR5H13'
+import KinerjaR5H13 from './KinerjaR5H13'
 import TugasDisposisi from './TugasDisposisiR5F3'
 import SeluruhDisposisi from './SeluruhDisposisiR5H5'
 import LocalCaptcha, { solveCaptcha, type CaptchaProof } from './LocalCaptcha'
@@ -139,7 +141,7 @@ const units: Unit[] = [
     {id:'perencanaan',title:'Dokumen Perencanaan',icon:'file',description:'Renstra, Renja, RKA-KL, DIPA, TOR/KAK dan RAB.',columns:['Dokumen','Tahun','Referensi','Koordinator','Status']},
     {id:'program',title:'Program Anggaran',icon:'layers',description:'Program dan kegiatan per tahun anggaran; dasar pencatatan pagu.',columns:['Kode','Program','Kegiatan','Pagu','Status']},
     {id:'pagu',title:'Pagu Anggaran',icon:'target',description:'Pagu per kegiatan dari Program Anggaran, disetujui Kasubbagren.',columns:['Kode','Kegiatan','Pagu','Dasar','Status']},
-    {id:'realisasi',title:'Realisasi Anggaran (LRA)',icon:'chart',description:'Realisasi, penyerapan dan tindak lanjut deviasi.',columns:['Program','Periode','Pagu','Realisasi','Status']},
+    {id:'realisasi',title:'Realisasi Anggaran (LRA)',icon:'chart',description:'Realisasi per kegiatan yang memotong pagu disetujui, dengan bukti bayar dan verifikasi.',columns:['Program','Periode','Pagu','Realisasi','Status']},
     {id:'kinerja',title:'Monitoring Kinerja & LKIP',icon:'target',description:'Indikator, target, capaian dan evaluasi program.',columns:['Indikator','Periode','Target','Realisasi','Status']},
     {id:'usulan',title:'Usulan Kebutuhan',icon:'clipboard',description:'Kompilasi usulan kebutuhan dan anggaran.',columns:['Nomor','Unit Pengusul','Tahun','Estimasi','Status']}
   ]},
@@ -536,7 +538,9 @@ function App() {
           : workMenu==='__tasks' ? <TugasDisposisi currentUserId={account.id} initialID={effectiveScreen.recordID} onOpenDirective={id=>navigate({view:'arahan',recordID:id})}/>
           : chosenModule?.id==='surat-masuk' && unit.id==='urmin' ? <SuratMasuk initialID={effectiveScreen.recordID} initialCreate={effectiveScreen.create} isKabagrenmin={isKabagrenmin}/>
           : chosenModule?.id==='usulan' && unit.id==='ren' ? <UsulanR4A/>
-          : chosenModule?.id==='realisasi' && unit.id==='ren' ? <BudgetR4A3/>
+          : chosenModule?.id==='realisasi' && unit.id==='ren' ? <RealisasiR5H12 userId={account.id} onOpenPagu={()=>navigate({view:'workspace',unit:'ren',menu:'pagu',sub:'pagu'})}/>
+          : chosenModule?.id==='perencanaan' && unit.id==='ren' ? <DokumenR5H13 userId={account.id}/>
+          : chosenModule?.id==='kinerja' && unit.id==='ren' ? <KinerjaR5H13/>
           : (chosenModule?.id==='program'||chosenModule?.id==='pagu') && unit.id==='ren' ? <ProgarR5H11 key={chosenModule.id} mode={chosenModule.id} userId={account.id} onOpenProgram={()=>navigate({view:'workspace',unit:'ren',menu:'program',sub:'progar'})}/>
           : chosenModule?.id==='disposisi' && unit.id==='urmin' && activeTab==='semua' ? <SeluruhDisposisi onOpenLetter={incomingID=>navigate({view:'workspace',unit:'urmin',menu:'surat-masuk',tab:'daftar',recordID:incomingID})}/>
           : chosenModule?.id==='disposisi' && unit.id==='urmin' ? <TugasDisposisi key={activeTab||'mine'} currentUserId={account.id} initialID={effectiveScreen.recordID} onOpenDirective={id=>navigate({view:'arahan',recordID:id})} workspaceTab={(activeTab||'mine') as 'mine'|'review'} onOpenLetter={incomingID=>navigate({view:'workspace',unit:'urmin',menu:'surat-masuk',tab:'daftar',recordID:incomingID})}/>

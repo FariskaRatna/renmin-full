@@ -26,7 +26,7 @@
 
 .sdl-progar__program{padding:16px 18px}
 .sdl-progar__program-head{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 16px;align-items:start}
-.sdl-progar__program-head h3{margin:4px 0 0;font-size:15px}
+.sdl-progar__program-head h3{margin:6px 0 0;font-size:15.5px;font-weight:800}
 .sdl-progar__program-head p{margin:4px 0 0;font-size:12px;color:var(--muted)}
 .sdl-progar__program-meta{display:grid;justify-items:end;gap:1px;text-align:right}
 .sdl-progar__program-meta span,.sdl-progar__program-meta small{font-size:11px;color:var(--muted)}
@@ -37,7 +37,7 @@
 .sdl-progar__table{margin-top:12px}
 .sdl-progar__table td{vertical-align:middle}
 .sdl-progar__table td small{display:block;margin-top:2px;font-size:11.5px;color:var(--muted)}
-.sdl-progar__table .is-num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.sdl-progar__table .is-num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;padding-right:28px}
 .sdl-progar__rejected{color:#9b2c22 !important}
 .sdl-progar__row-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:6px}
 .sdl-progar__row-actions .btn{min-height:32px;padding:6px 11px}
@@ -84,3 +84,51 @@
 :root[data-theme=dark] .sdl-progar__badge.is-ditolak{background:#3e1f1c;color:#f0a39b}
 :root[data-theme=dark] .sdl-progar__badge.is-kosong{background:#22324a;color:#9fb0c4}
 :root[data-theme=dark] .btn.sdl-progar__danger{color:#f0a39b;border-color:#5a2c28}
+
+/* R5H12: realisasi per kegiatan */
+.sdl-progar__stats--4{grid-template-columns:repeat(4,minmax(0,1fr))}
+@media(max-width:900px){.sdl-progar__stats--4{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:520px){.sdl-progar__stats--4{grid-template-columns:1fr}}
+.sdl-progar__meter{grid-column:1/-1;position:relative;height:30px;border-radius:8px;background:#eef2f7;overflow:hidden}
+.sdl-progar__meter span{position:absolute;inset:0 auto 0 0;background:linear-gradient(90deg,#2f8f6a,#3aa77d);border-radius:8px}
+.sdl-progar__meter em{position:relative;display:block;padding:0 12px;line-height:30px;font-style:normal;font-size:12px;font-weight:750;color:#14243e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sdl-progar__nowrap{white-space:nowrap}
+.sdl-progar__file{font-size:12px;font-weight:700;color:#244f8f;text-decoration:none;max-width:180px;display:inline-block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
+.sdl-progar__file:hover{text-decoration:underline}
+.sdl-progar__legacy{display:grid;gap:10px;justify-items:start}
+.sdl-progar__legacy-body{width:100%}
+:root[data-theme=dark] .sdl-progar__meter{background:#22324a}
+:root[data-theme=dark] .sdl-progar__meter em{color:#edf2f7}
+:root[data-theme=dark] .sdl-progar__file{color:#9fbdf0}
+
+/* R5H13: isian pilihan, isian setengah lebar (target TW) */
+.sdl-progar__fields{grid-template-columns:repeat(2,minmax(0,1fr))}
+.sdl-progar__fields label{grid-column:1/-1}
+.sdl-progar__fields label.is-half{grid-column:auto}
+.sdl-progar__fields select{font:inherit;font-size:13px;color:var(--ink);background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;width:100%}
+
+/* R5H13: dokumen perencanaan */
+.sdl-progar__check{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--muted);align-self:center}
+.sdl-progar__tag{display:inline-block;margin-left:8px;font-size:10.5px;font-weight:800;padding:2px 7px;border-radius:6px;background:#e9f0fb;color:#24477e;vertical-align:middle}
+.sdl-progar__old td{opacity:.6}
+a.btn{text-decoration:none}
+
+/* R5H13: monitoring kinerja */
+.sdl-kinerja__table td.is-num{padding-right:10px}
+.sdl-kinerja__cell{all:unset;box-sizing:border-box;display:inline-grid;justify-items:end;gap:1px;min-width:86px;padding:6px 8px;border-radius:8px;font-variant-numeric:tabular-nums;text-align:right}
+button.sdl-kinerja__cell{cursor:pointer;border:1px solid transparent}
+button.sdl-kinerja__cell:hover{border-color:var(--border);background:#f3f7fc}
+button.sdl-kinerja__cell:focus-visible{outline:3px solid rgba(47,82,144,.35)}
+.sdl-kinerja__cell.is-empty span{font-size:12px;font-weight:750;color:#3d68b0}
+.sdl-kinerja__cell b{font-size:13px}
+.sdl-kinerja__cell i{font-style:normal;font-size:11px;color:var(--muted)}
+.sdl-kinerja__cell em,.sdl-kinerja__year{font-style:normal;font-size:11px;font-weight:800;padding:1px 6px;border-radius:999px;background:#eef2f7;color:#5d6b7e}
+.sdl-kinerja__year{font-size:12px;padding:3px 9px}
+.sdl-progar .is-good{background:#e3f4ec !important;color:#1d6a48 !important}
+.sdl-progar .is-mid{background:#fdf2dc !important;color:#8a5a06 !important}
+.sdl-progar .is-low{background:#fbe6e4 !important;color:#9b2c22 !important}
+:root[data-theme=dark] button.sdl-kinerja__cell:hover{background:#1d2f47}
+:root[data-theme=dark] .sdl-progar__tag{background:#1c3152;color:#9fbdf0}
+:root[data-theme=dark] .sdl-progar .is-good{background:#173a2b !important;color:#8fd6b0 !important}
+:root[data-theme=dark] .sdl-progar .is-mid{background:#3b2f14 !important;color:#f0c46c !important}
+:root[data-theme=dark] .sdl-progar .is-low{background:#3e1f1c !important;color:#f0a39b !important}

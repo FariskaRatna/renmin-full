@@ -33,7 +33,10 @@ async function evidenceFileUpload(path:string,file:File,reason:string){
  return res.json()
 }
 const reasonDefault='Verifikasi independen berdasarkan dokumen dan bukti yang diperiksa'
-export default function BudgetR4A3(){
+// R5H12: legacy = arsip baca LRA lama berbasis Usulan. Formulir input
+// (Register Pagu, Catat Realisasi, Unggah Bukti) disembunyikan; pagu dan
+// realisasi baru dicatat per kegiatan di RealisasiR5H12.
+export default function BudgetR4A3({legacy=false}:{legacy?:boolean}={}){
  const [year,setYear]=useState(new Date().getFullYear())
  const [overview,setOverview]=useState<Overview|null>(null)
  const [approved,setApproved]=useState<Proposal[]>([])
@@ -68,7 +71,7 @@ export default function BudgetR4A3(){
   void execute(()=>api(`${base}${kind}/${id}/review`,'POST',{decision,version,reason:reviewNote}),`Keputusan ${stateName(decision)} tercatat dalam audit.`)
  }
  return <div className="sm-root">
-  <div className="sm-top-note"><strong>Pagu & Realisasi Anggaran</strong><span>Ringkasan pagu, bukti, dan realisasi.</span></div>
+  {!legacy&&<div className="sm-top-note"><strong>Pagu & Realisasi Anggaran</strong><span>Ringkasan pagu, bukti, dan realisasi.</span></div>}
   
   {error&&<FloatingToast message={error} kind="error"/>}{info&&<FloatingToast message={info} kind="success"/>}
   <section className="panel sm-panel">
@@ -80,7 +83,7 @@ export default function BudgetR4A3(){
     <div className="panel" style={{padding:16}}><small>Serapan verified</small><h3>{Number(overview.totals.paguVerified)>0?(Number(overview.totals.realizationVerified)/Number(overview.totals.paguVerified)*100).toFixed(1)+'%':'—'}</h3></div>
    </div><p className="sm-hint">Hanya transaksi terverifikasi yang dihitung. {overview.limited?'Tampilan terbatas; belum layak untuk konsolidasi final.':''}</p></>:<p>Memuat monitoring atau menunggu permission anggaran.read...</p>}
   </section>
-  <section className="panel sm-panel"><h3>Register Pagu Berbasis Dokumen Anggaran</h3><p className="sm-hint">Usulan harus sudah Disetujui Internal. Pagu tetap Pending sampai diverifikasi oleh petugas lain berdasarkan dokumen resmi.</p>
+  {!legacy&&<section className="panel sm-panel"><h3>Register Pagu Berbasis Dokumen Anggaran</h3><p className="sm-hint">Usulan harus sudah Disetujui Internal. Pagu tetap Pending sampai diverifikasi oleh petugas lain berdasarkan dokumen resmi.</p>
    <form className="sm-form" onSubmit={submitPagu} style={{display:'grid',gap:10,marginTop:14}}>
     <label>Usulan disetujui internal <select required value={pagu.proposalId} onChange={e=>setPagu(p=>({...p,proposalId:e.target.value}))}><option value="">Pilih usulan</option>{approved.map(x=><option key={x.id} value={x.id}>{`USL-${x.number} · ${x.title}`}</option>)}</select></label>
     <label>Pagu (Rp) <input required inputMode="numeric" pattern="[1-9][0-9]*" value={pagu.amount} onChange={e=>setPagu(p=>({...p,amount:e.target.value}))} placeholder="90000000"/></label>
@@ -90,9 +93,9 @@ export default function BudgetR4A3(){
     <label>Alasan Pencatatan <textarea required minLength={8} maxLength={500} value={pagu.reason} onChange={e=>setPagu(p=>({...p,reason:e.target.value}))}/></label>
     <button className="btn primary" disabled={busy||!approved.length||!capabilities?.register}>Register Pagu (Pending)</button>
    </form>
-  </section>
+  </section>}
   <section className="panel sm-panel"><h3>Daftar Pagu</h3><div className="table-scroll"><table className="data-table"><thead><tr><th>Kegiatan</th><th>Nomor Dokumen</th><th>Jumlah</th><th>Terverifikasi</th><th>Sisa</th><th>Status / Tindakan</th></tr></thead><tbody>{overview?.pagus.map(b=><tr key={b.id}><td>{b.proposalTitle}</td><td>{b.authorizationNumber}</td><td>{formatRp(b.amount)}</td><td>{formatRp(b.verifiedRealization)}</td><td>{formatRp(b.remaining)}</td><td>{stateName(b.status)}{b.status==='pending'&&capabilities?.verifyPagu&&<div><button className="btn" disabled={busy} onClick={()=>decide('pagu',b.id,b.version,'verified')}>Verifikasi</button> <button className="btn" disabled={busy} onClick={()=>decide('pagu',b.id,b.version,'rejected')}>Tolak</button></div>}</td></tr>)}</tbody></table></div></section>
-  <section className="panel sm-panel"><h3>Catat Realisasi (Pending Verifikasi)</h3><p className="sm-hint">Gunakan referensi bukti resmi; transaksi Pending atau Ditolak tidak masuk angka serapan.</p>
+  {!legacy&&<><section className="panel sm-panel"><h3>Catat Realisasi (Pending Verifikasi)</h3><p className="sm-hint">Gunakan referensi bukti resmi; transaksi Pending atau Ditolak tidak masuk angka serapan.</p>
    <form className="sm-form" onSubmit={submitReal} style={{display:'grid',gap:10,marginTop:14}}>
     <label>Pagu Terverifikasi <select required value={real.paguId} onChange={e=>setReal(p=>({...p,paguId:e.target.value}))}><option value="">Pilih pagu</option>{overview?.pagus.filter(b=>b.status==='verified').map(b=><option key={b.id} value={b.id}>{b.proposalTitle} — {formatRp(b.remaining)} tersisa</option>)}</select></label>
     <label>Jumlah Realisasi (Rp) <input required inputMode="numeric" pattern="[1-9][0-9]*" value={real.amount} onChange={e=>setReal(p=>({...p,amount:e.target.value}))}/></label>
@@ -112,7 +115,7 @@ export default function BudgetR4A3(){
    </form>
    <div className="table-scroll"><table className="data-table"><thead><tr><th>File</th><th>Ukuran</th><th>Status</th><th>Action</th></tr></thead><tbody>{proofs.map(p=><tr key={p.id}><td>{p.filename}</td><td>{Math.ceil(p.size/1024)} KiB</td><td>{p.status}</td><td>{capabilities?.readEvidence&&<a className="btn" href={`${proofPath(selectedReal)}/${p.id}/download`}>Unduh</a>}{p.status==='pending'&&capabilities?.reviewEvidence&&<><button type="button" className="btn" disabled={busy} onClick={()=>reviewProof(p.id,p.version,'approved')}>Setujui Bukti</button><button type="button" className="btn" disabled={busy} onClick={()=>reviewProof(p.id,p.version,'rejected')}>Tolak Bukti</button></>}</td></tr>)}</tbody></table></div>
    </>}
-  </section>
+  </section></>}
   {reconcile&&<section className="panel sm-panel"><h3>Rekonsiliasi Internal per Unit Pengusul</h3><p className="sm-hint">Dari transaksi scoped yang berhak dilihat user. Nilai hanya verified; angka parsial {reconcile.limited?'ADA (batas data), tidak boleh dipakai untuk total final.':'tidak terindikasi pada batas tampilan.'} Bukan LRA resmi.</p><div className="table-scroll"><table className="data-table"><thead><tr><th>Unit / Pengusul</th><th>Pagu</th><th>Realisasi</th><th>Pending</th><th>Ditolak</th><th>Tanpa bukti</th><th>Bukti menunggu</th></tr></thead><tbody>{reconcile.units.map(x=><tr key={x.unit}><td>{x.unit}</td><td>{formatRp(x.paguVerified)}</td><td>{formatRp(x.realizationVerified)}</td><td>{x.pendingTransactions}</td><td>{x.rejectedTransactions}</td><td>{x.missingEvidence}</td><td>{x.pendingEvidence}</td></tr>)}</tbody></table></div></section>}
   <section className="panel sm-panel"><label>Alasan untuk keputusan Verifikasi / Tolak <textarea minLength={8} maxLength={500} value={reviewNote} onChange={e=>setReviewNote(e.target.value)} style={{width:'100%'}}/></label><h3>Daftar Realisasi</h3><p className="sm-hint">Verifikasi realisasi baru membutuhkan bukti yang sudah Approved dan lolos pemeriksaan integritas.</p><div className="table-scroll"><table className="data-table"><thead><tr><th>Tanggal</th><th>Bukti</th><th>Uraian</th><th>Jumlah</th><th>Status / Tindakan</th></tr></thead><tbody>{overview?.realizations.map(t=><tr key={t.id}><td>{t.transactionDate}</td><td>{t.evidenceReference}</td><td>{t.description}</td><td>{formatRp(t.amount)}</td><td>{stateName(t.status)}{t.status==='pending'&&capabilities?.verifyRealization&&<div><button className="btn" disabled={busy} onClick={()=>decide('realisasi',t.id,t.version,'verified')}>Verifikasi</button> <button className="btn" disabled={busy} onClick={()=>decide('realisasi',t.id,t.version,'rejected')}>Tolak</button></div>}</td></tr>)}</tbody></table></div></section>
  </div>
