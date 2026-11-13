@@ -1,0 +1,51 @@
+/* R5H10: Inbox gabungan -- "Perlu tindakan Anda" di atas daftar distribusi. */
+.sdl-inbox-h10{display:grid;gap:14px}
+.sdl-inbox-h10__panel{padding:18px 20px}
+.sdl-inbox-h10__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.sdl-inbox-h10__head h2{margin:0;font-size:16px}
+.sdl-inbox-h10__head p{margin:3px 0 0;font-size:12px;color:var(--muted)}
+.sdl-inbox-h10__sub{margin:8px 2px 0;font-size:14px}
+
+.sdl-inbox-h10__filters{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px}
+.sdl-inbox-h10__filters button{font:inherit;font-size:12px;font-weight:700;cursor:pointer;border:1px solid var(--border);background:var(--card);color:var(--ink);border-radius:999px;padding:6px 12px}
+.sdl-inbox-h10__filters button b{margin-left:4px;font-weight:800;color:var(--muted)}
+.sdl-inbox-h10__filters button.is-on{background:#243f6c;border-color:#243f6c;color:#fff}
+.sdl-inbox-h10__filters button.is-on b{color:#cfdcf2}
+
+.sdl-inbox-h10__list{list-style:none;margin:14px 0 0;padding:0;display:grid;gap:8px}
+.sdl-inbox-h10__row{all:unset;box-sizing:border-box;width:100%;cursor:pointer;display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--border);border-left-width:4px;border-radius:10px;background:var(--card);color:var(--ink);transition:background .12s,border-color .12s}
+.sdl-inbox-h10__row.tone-warn{border-left-color:#d39a2c}
+.sdl-inbox-h10__row.tone-danger{border-left-color:#c8463b}
+.sdl-inbox-h10__row.tone-info{border-left-color:#3d72c4}
+.sdl-inbox-h10__row:hover{background:#f3f7fc}
+.sdl-inbox-h10__row:focus-visible{outline:3px solid rgba(47,82,144,.4);outline-offset:2px}
+.sdl-inbox-h10__text{display:grid;gap:2px;min-width:0}
+.sdl-inbox-h10__text strong{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sdl-inbox-h10__text small{font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sdl-inbox-h10__kind{font-size:10.5px;font-weight:800;letter-spacing:.3px;text-transform:uppercase;padding:4px 8px;border-radius:6px;background:#eef2f7;color:#41526a;white-space:nowrap}
+.sdl-inbox-h10__kind.is-disposisi{background:#e9f0fb;color:#24477e}
+.sdl-inbox-h10__kind.is-surat_keluar{background:#e8f5f1;color:#1e6b58}
+.sdl-inbox-h10__kind.is-tugas{background:#f4eefb;color:#5b3a86}
+.sdl-inbox-h10__badge{font-size:11px;font-weight:750;padding:4px 9px;border-radius:999px;white-space:nowrap}
+.sdl-inbox-h10__badge.tone-warn{background:#fdf2dc;color:#8a5a06}
+.sdl-inbox-h10__badge.tone-danger{background:#fbe6e4;color:#9b2c22}
+.sdl-inbox-h10__badge.tone-info{background:#e7effb;color:#244f8f}
+.sdl-inbox-h10__at{font-size:11.5px;color:var(--muted);white-space:nowrap}
+
+@media(max-width:640px){
+  .sdl-inbox-h10__row{grid-template-columns:minmax(0,1fr) auto;row-gap:6px}
+  .sdl-inbox-h10__kind{grid-column:1;justify-self:start}
+  .sdl-inbox-h10__at{grid-column:2;grid-row:1;justify-self:end}
+  .sdl-inbox-h10__text{grid-column:1/-1}
+  .sdl-inbox-h10__badge{grid-column:1/-1;justify-self:start}
+}
+
+:root[data-theme=dark] .sdl-inbox-h10__row:hover{background:#1d2f47}
+:root[data-theme=dark] .sdl-inbox-h10__filters button.is-on{background:#3d68b0;border-color:#3d68b0}
+:root[data-theme=dark] .sdl-inbox-h10__kind{background:#22324a;color:#b9c8dc}
+:root[data-theme=dark] .sdl-inbox-h10__kind.is-disposisi{background:#1c3152;color:#9fbdf0}
+:root[data-theme=dark] .sdl-inbox-h10__kind.is-surat_keluar{background:#173a33;color:#8fd6c0}
+:root[data-theme=dark] .sdl-inbox-h10__kind.is-tugas{background:#2c2244;color:#c8b2ec}
+:root[data-theme=dark] .sdl-inbox-h10__badge.tone-warn{background:#3b2f14;color:#f0c46c}
+:root[data-theme=dark] .sdl-inbox-h10__badge.tone-danger{background:#3e1f1c;color:#f0a39b}
+:root[data-theme=dark] .sdl-inbox-h10__badge.tone-info{background:#1c3152;color:#9fbdf0}

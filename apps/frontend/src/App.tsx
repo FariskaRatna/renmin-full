@@ -19,6 +19,8 @@ import SuratMasuk from './SuratMasuk'
 import UsulanR4A from './UsulanR4A'
 import BudgetR4A3 from './BudgetR4A3'
 import { InboxDistribusi } from './InboxDistribusiR5F2'
+import { InboxSaya } from './InboxSayaR5H10'
+import ProgarR5H11 from './ProgarR5H11'
 import TugasDisposisi from './TugasDisposisiR5F3'
 import SeluruhDisposisi from './SeluruhDisposisiR5H5'
 import LocalCaptcha, { solveCaptcha, type CaptchaProof } from './LocalCaptcha'
@@ -41,8 +43,8 @@ type UnitKey = 'urmin' | 'ren' | 'sumda' | 'binfung'
 // Ini pengelompokan NAVIGASI saja, otorisasi tetap sepenuhnya di backend.
 type RenSub = 'progar' | 'pagu'
 const renSubs: {id:RenSub;title:string;name:string;description:string;icon:IconName;modules:string[]}[] = [
-  {id:'progar',title:'PROGAR',name:'Program & Perencanaan',description:'Dokumen perencanaan, monitoring kinerja & LKIP, serta usulan kebutuhan.',icon:'file',modules:['perencanaan','kinerja','usulan']},
-  {id:'pagu',title:'PAGU ANGGARAN',name:'Pagu Anggaran',description:'Register program, pagu dan target kegiatan, serta realisasi anggaran (LRA).',icon:'layers',modules:['program','realisasi']}
+  {id:'progar',title:'PROGAR',name:'Program & Perencanaan',description:'Dokumen perencanaan, monitoring kinerja & LKIP, serta usulan kebutuhan.',icon:'file',modules:['perencanaan','program','kinerja','usulan']},
+  {id:'pagu',title:'PAGU ANGGARAN',name:'Pagu Anggaran',description:'Pagu per kegiatan dari Program Anggaran, serta realisasi anggaran (LRA).',icon:'layers',modules:['pagu','realisasi']}
 ]
 function renSubOf(s:Screen):RenSub|undefined{
   if(s.unit!=='ren')return undefined
@@ -135,7 +137,8 @@ const units: Unit[] = [
   ]},
   {id:'ren',title:'SUBBAGREN',name:'Subbagian Perencanaan',subtitle:'Perencanaan, program dan pengendalian kinerja',description:'Renstra/Renja/RKA-KL, pengelolaan usulan, anggaran dan laporan kinerja.',icon:'chart',accent:'#4b78ba',soft:'#edf3ff',modules:[
     {id:'perencanaan',title:'Dokumen Perencanaan',icon:'file',description:'Renstra, Renja, RKA-KL, DIPA, TOR/KAK dan RAB.',columns:['Dokumen','Tahun','Referensi','Koordinator','Status']},
-    {id:'program',title:'Program & Anggaran',icon:'layers',description:'Register program, pagu dan target kegiatan.',columns:['Kode','Tahun','Pagu','PIC','Status']},
+    {id:'program',title:'Program Anggaran',icon:'layers',description:'Program dan kegiatan per tahun anggaran; dasar pencatatan pagu.',columns:['Kode','Program','Kegiatan','Pagu','Status']},
+    {id:'pagu',title:'Pagu Anggaran',icon:'target',description:'Pagu per kegiatan dari Program Anggaran, disetujui Kasubbagren.',columns:['Kode','Kegiatan','Pagu','Dasar','Status']},
     {id:'realisasi',title:'Realisasi Anggaran (LRA)',icon:'chart',description:'Realisasi, penyerapan dan tindak lanjut deviasi.',columns:['Program','Periode','Pagu','Realisasi','Status']},
     {id:'kinerja',title:'Monitoring Kinerja & LKIP',icon:'target',description:'Indikator, target, capaian dan evaluasi program.',columns:['Indikator','Periode','Target','Realisasi','Status']},
     {id:'usulan',title:'Usulan Kebutuhan',icon:'clipboard',description:'Kompilasi usulan kebutuhan dan anggaran.',columns:['Nomor','Unit Pengusul','Tahun','Estimasi','Status']}
@@ -293,6 +296,13 @@ function App() {
   const [sidebarCollapsed,setSidebarCollapsed] = useState(()=>{try{return localStorage.getItem('sdl-sidebar-collapsed')==='true'}catch{return false}})
   const [demoAdminEnabled,setDemoAdminEnabled] = useState(false)
   const [account,setAccount] = useState<Account|null>(null)
+  // R5H10: Inbox dan Tasks di header memakai unit workspace terakhir. Sebelum
+  // workspace mana pun dibuka, nilainya 'urmin' untuk SEMUA akun -- Kasubbag
+  // yang menekan Inbox mendarat di konteks Urmin. Mulai dari unit akun sendiri.
+  useEffect(()=>{
+    const home=({urmin:'urmin',subbagren:'ren',subbagsumda:'sumda',subbagbinfung:'binfung'} as Record<string,UnitKey>)[account?.units?.includes('urmin')?'urmin':account?.units?.[0]??'']  // units diurut abjad; Kabagrenmin memegang keempatnya
+    if(home) setLastWorkspaceUnit(home)
+  },[account?.id]) // eslint-disable-line react-hooks/exhaustive-deps
   const [profileAvatarRevision,setProfileAvatarRevision] = useState(0)
   // R5H6: angka penanda di menu (Surat Masuk, Inbox, Arahan) dihapus atas permintaan
   // pemilik; hitungannya masih dimuat tapi tidak ditampilkan.
@@ -357,7 +367,11 @@ function App() {
     // Tab 'inbox' sudah tidak ada di submenu Surat Masuk. Deep-link lama
     // (notifikasi, dashboard) diarahkan ke 'daftar' supaya tidak mendarat di
     // layar yang tidak bisa ditinggalkan lewat navigasi.
-    const destination:Screen = next.view==='inbox' && (next.unit??lastWorkspaceUnit)==='urmin'
+    // R5H10: Inbox tanpa recordID kini selalu membuka Inbox gabungan (dulu
+    // dialihkan ke Surat Masuk, sehingga disposisi dan surat keluar yang
+    // menunggu tindakan tidak pernah terlihat). Deep-link lama yang membawa
+    // recordID tetap diarahkan seperti sebelumnya.
+    const destination:Screen = next.view==='inbox' && next.recordID && (next.unit??lastWorkspaceUnit)==='urmin'
       ? {view:'workspace',unit:'urmin',menu:'surat-masuk',tab:'daftar',recordID:next.recordID}
       : next.view==='tasks' && (next.unit??lastWorkspaceUnit)==='urmin'
       ? {view:'workspace',unit:'urmin',menu:'disposisi',tab:'mine',recordID:next.recordID}
@@ -415,8 +429,8 @@ function App() {
   const sidebarModules = unit?.id==='ren'&&renSubInfo ? unit.modules.filter(m=>renSubInfo.modules.includes(m.id)) : unit?.modules ?? []
   const workspace = !renChooser && (effectiveScreen.view==='workspace'||effectiveScreen.view==='inbox'||effectiveScreen.view==='tasks') && unit
   const workMenu=effectiveScreen.view==='inbox'?'__distribution-inbox':effectiveScreen.view==='tasks'?'__tasks':effectiveScreen.menu
-  const workTitle=unit?.id==='urmin'&&workMenu==='surat-masuk'&&isKabagrenmin?'Disposisi':unit?.id==='urmin'&&workMenu==='__unitwork'?'Berkas Kerja':unit?.id==='urmin'&&workMenu==='disposisi'?'Disposisi':unit?.id==='urmin'&&workMenu==='arsip'?'Arsip':unit?.id==='urmin'&&workMenu==='__admin'?'Pengguna & Hak Akses':workMenu==='__unitwork'?'Berkas, Foto & Disposisi':workMenu==='__distribution-inbox'?'Inbox Distribusi':workMenu==='__tasks'?'Tugas Disposisi':chosenModule?.title??renSubInfo?.name??unit?.name??''
-  const workSubtitle=unit?.id==='urmin'&&workMenu==='surat-masuk'&&isKabagrenmin?'Surat masuk yang diajukan kepada Anda untuk didisposisikan.':workMenu==='__unitwork'?'Kelola berkas, lampiran, dan tugas internal.':workMenu==='disposisi'&&unit?.id==='urmin'?'Tugas, tindak lanjut, dan review disposisi.':workMenu==='__admin'?'Kelola akun dan kewenangan sesuai hak akses.':workMenu==='__distribution-inbox'?'Surat yang diteruskan kepada Anda.':workMenu==='__tasks'?'Pantau tugas dan tindak lanjut.':chosenModule?.description??renSubInfo?.description??unit?.subtitle??''
+  const workTitle=unit?.id==='urmin'&&workMenu==='surat-masuk'&&isKabagrenmin?'Disposisi':unit?.id==='urmin'&&workMenu==='__unitwork'?'Berkas Kerja':unit?.id==='urmin'&&workMenu==='disposisi'?'Disposisi':unit?.id==='urmin'&&workMenu==='arsip'?'Arsip':unit?.id==='urmin'&&workMenu==='__admin'?'Pengguna & Hak Akses':workMenu==='__unitwork'?'Berkas, Foto & Disposisi':workMenu==='__distribution-inbox'?'Inbox':workMenu==='__tasks'?'Tugas Disposisi':chosenModule?.title??renSubInfo?.name??unit?.name??''
+  const workSubtitle=unit?.id==='urmin'&&workMenu==='surat-masuk'&&isKabagrenmin?'Surat masuk yang diajukan kepada Anda untuk didisposisikan.':workMenu==='__unitwork'?'Kelola berkas, lampiran, dan tugas internal.':workMenu==='disposisi'&&unit?.id==='urmin'?'Tugas, tindak lanjut, dan review disposisi.':workMenu==='__admin'?'Kelola akun dan kewenangan sesuai hak akses.':workMenu==='__distribution-inbox'?'Semua yang menunggu tindakan Anda: disposisi, surat keluar, tugas, dan surat yang diteruskan.':workMenu==='__tasks'?'Pantau tugas dan tindak lanjut.':chosenModule?.description??renSubInfo?.description??unit?.subtitle??''
   const activeTab=workMenu&&unit?.id==='urmin'?(urminTabs[workMenu]?.some(t=>t.id===effectiveScreen.tab)?effectiveScreen.tab:defaultUrminTab[workMenu]):undefined
   const adminSecurity = <section className="panel sdl-r5f5-admin-note"><h2>Kewenangan</h2><p>Hak akses ditentukan oleh role dan izin yang diberikan. Pengelolaan akun tidak otomatis membuka seluruh data unit.</p><button type="button" className="btn" onClick={()=>navigate({view:'workspace',unit:'urmin',menu:'__admin',tab:'roles'})}><Icon name="key" size={16}/> Lihat Role & Akses</button></section>
   async function logout(){
@@ -518,11 +532,12 @@ function App() {
           : unit.id==='sumda'&&['personel','pendidikan','inventaris'].includes(chosenModule?.id||'') ? <SumdaR5B key={chosenModule?.id} kind={chosenModule!.id as 'personel'|'pendidikan'|'inventaris'} openFiles={recordID=>navigate({view:'workspace',unit:'sumda',menu:'__unitwork',recordID})}/>
           : unit.id==='urmin'&&['surat-keluar','agenda','arsip'].includes(chosenModule?.id||'') ? <UrminR5D key={chosenModule?.id} initialID={effectiveScreen.recordID} initialCreate={effectiveScreen.create} kind={({'surat-keluar':'surat_keluar',agenda:'agenda',arsip:'arsip'} as Record<string,'surat_keluar'|'agenda'|'arsip'>)[chosenModule!.id]} openFiles={recordID=>navigate({view:'workspace',unit:'urmin',menu:'__unitwork',recordID})} isKabagrenmin={isKabagrenmin}/>
           : unit.id==='binfung'&&['sop','pid','rb','abk','pembinaan','evaluasi'].includes(chosenModule?.id||'') ? <BinfungR5C key={chosenModule?.id} kind={chosenModule!.id as 'sop'|'pid'|'rb'|'abk'|'pembinaan'|'evaluasi'} openFiles={recordID=>navigate({view:'workspace',unit:'binfung',menu:'__unitwork',recordID})}/>
-          : workMenu==='__distribution-inbox' ? <InboxDistribusi initialID={effectiveScreen.recordID}/>
+          : workMenu==='__distribution-inbox' ? <InboxSaya me={{id:account.id,isKabagrenmin}} initialID={effectiveScreen.recordID} onOpen={t=>t.view==='surat-keluar'?navigate({view:'workspace',unit:'urmin',menu:'surat-keluar',recordID:t.recordID}):navigate({view:t.view,recordID:t.recordID})}/>
           : workMenu==='__tasks' ? <TugasDisposisi currentUserId={account.id} initialID={effectiveScreen.recordID} onOpenDirective={id=>navigate({view:'arahan',recordID:id})}/>
           : chosenModule?.id==='surat-masuk' && unit.id==='urmin' ? <SuratMasuk initialID={effectiveScreen.recordID} initialCreate={effectiveScreen.create} isKabagrenmin={isKabagrenmin}/>
           : chosenModule?.id==='usulan' && unit.id==='ren' ? <UsulanR4A/>
           : chosenModule?.id==='realisasi' && unit.id==='ren' ? <BudgetR4A3/>
+          : (chosenModule?.id==='program'||chosenModule?.id==='pagu') && unit.id==='ren' ? <ProgarR5H11 key={chosenModule.id} mode={chosenModule.id} userId={account.id} onOpenProgram={()=>navigate({view:'workspace',unit:'ren',menu:'program',sub:'progar'})}/>
           : chosenModule?.id==='disposisi' && unit.id==='urmin' && activeTab==='semua' ? <SeluruhDisposisi onOpenLetter={incomingID=>navigate({view:'workspace',unit:'urmin',menu:'surat-masuk',tab:'daftar',recordID:incomingID})}/>
           : chosenModule?.id==='disposisi' && unit.id==='urmin' ? <TugasDisposisi key={activeTab||'mine'} currentUserId={account.id} initialID={effectiveScreen.recordID} onOpenDirective={id=>navigate({view:'arahan',recordID:id})} workspaceTab={(activeTab||'mine') as 'mine'|'review'} onOpenLetter={incomingID=>navigate({view:'workspace',unit:'urmin',menu:'surat-masuk',tab:'daftar',recordID:incomingID})}/>
           : chosenModule ? <><div className="panel table-panel"><div className="table-toolbar"><label className="search-box"><Icon name="search" size={17}/><input disabled placeholder="Cari data (tersedia setelah API aktif)" aria-label="Cari data" /></label><Label>0 data tersambung</Label><button className="btn primary" disabled title="Fitur tambah data memerlukan backend dan autentikasi"><Icon name="plus" size={15}/> Tambah Data</button></div><div className="table-scroll"><table className="data-table"><thead><tr>{chosenModule.columns.map(col=><th key={col}>{col}</th>)}</tr></thead></table></div><EmptyState title="Belum ada data operasional" description={`${chosenModule.title} sedang dipersiapkan. Pencarian, tambah/edit dan ekspor baru akan aktif setelah API, permission, dan modul ini selesai.`} icon={chosenModule.icon}/></div><div className="info-strip"><Icon name="info" size={18}/>  </div></>

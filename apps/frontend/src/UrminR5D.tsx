@@ -728,7 +728,10 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate,isKabag
   // sumber, atau isi daftar berubah.
   const {pageItems:pagedRows,pager} = usePaged(displayed,[kind,outgoingFilter,source,records.length])
   const countStatus=(status:OutgoingStatus) => status==='all'?records.length:records.filter(item=>outgoingStatus(item)===status).length
-  useEffect(()=>{if(initialID){const item=records.find(p=>p.id===initialID);if(item)setSelected(item)}},[initialID,records])
+  // R5H10: tautan dari Inbox membuka detail surat keluar langsung (sekali saja,
+  // supaya muat ulang daftar tidak membuka jendelanya lagi setelah ditutup).
+  const deepLinkOpened=useRef('')
+  useEffect(()=>{if(initialID){const item=records.find(p=>p.id===initialID);if(item){setSelected(item);if(kind==='surat_keluar'&&deepLinkOpened.current!==initialID){deepLinkOpened.current=initialID;void openWorkflow(item)}}}},[initialID,records])
   useEffect(()=>{if(initialCreate&&!kabagOutgoing){newRecord()}},[initialCreate])
   const flagged = records.filter(p => p.classification==='penting').length
   const detail = (p:Entry) => schema[kind].fields.slice(0,2).map(f=>p.fields[f.key]).filter(Boolean).join(' · ')
