@@ -49,3 +49,5 @@ apps/backend;C
 
 # Repo terpisah (github.com/FariskaRatna/mockup-renmin), tidak dipakai di server
 mockup/
+design/
+redesign/
