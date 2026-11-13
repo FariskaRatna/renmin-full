@@ -138,7 +138,8 @@ function sha256Hex(buffer) {
  *
  * @returns {Promise<string|undefined>} media type kalau sah
  */
-async function validateEvidence(rawName, blob) {
+// R5H12: dipakai ulang oleh progar.js untuk bukti realisasi per kegiatan.
+export async function validateEvidence(rawName, blob) {
   const filename = rawName.trim()
   if (!SAFE_EVIDENCE_NAME.test(filename) || blob.length === 0 || blob.length > MAX_EVIDENCE_BYTES) {
     return undefined

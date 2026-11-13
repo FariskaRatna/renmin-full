@@ -18,6 +18,7 @@ import { createUnitWorkRouter } from './modules/unitwork/work.js'
 import { createPortalRouter } from './modules/portal/index.js'
 import { createBudgetRouter } from './modules/subbagren/budget.js'
 import { createProgarRouter } from './modules/subbagren/progar.js'
+import { createPerencanaanRouter } from './modules/subbagren/perencanaan.js'
 import { createUsulanRouter } from './modules/subbagren/usulan.js'
 import { createExecutiveRouter } from './modules/executive/index.js'
 import { createDirectivesRouter } from './modules/directives/index.js'
@@ -99,7 +100,9 @@ export function createApp({ pool, config, mailer: injectedMailer }) {
   v1.use('/subbagren/usulan', operational, createUsulanRouter({ pool, config }))
   v1.use('/subbagren/budget', operational, createBudgetRouter({ pool, config }))
   // R5H11: Program Anggaran -> Kegiatan -> Pagu (migrasi 049, Express saja).
-  v1.use('/subbagren/progar', operational, createProgarRouter({ pool }))
+  v1.use('/subbagren/progar', operational, createProgarRouter({ pool, config }))
+  // R5H13: Dokumen Perencanaan + Monitoring Kinerja & LKIP (migrasi 051, Express saja).
+  v1.use('/subbagren/perencanaan', operational, createPerencanaanRouter({ pool, config }))
   v1.use('/leadership/directives', operational, createDirectivesRouter({ pool, config }))
   v1.use('/urmin/surat-masuk', operational, createSuratMasukRouter({ pool, config }))
   v1.use('/urmin/distribution-inbox', operational, createDistributionInboxRouter({ pool, config }))

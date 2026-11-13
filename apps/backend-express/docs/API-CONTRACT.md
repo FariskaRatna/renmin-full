@@ -1557,3 +1557,49 @@ Objek pagu: `{id,jumlah,dasar,keterangan,status,version,createdBy,createdByName,
 terakhir bila tidak ada pagu hidup. Galat umum: 400 `invalid_body` /
 `invalid_input`, 403 `access_denied`, 404 `not_found`, 409 `duplicate` /
 `version_conflict`, 503 `database_unavailable`.
+
+## R5H12 — Realisasi per kegiatan (2026-11-13, EXPRESS SAJA)
+
+Realisasi dicatat terhadap **pagu kegiatan yang disetujui** (R5H11), bukan lagi
+pagu berbasis Usulan. Endpoint R4A3 (`/subbagren/budget/*`) TIDAK diubah;
+layar LRA lama hanya menyembunyikan formulir inputnya (arsip baca). Migrasi
+`050_realisasi_kegiatan.sql`; rancangan `docs/R5H12-REALISASI-KEGIATAN.md`;
+uji `verify/r5h12-flow.js`.
+
+`RM` = `subbagren.realisasi.manage`, `RV` = `subbagren.realisasi.verify`,
+`R` = `subbagren.progar.read`. `capabilities` kini juga mengembalikan
+`canRecordRealisasi` dan `canVerifyRealisasi`.
+
+| Method | Path | Hak | Catatan |
+|---|---|---|---|
+| GET | `/api/v1/subbagren/progar/realisasi?tahun=YYYY` | R | `{tahun,items:[{paguId,pagu,terverifikasi,menunggu,sisa,program,kegiatan,realisasi:[…]}],totals:{pagu,terverifikasi,menunggu,sisa}}`; hanya pagu `disetujui` |
+| POST | `/api/v1/subbagren/progar/realisasi` | RM | `{paguId,tanggal,uraian,nomorBukti,jumlah}`; 400 `tahun_tidak_cocok`; 409 `pagu_not_approved` / `melebihi_sisa_pagu` |
+| PUT | `/api/v1/subbagren/progar/realisasi/:id` | RM | `{tanggal,uraian,nomorBukti,jumlah,version}`; draft saja, 409 `realisasi_not_draft` |
+| POST | `/api/v1/subbagren/progar/realisasi/:id/bukti` | RM | multipart `file`, PDF/JPG/PNG ≤ 5 MB, divalidasi dari isi, disimpan AES-256-GCM (`SDL_EVIDENCE_KEY`); menimpa bukti lama dan menaikkan `version` |
+| GET | `/api/v1/subbagren/progar/realisasi/:id/bukti` | R | `attachment`, `application/octet-stream`, `nosniff`, sha256 diverifikasi; setiap unduhan masuk audit |
+| POST | `/api/v1/subbagren/progar/realisasi/:id/review` | RV | `{keputusan:"terverifikasi"\|"ditolak",catatan,version}`; tolak wajib catatan ≥ 8; 409 `bukti_required`; 409 `melebihi_sisa_pagu` (dicek dengan kunci baris pagu); 403 `self_review_forbidden` |
+
+Objek realisasi: `{id,tanggal,uraian,nomorBukti,jumlah,status,version,createdBy,createdByName,createdAt,reviewedByName,reviewedAt,reviewNote,bukti:{filename,mimeType,size}|null}`.
+
+## R5H13 — Dokumen Perencanaan + Monitoring Kinerja & LKIP (2026-11-13, EXPRESS SAJA)
+
+Migrasi `051_dokumen_kinerja.sql`; rancangan `docs/R5H13-DOKUMEN-KINERJA.md`;
+uji `verify/r5h13-flow.js`. Prefix `/api/v1/subbagren/perencanaan`.
+`R` = `subbagren.progar.read`, `M` = `subbagren.progar.manage`,
+`S` = `subbagren.dokumen.sahkan`.
+
+| Method | Path | Hak | Catatan |
+|---|---|---|---|
+| GET | `/capabilities` | — | `{canRead,canManage,canSahkan}` |
+| GET | `/dokumen?tahun=` | R | `{tahun,items:[{id,jenis,jenisLabel,judul,nomor,tanggal,status,version,penggantiDari,digantikan,program,kegiatan,berkas,…}]}` |
+| POST | `/dokumen` | M | `{tahun,jenis,judul,nomor,tanggal,programId,kegiatanId,keterangan,penggantiDari}`; jenis ∈ renstra, renja, rka_kl, dipa, revisi_dipa, pok, tor_kak, rab, lainnya; 400 `invalid_link`; 409 `revisi_hanya_dari_dokumen_sah` / `revisi_sudah_ada` |
+| PUT | `/dokumen/:id` | M | tanpa `tahun`/`penggantiDari`, + `version`; draft saja |
+| POST | `/dokumen/:id/berkas` | M | multipart `file`, PDF ≤ 20 MB, terenkripsi; menaikkan `version` |
+| GET | `/dokumen/:id/berkas` | R | unduh `attachment`, sha256 diverifikasi, diaudit |
+| POST | `/dokumen/:id/review` | S | `{keputusan:"disahkan"\|"ditolak",catatan,version}`; 409 `berkas_required`; 403 `self_review_forbidden` |
+| GET | `/kinerja?tahun=` | R | `{tahun,kegiatan:[{id,kode,nama,program,pagu,realisasi,indikator:[{id,nama,satuan,version,target:[4],capaian:[4×{nilai,catatan,updatedAt,updatedByName}\|null]}]}]}` |
+| POST | `/kinerja/indikator` | M | `{kegiatanId,nama,satuan,target:["tw1","tw2","tw3","tw4"]}`; desimal string; 400 `target_tidak_kumulatif` / `target_tahunan_wajib` |
+| PUT | `/kinerja/indikator/:id` | M | `{nama,satuan,target,version}` |
+| DELETE | `/kinerja/indikator/:id` | M | 409 `indikator_has_capaian` |
+| PUT | `/kinerja/indikator/:id/capaian/:tw` | M | `{nilai,catatan}`; tw 1–4; upsert |
+| GET | `/kinerja/lkip.xlsx?tahun=` | R | XLSX dua sheet: Capaian Kinerja (+ pagu/realisasi/serapan), Dokumen Sah (versi terbaru) |
