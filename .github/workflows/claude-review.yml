@@ -1,0 +1,36 @@
+# Review AI otomatis untuk pull request ke main. Melengkapi deploy.yml, tidak menggantikannya.
+# Butuh secret ANTHROPIC_API_KEY dan Claude GitHub App terpasang di repo.
+name: Claude Code Review
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, ready_for_review]
+permissions:
+  contents: read
+  pull-requests: write
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  review:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Review pull request ini untuk repo SIERA DELTA LIMA. Baca CLAUDE.md lebih dulu.
+            Periksa terutama:
+            1. Kepatuhan pada 7 aturan migrasi Go→Express (kontrak API beku, migrasi lama tidak
+               diedit, endpoint baru tercatat di API-CONTRACT.md, satu worker email).
+            2. Keamanan: guard router, otorisasi berskop di level SQL, CSRF, zona kripto,
+               upload/PDF, kebocoran secret atau data "penting".
+            3. Apakah deploy butuh "Izinkan migrasi" dan apakah golden harness perlu direkam ulang.
+            Tulis temuan sebagai komentar review dalam Bahasa Indonesia, dikelompokkan
+            Wajib diperbaiki / Disarankan / Catatan. Jangan mengubah kode.
+          claude_args: "--max-turns 8"

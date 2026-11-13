@@ -388,3 +388,22 @@ Dokumen lama juga menyebut `internal/delegations` sebagai sesuatu yang diporting
 Jangan — 411 baris itu **kode mati**: `httpapi/router.go:242` menggantinya dengan
 handler yang selalu 403, dan paketnya tidak di-import. Porting perilaku 403-nya saja.
 Lima paket lain berisi 0 baris: `rbac`, `config`, `audit`, `subbagsumda`, `subbagbinfung`.
+
+---
+
+## Alur kerja dengan Claude Code
+
+Fitur baru mengikuti: `/fitur` → `/rencana` → `/implementasi` → `/verifikasi` → `/review`,
+dan setiap sesi ditutup dengan `/catat-sesi`. Setiap tahap yang menghasilkan keputusan
+berhenti untuk persetujuan pemilik sebelum lanjut.
+
+Pengaman otomatis (`.claude/settings.json` + `.claude/hooks/`):
+- Diblokir: mengedit migrasi yang sudah di-commit, `.env`, sertifikat/kunci, golden file harness;
+  `git push`, `deploy.sh`, `reset-all-passwords.sh`, `bootstrap`/`seed`, `ssh`.
+- Minta konfirmasi: zona kripto/auth, engine otorisasi, `vite.config.ts`, Caddyfile,
+  compose, workflow CI, merekam ulang golden file.
+- Sebelum selesai: tsc frontend, `node --check` file Express yang berubah, dan build image Go
+  (go test) dijalankan otomatis sesuai area yang berubah. Suite keamanan dan harness
+  dijalankan lewat `/verifikasi`.
+
+Gaya commit: `feat(<area>): ...`, `fix(<area>): ...`. Branch fitur: `feat/<kode-rilis>-<nama>`.

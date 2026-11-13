@@ -1,0 +1,64 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git switch -c:*)",
+      "Bash(git checkout -b:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(docker compose ps:*)",
+      "Bash(docker compose logs:*)",
+      "Bash(docker build -q -t sdl-ci-api apps/backend)",
+      "Bash(bash scripts/local-setup.sh status)",
+      "Bash(bash scripts/security-test-r2d5.sh)",
+      "Bash(bash scripts/security-test-express.sh)",
+      "Bash(npm run build:*)",
+      "Bash(npm run verify:*)",
+      "Bash(npm run harness:compare:*)",
+      "Bash(npm run harness:list:*)",
+      "Bash(node --check:*)"
+    ],
+    "ask": [
+      "Bash(bash scripts/local-setup.sh up)",
+      "Bash(bash scripts/local-setup.sh down)",
+      "Bash(bash scripts/local-setup.sh harness:*)",
+      "Bash(npm run harness:capture:*)",
+      "Bash(docker compose:*down*)",
+      "Bash(git merge:*)",
+      "Bash(git rebase:*)",
+      "Bash(git reset:*)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Edit(./.env)",
+      "Read(./infra/certs/**)",
+      "Bash(git push:*)",
+      "Bash(bash scripts/deploy.sh:*)",
+      "Bash(bash scripts/reset-all-passwords.sh:*)",
+      "Bash(bash scripts/local-setup.sh bootstrap:*)",
+      "Bash(bash scripts/local-setup.sh seed:*)",
+      "Bash(bash scripts/server-backup.sh:*)",
+      "Bash(ssh:*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-files.sh\"" }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/verify-changed.sh\"", "timeout": 900 }
+        ]
+      }
+    ]
+  }
+}
