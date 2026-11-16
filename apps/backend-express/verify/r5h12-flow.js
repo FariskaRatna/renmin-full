@@ -13,6 +13,7 @@ import pg from 'pg'
 import { HttpClient } from '../harness/client.js'
 import { loadConfig } from '../harness/config.js'
 import { HarnessDb } from '../harness/db.js'
+import { cleanupRen, sahDipa } from './_ren-tahun-uji.js'
 
 const config = loadConfig()
 const db = new HarnessDb(config.databaseUrl)
@@ -41,17 +42,7 @@ const pdf = Buffer.from('%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Roo
 const upload = (a, rid, bytes, filename) => call(a, 'POST', `/realisasi/${rid}/bukti`, undefined,
   { multipart: [{ name: 'file', filename, contentType: 'application/pdf', bytes }] })
 
-async function cleanup() {
-  const prog = `SELECT id FROM sdl_ren_program WHERE tahun=${TAHUN}`
-  const keg = `SELECT id FROM sdl_ren_kegiatan WHERE program_id IN (${prog})`
-  const pagu = `SELECT id FROM sdl_ren_pagu WHERE kegiatan_id IN (${keg})`
-  const real = `SELECT id FROM sdl_ren_realisasi WHERE pagu_id IN (${pagu})`
-  await sql.query(`DELETE FROM sdl_ren_realisasi_bukti WHERE realisasi_id IN (${real})`)
-  await sql.query(`DELETE FROM sdl_ren_realisasi WHERE pagu_id IN (${pagu})`)
-  await sql.query(`DELETE FROM sdl_ren_pagu WHERE kegiatan_id IN (${keg})`)
-  await sql.query(`DELETE FROM sdl_ren_kegiatan WHERE program_id IN (${prog})`)
-  await sql.query(`DELETE FROM sdl_ren_program WHERE tahun=${TAHUN}`)
-}
+const cleanup = () => cleanupRen(sql, TAHUN)
 
 await cleanup()
 try {
@@ -65,8 +56,9 @@ try {
   const progId = (await call(op, 'POST', '/program', { tahun: TAHUN, kode: 'R12', nama: 'Program Uji Realisasi', keterangan: '' })).body?.id
   const kegA = (await call(op, 'POST', `/program/${progId}/kegiatan`, { kode: '1', nama: 'Kegiatan berpagu', keterangan: '' })).body?.id
   const kegB = (await call(op, 'POST', `/program/${progId}/kegiatan`, { kode: '2', nama: 'Kegiatan pagu draft', keterangan: '' })).body?.id
-  const paguA = (await call(op, 'POST', '/pagu', { kegiatanId: kegA, jumlah: '100000000', dasar: 'DIPA uji', keterangan: '' })).body?.id
-  const paguB = (await call(op, 'POST', '/pagu', { kegiatanId: kegB, jumlah: '5000000', dasar: 'DIPA uji', keterangan: '' })).body?.id
+  const dipa = await sahDipa(op, ka, TAHUN)
+  const paguA = (await call(op, 'POST', '/pagu', { kegiatanId: kegA, jumlah: '100000000', dokumenId: dipa, keterangan: '' })).body?.id
+  const paguB = (await call(op, 'POST', '/pagu', { kegiatanId: kegB, jumlah: '5000000', dokumenId: dipa, keterangan: '' })).body?.id
   check('pagu A disetujui', (await call(ka, 'POST', `/pagu/${paguA}/review`, { keputusan: 'disetujui', catatan: '', version: 1 })).status === 200)
 
   log('\n1. Kewenangan')

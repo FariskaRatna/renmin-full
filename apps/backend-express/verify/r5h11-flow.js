@@ -14,6 +14,7 @@ import pg from 'pg'
 import { HttpClient } from '../harness/client.js'
 import { loadConfig } from '../harness/config.js'
 import { HarnessDb } from '../harness/db.js'
+import { cleanupRen, sahDipa } from './_ren-tahun-uji.js'
 
 const config = loadConfig()
 const db = new HarnessDb(config.databaseUrl)
@@ -38,11 +39,7 @@ async function call(a, method, path, body) {
 }
 const short = (r) => `HTTP ${r.status} ${r.text.slice(0, 160)}`
 
-async function cleanup() {
-  await sql.query(`DELETE FROM sdl_ren_pagu WHERE kegiatan_id IN (SELECT k.id FROM sdl_ren_kegiatan k JOIN sdl_ren_program p ON p.id=k.program_id WHERE p.tahun=$1)`, [TAHUN])
-  await sql.query(`DELETE FROM sdl_ren_kegiatan WHERE program_id IN (SELECT id FROM sdl_ren_program WHERE tahun=$1)`, [TAHUN])
-  await sql.query('DELETE FROM sdl_ren_program WHERE tahun=$1', [TAHUN])
-}
+const cleanup = () => cleanupRen(sql, TAHUN)
 
 await cleanup()
 try {
@@ -95,17 +92,31 @@ try {
   r = await call(op, 'PUT', `/program/${progId}`, { kode: '060.01.WA', nama: 'Program Dukungan Manajemen Polri', keterangan: '', version: prog.version })
   check('ubah program dengan versi benar', r.status === 200, short(r))
 
+  log('\n3a. Dasar pagu wajib DIPA sah (R5H14)')
+  r = await call(op, 'POST', '/pagu', { kegiatanId: keg[0], jumlah: '1000', dokumenId: '', keterangan: '' })
+  check('tanpa DIPA ditolak 400 dasar_dipa_wajib', r.status === 400 && r.body?.error === 'dasar_dipa_wajib', short(r))
+  const draftDipa = await sahDipa(op, ka, TAHUN, { judul: 'DIPA draft', sahkan: false })
+  r = await call(op, 'POST', '/pagu', { kegiatanId: keg[0], jumlah: '1000', dokumenId: draftDipa, keterangan: '' })
+  check('DIPA yang belum disahkan ditolak 400', r.status === 400 && r.body?.error === 'dasar_dipa_tidak_sah', short(r))
+  const tor = await sahDipa(op, ka, TAHUN, { judul: 'TOR bukan DIPA', jenis: 'tor_kak' })
+  r = await call(op, 'POST', '/pagu', { kegiatanId: keg[0], jumlah: '1000', dokumenId: tor, keterangan: '' })
+  check('dokumen sah tapi bukan DIPA (TOR) ditolak 400', r.status === 400 && r.body?.error === 'dasar_dipa_tidak_sah', short(r))
+  const dipaLain = await sahDipa(op, ka, TAHUN - 1, { judul: 'DIPA tahun lain' })
+  r = await call(op, 'POST', '/pagu', { kegiatanId: keg[0], jumlah: '1000', dokumenId: dipaLain, keterangan: '' })
+  check('DIPA tahun lain ditolak 400', r.status === 400 && r.body?.error === 'dasar_dipa_tidak_sah', short(r))
+  const dipa = await sahDipa(op, ka, TAHUN, { judul: 'DIPA 2099' })
+
   log('\n3. Pagu: catat -> setujui')
-  r = await call(op, 'POST', '/pagu', { kegiatanId: keg[0], jumlah: '1500000000', dasar: 'DIPA 2099 No. 1', keterangan: '' })
+  r = await call(op, 'POST', '/pagu', { kegiatanId: keg[0], jumlah: '1500000000', dokumenId: dipa, keterangan: '' })
   check('Operator mencatat pagu (draft)', r.status === 201, short(r))
   const pagu1 = r.body?.id
-  r = await call(op, 'POST', '/pagu', { kegiatanId: keg[0], jumlah: '1', dasar: 'DIPA 2099 No. 2', keterangan: '' })
+  r = await call(op, 'POST', '/pagu', { kegiatanId: keg[0], jumlah: '1', dokumenId: dipa, keterangan: '' })
   check('pagu kedua untuk kegiatan yang sama ditolak 409', r.status === 409 && r.body?.error === 'pagu_exists', short(r))
-  r = await call(op, 'POST', '/pagu', { kegiatanId: keg[1], jumlah: '1.5', dasar: 'DIPA', keterangan: '' })
+  r = await call(op, 'POST', '/pagu', { kegiatanId: keg[1], jumlah: '1.5', dokumenId: dipa, keterangan: '' })
   check('jumlah bukan bilangan bulat ditolak 400', r.status === 400, short(r))
-  r = await call(op, 'POST', '/pagu', { kegiatanId: keg[1], jumlah: 1500, dasar: 'DIPA', keterangan: '' })
+  r = await call(op, 'POST', '/pagu', { kegiatanId: keg[1], jumlah: 1500, dokumenId: dipa, keterangan: '' })
   check('jumlah berupa number (bukan string) ditolak 400', r.status === 400, short(r))
-  r = await call(op, 'PUT', `/pagu/${pagu1}`, { jumlah: '1750000000', dasar: 'DIPA 2099 No. 1 (revisi)', keterangan: '', version: 1 })
+  r = await call(op, 'PUT', `/pagu/${pagu1}`, { jumlah: '1750000000', dokumenId: dipa, keterangan: '', version: 1 })
   check('pagu draft bisa diubah', r.status === 200, short(r))
   r = await call(op, 'POST', `/pagu/${pagu1}/review`, { keputusan: 'disetujui', catatan: '', version: 2 })
   check('Operator tidak bisa menyetujui (tanpa wewenang) 403', r.status === 403, short(r))
@@ -113,17 +124,17 @@ try {
   check('persetujuan dengan versi basi ditolak 409', r.status === 409, short(r))
   r = await call(ka, 'POST', `/pagu/${pagu1}/review`, { keputusan: 'disetujui', catatan: '', version: 2 })
   check('Kasubbagren menyetujui pagu Operator', r.status === 200, short(r))
-  r = await call(op, 'PUT', `/pagu/${pagu1}`, { jumlah: '1', dasar: 'Ubah', keterangan: '', version: 3 })
+  r = await call(op, 'PUT', `/pagu/${pagu1}`, { jumlah: '1', dokumenId: dipa, keterangan: '', version: 3 })
   check('pagu yang disetujui tidak bisa diubah 409', r.status === 409 && r.body?.error === 'pagu_not_draft', short(r))
 
   log('\n4. Pencatat tidak boleh menyetujui inputannya sendiri')
-  r = await call(ka, 'POST', '/pagu', { kegiatanId: keg[1], jumlah: '250000000', dasar: 'DIPA 2099 No. 3', keterangan: '' })
+  r = await call(ka, 'POST', '/pagu', { kegiatanId: keg[1], jumlah: '250000000', dokumenId: dipa, keterangan: '' })
   check('Kasubbagren mencatat pagu sendiri', r.status === 201, short(r))
   r = await call(ka, 'POST', `/pagu/${r.body?.id}/review`, { keputusan: 'disetujui', catatan: '', version: 1 })
   check('Kasubbagren menyetujui pagunya sendiri ditolak 403', r.status === 403 && r.body?.error === 'self_review_forbidden', short(r))
 
   log('\n5. Tolak lalu catat ulang')
-  r = await call(op, 'POST', '/pagu', { kegiatanId: keg[2], jumlah: '99000000', dasar: 'DIPA 2099 No. 4', keterangan: '' })
+  r = await call(op, 'POST', '/pagu', { kegiatanId: keg[2], jumlah: '99000000', dokumenId: dipa, keterangan: '' })
   const pagu3 = r.body?.id
   r = await call(ka, 'POST', `/pagu/${pagu3}/review`, { keputusan: 'ditolak', catatan: 'kurang', version: 1 })
   check('penolakan tanpa alasan cukup ditolak 400', r.status === 400, short(r))
@@ -132,12 +143,28 @@ try {
   tree = (await call(staf, 'GET', `/?tahun=${TAHUN}`)).body
   let k3 = tree?.programs?.[0]?.kegiatan?.find((k) => k.id === keg[2])
   check('pohon: kegiatan 3 tanpa pagu hidup, alasan penolakan terbaca', k3?.pagu === null && k3?.ditolak?.reviewNote === 'Nilai tidak sesuai DIPA halaman 3', JSON.stringify(k3))
-  r = await call(op, 'POST', '/pagu', { kegiatanId: keg[2], jumlah: '90000000', dasar: 'DIPA 2099 No. 4 (perbaikan)', keterangan: '' })
+  r = await call(op, 'POST', '/pagu', { kegiatanId: keg[2], jumlah: '90000000', dokumenId: dipa, keterangan: '' })
   check('setelah ditolak, pagu baru boleh dicatat', r.status === 201, short(r))
+
+  log('\n5a. DIPA direvisi sebelum pagu disetujui (R5H14)')
+  const kegR = (await call(op, 'POST', `/program/${progId}/kegiatan`, { kode: '3077', nama: 'Kegiatan uji revisi DIPA', keterangan: '' })).body?.id
+  const paguR = (await call(op, 'POST', '/pagu', { kegiatanId: kegR, jumlah: '10000000', dokumenId: dipa, keterangan: '' })).body?.id
+  const rev = await sahDipa(op, ka, TAHUN, { judul: 'DIPA 2099 Revisi 1', penggantiDari: dipa })
+  r = await call(ka, 'POST', `/pagu/${paguR}/review`, { keputusan: 'disetujui', catatan: '', version: 1 })
+  check('menyetujui pagu berdasar DIPA yang sudah digantikan ditolak 409', r.status === 409 && r.body?.error === 'dasar_dipa_digantikan', short(r))
+  r = await call(op, 'POST', '/pagu', { kegiatanId: keg[0], jumlah: '1', dokumenId: dipa, keterangan: '' })
+  check('pagu baru tidak boleh merujuk DIPA yang sudah digantikan', r.status === 409, short(r))
+  r = await call(op, 'PUT', `/pagu/${paguR}`, { jumlah: '10000000', dokumenId: rev, keterangan: '', version: 1 })
+  check('pagu diarahkan ke Revisi DIPA', r.status === 200, short(r))
+  r = await call(ka, 'POST', `/pagu/${paguR}/review`, { keputusan: 'disetujui', catatan: '', version: 2 })
+  check('setelah merujuk revisi, pagu bisa disetujui', r.status === 200, short(r))
+  const t5 = (await call(staf, 'GET', `/?tahun=${TAHUN}`)).body
+  const pr = t5?.programs?.[0]?.kegiatan?.find((k) => k.id === kegR)?.pagu
+  check('pohon menampilkan dokumen dasar pagu', pr?.dokumen?.id === rev && pr?.dasar === 'DIPA SP-DIPA 2099 Revisi 1', JSON.stringify(pr?.dokumen))
 
   log('\n6. Total dan perlindungan hapus')
   tree = (await call(kabag, 'GET', `/?tahun=${TAHUN}`)).body
-  check('total disetujui = 1.750.000.000', tree?.totals?.disetujui === '1750000000', JSON.stringify(tree?.totals))
+  check('total disetujui = 1.750.000.000 + 10.000.000', tree?.totals?.disetujui === '1760000000', JSON.stringify(tree?.totals))
   check('total menunggu = 250.000.000 + 90.000.000', tree?.totals?.draft === '340000000', JSON.stringify(tree?.totals))
   r = await call(op, 'DELETE', `/kegiatan/${keg[0]}`)
   check('kegiatan berpagu tidak bisa dihapus 409', r.status === 409 && r.body?.error === 'kegiatan_has_pagu', short(r))
@@ -151,6 +178,7 @@ try {
   check('audit mencatat create/approve/reject', keys['subbagren.progar.program.create'] >= 1 && keys['subbagren.progar.pagu.approve'] >= 1 && keys['subbagren.progar.pagu.reject'] >= 1, JSON.stringify(keys))
 } finally {
   await cleanup()
+  await cleanupRen(sql, TAHUN - 1)
   await db.revokeMintedSessions()
   await db.close?.()
   await sql.end()

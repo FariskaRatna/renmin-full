@@ -14,6 +14,7 @@ import pg from 'pg'
 import { HttpClient } from '../harness/client.js'
 import { loadConfig } from '../harness/config.js'
 import { HarnessDb } from '../harness/db.js'
+import { cleanupRen, sahDipa } from './_ren-tahun-uji.js'
 
 const config = loadConfig()
 const db = new HarnessDb(config.databaseUrl)
@@ -55,21 +56,7 @@ function unzipEntry(buf, name) {
   return null
 }
 
-async function cleanup() {
-  const prog = `SELECT id FROM sdl_ren_program WHERE tahun=${TAHUN}`
-  const keg = `SELECT id FROM sdl_ren_kegiatan WHERE program_id IN (${prog})`
-  await sql.query(`DELETE FROM sdl_ren_dokumen_berkas WHERE dokumen_id IN (SELECT id FROM sdl_ren_dokumen WHERE tahun=${TAHUN})`)
-  // Revisi menunjuk dokumen lama: hapus revisi dulu.
-  await sql.query(`DELETE FROM sdl_ren_dokumen WHERE tahun=${TAHUN} AND pengganti_dari IS NOT NULL`)
-  await sql.query(`DELETE FROM sdl_ren_dokumen WHERE tahun=${TAHUN}`)
-  await sql.query(`DELETE FROM sdl_ren_capaian WHERE indikator_id IN (SELECT id FROM sdl_ren_indikator WHERE kegiatan_id IN (${keg}))`)
-  await sql.query(`DELETE FROM sdl_ren_indikator WHERE kegiatan_id IN (${keg})`)
-  await sql.query(`DELETE FROM sdl_ren_realisasi_bukti WHERE realisasi_id IN (SELECT id FROM sdl_ren_realisasi WHERE pagu_id IN (SELECT id FROM sdl_ren_pagu WHERE kegiatan_id IN (${keg})))`)
-  await sql.query(`DELETE FROM sdl_ren_realisasi WHERE pagu_id IN (SELECT id FROM sdl_ren_pagu WHERE kegiatan_id IN (${keg}))`)
-  await sql.query(`DELETE FROM sdl_ren_pagu WHERE kegiatan_id IN (${keg})`)
-  await sql.query(`DELETE FROM sdl_ren_kegiatan WHERE program_id IN (${prog})`)
-  await sql.query(`DELETE FROM sdl_ren_program WHERE tahun=${TAHUN}`)
-}
+const cleanup = () => cleanupRen(sql, TAHUN)
 
 await cleanup()
 try {
@@ -82,7 +69,8 @@ try {
 
   const progId = (await progar(op, 'POST', '/program', { tahun: TAHUN, kode: 'R13', nama: 'Program Uji Kinerja', keterangan: '' })).body?.id
   const kegId = (await progar(op, 'POST', `/program/${progId}/kegiatan`, { kode: '1', nama: 'Kegiatan Uji Kinerja', keterangan: '' })).body?.id
-  const paguId = (await progar(op, 'POST', '/pagu', { kegiatanId: kegId, jumlah: '200000000', dasar: 'DIPA uji', keterangan: '' })).body?.id
+  const dipaDasar = await sahDipa(op, ka, TAHUN, { judul: 'DIPA dasar pagu' })
+  const paguId = (await progar(op, 'POST', '/pagu', { kegiatanId: kegId, jumlah: '200000000', dokumenId: dipaDasar, keterangan: '' })).body?.id
   await progar(ka, 'POST', `/pagu/${paguId}/review`, { keputusan: 'disetujui', catatan: '', version: 1 })
 
   log('\n1. Kewenangan')

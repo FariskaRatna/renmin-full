@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { LampiranPreviewR5F15 } from './LampiranPreviewR5F15'
 import { confirmDialog, showToast } from './UIFeedback'
 import './ProgarR5H11.css'
 
@@ -14,7 +15,10 @@ import './ProgarR5H11.css'
  * Backend: /api/v1/subbagren/progar (Express saja, migrasi 049).
  */
 
-type Pagu = { id: string; jumlah: string; dasar: string; keterangan: string; status: 'draft' | 'disetujui' | 'ditolak'; version: number; createdBy: string; createdByName: string; createdAt: string; reviewedByName: string | null; reviewedAt: string | null; reviewNote: string }
+type DokRef = { id: string; jenis: string; judul: string; nomor: string; digantikan: boolean }
+/** R5H14: DIPA/Revisi DIPA sah yang boleh menjadi dasar pagu. */
+type DipaOpt = { id: string; label: string; judul: string; nomor: string }
+type Pagu = { dokumen: DokRef | null; id: string; jumlah: string; dasar: string; keterangan: string; status: 'draft' | 'disetujui' | 'ditolak'; version: number; createdBy: string; createdByName: string; createdAt: string; reviewedByName: string | null; reviewedAt: string | null; reviewNote: string }
 type Kegiatan = { id: string; kode: string; nama: string; keterangan: string; version: number; pagu: Pagu | null; ditolak: Pagu | null }
 type Program = { id: string; tahun: number; kode: string; nama: string; keterangan: string; version: number; kegiatan: Kegiatan[] }
 type Tree = { tahun: number; programs: Program[]; totals: { disetujui: string; draft: string } }
@@ -35,6 +39,9 @@ const ERRORS: Record<string, string> = {
   program_has_kegiatan: 'Program masih berisi kegiatan. Hapus kegiatannya terlebih dahulu.',
   kegiatan_has_pagu: 'Kegiatan ini sudah memiliki pagu, sehingga tidak dapat dihapus.',
   pagu_exists: 'Kegiatan ini sudah memiliki pagu.',
+  dasar_dipa_wajib: 'Pilih DIPA yang menjadi dasar pagu ini.',
+  dasar_dipa_tidak_sah: 'Dasar pagu harus DIPA atau Revisi DIPA yang sudah disahkan di tahun yang sama.',
+  dasar_dipa_digantikan: 'DIPA dasar pagu ini sudah direvisi. Ubah pagu agar merujuk Revisi DIPA terbaru.',
   pagu_not_draft: 'Pagu ini sudah diputuskan dan tidak dapat diubah lagi.',
   self_review_forbidden: 'Pagu yang Anda catat sendiri harus disetujui oleh orang lain.',
   database_unavailable: 'Server sedang tidak dapat diakses. Coba beberapa saat lagi.',
@@ -77,13 +84,15 @@ const kegiatanFields: FieldDef[] = [
   { key: 'nama', label: 'Nama Kegiatan', required: true, max: 240, placeholder: 'mis. Dukungan Manajemen dan Teknis' },
   { key: 'keterangan', label: 'Keterangan', type: 'textarea', max: 1000 },
 ]
-const paguFields: FieldDef[] = [
+// R5H14: dasar pagu WAJIB dipilih dari DIPA/Revisi DIPA yang sudah disahkan.
+const paguFields = (dipas: DipaOpt[]): FieldDef[] => [
   { key: 'jumlah', label: 'Jumlah Pagu (Rp)', type: 'rupiah', required: true, max: 16 },
-  { key: 'dasar', label: 'Dasar / Dokumen Sumber', required: true, max: 240, placeholder: 'mis. DIPA 2027 No. SP DIPA-060.01.1.xxx', hint: 'Nomor dokumen yang menetapkan pagu ini.' },
+  { key: 'dokumenId', label: 'Dasar Pagu (DIPA sah)', type: 'select', required: true, max: 40, hint: 'Hanya DIPA/Revisi DIPA tahun ini yang sudah disahkan di Dokumen Perencanaan.',
+    options: [{ value: '', label: '— Pilih DIPA —' }, ...dipas.map(d => ({ value: d.id, label: d.label }))] },
   { key: 'keterangan', label: 'Keterangan', type: 'textarea', max: 1000 },
 ]
 
-export default function ProgarR5H11({ mode, userId, onOpenProgram }: { mode: 'program' | 'pagu'; userId: string; onOpenProgram?: () => void }) {
+export default function ProgarR5H11({ mode, userId, onOpenProgram, onOpenDokumen }: { mode: 'program' | 'pagu'; userId: string; onOpenProgram?: () => void; onOpenDokumen?: () => void }) {
   const thisYear = new Date().getFullYear()
   const [tahun, setTahun] = useState(thisYear)
   const [tree, setTree] = useState<Tree | null>(null)
@@ -92,6 +101,8 @@ export default function ProgarR5H11({ mode, userId, onOpenProgram }: { mode: 'pr
   const [loading, setLoading] = useState(true)
   const [dialog, setDialog] = useState<Dialog | null>(null)
   const [filter, setFilter] = useState<'all' | 'kosong' | 'draft' | 'disetujui'>('all')
+  const [dipas, setDipas] = useState<DipaOpt[]>([])
+  const [preview, setPreview] = useState<{ url: string; name: string; mime: string } | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true); setError('')
@@ -100,6 +111,13 @@ export default function ProgarR5H11({ mode, userId, onOpenProgram }: { mode: 'pr
       setCaps(c)
       if (!c.canRead) { setTree(null); return }
       setTree(await api<Tree>(`/?tahun=${tahun}`))
+      if (mode === 'pagu') {
+        // R5H14: daftar DIPA sah yang berlaku (belum digantikan revisi) untuk tahun ini.
+        const r = await fetch(`/api/v1/subbagren/perencanaan/dokumen?tahun=${tahun}`, { credentials: 'same-origin', cache: 'no-store' })
+        const items: { id: string; jenis: string; jenisLabel: string; judul: string; nomor: string; status: string; digantikan: boolean }[] = r.ok ? (await r.json()).items ?? [] : []
+        setDipas(items.filter(d => (d.jenis === 'dipa' || d.jenis === 'revisi_dipa') && d.status === 'disahkan' && !d.digantikan)
+          .map(d => ({ id: d.id, judul: d.judul, nomor: d.nomor, label: `${d.jenisLabel} — ${d.nomor || d.judul}` })))
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Data tidak dapat dimuat.')
     } finally { setLoading(false) }
@@ -140,10 +158,10 @@ export default function ProgarR5H11({ mode, userId, onOpenProgram }: { mode: 'pr
   }
 
   // ---- Pagu ----
-  const addPagu = (p: Program, k: Kegiatan) => setDialog({ title: 'Catat Pagu', eyebrow: `PAGU ANGGARAN ${tahun}`, context: `${p.kode} · ${k.kode} — ${k.nama}`, fields: paguFields, values: { jumlah: '', dasar: '', keterangan: '' }, submitLabel: 'Simpan & Ajukan',
-    onSubmit: v => run(() => api('/pagu', 'POST', { kegiatanId: k.id, jumlah: v.jumlah, dasar: v.dasar, keterangan: v.keterangan }), 'Pagu dicatat dan menunggu persetujuan Kasubbagren.') })
-  const editPagu = (p: Program, k: Kegiatan, g: Pagu) => setDialog({ title: 'Ubah Pagu', eyebrow: `PAGU ANGGARAN ${tahun}`, context: `${p.kode} · ${k.kode} — ${k.nama}`, fields: paguFields, values: { jumlah: g.jumlah, dasar: g.dasar, keterangan: g.keterangan }, submitLabel: 'Simpan Perubahan',
-    onSubmit: v => run(() => api(`/pagu/${g.id}`, 'PUT', { jumlah: v.jumlah, dasar: v.dasar, keterangan: v.keterangan, version: g.version }), 'Pagu diperbarui.') })
+  const addPagu = (p: Program, k: Kegiatan) => setDialog({ title: 'Catat Pagu', eyebrow: `PAGU ANGGARAN ${tahun}`, context: `${p.kode} · ${k.kode} — ${k.nama}`, fields: paguFields(dipas), values: { jumlah: '', dokumenId: dipas.length === 1 ? dipas[0].id : '', keterangan: '' }, submitLabel: 'Simpan & Ajukan',
+    onSubmit: v => run(() => api('/pagu', 'POST', { kegiatanId: k.id, jumlah: v.jumlah, dokumenId: v.dokumenId, keterangan: v.keterangan }), 'Pagu dicatat dan menunggu persetujuan Kasubbagren.') })
+  const editPagu = (p: Program, k: Kegiatan, g: Pagu) => setDialog({ title: 'Ubah Pagu', eyebrow: `PAGU ANGGARAN ${tahun}`, context: `${p.kode} · ${k.kode} — ${k.nama}`, fields: paguFields(dipas), values: { jumlah: g.jumlah, dokumenId: g.dokumen && !g.dokumen.digantikan ? g.dokumen.id : (dipas.length === 1 ? dipas[0].id : ''), keterangan: g.keterangan }, submitLabel: 'Simpan Perubahan',
+    onSubmit: v => run(() => api(`/pagu/${g.id}`, 'PUT', { jumlah: v.jumlah, dokumenId: v.dokumenId, keterangan: v.keterangan, version: g.version }), 'Pagu diperbarui.') })
   async function approvePagu(k: Kegiatan, g: Pagu) {
     if (!await confirmDialog(`Setujui pagu ${rupiah(g.jumlah)} untuk kegiatan ${k.kode}? Setelah disetujui, pagu tidak dapat diubah.`, { confirmLabel: 'Setujui' })) return
     try { await run(() => api(`/pagu/${g.id}/review`, 'POST', { keputusan: 'disetujui', catatan: '', version: g.version }), 'Pagu disetujui.') } catch (e) { showToast(e instanceof Error ? e.message : 'Gagal menyetujui.', 'error') }
@@ -170,6 +188,12 @@ export default function ProgarR5H11({ mode, userId, onOpenProgram }: { mode: 'pr
       <div><span>Pagu disetujui</span><strong>{rupiah(tree.totals.disetujui)}</strong></div>
       <div><span>Menunggu persetujuan</span><strong>{rupiah(tree.totals.draft)}</strong><small>{menunggu} kegiatan</small></div>
       <div><span>Kegiatan tanpa pagu</span><strong>{tanpaPagu}</strong><small>dari {allKegiatan.length} kegiatan</small></div>
+    </div>}
+
+    {mode === 'pagu' && tree && dipas.length === 0 && <div className="panel sdl-progar__notice" role="status">
+      <strong>Belum ada DIPA yang sah untuk tahun {tahun}</strong>
+      <p>Pagu ditetapkan oleh DIPA. Unggah DIPA (atau Revisi DIPA) di Dokumen Perencanaan dan minta Kasubbagren mengesahkannya; setelah itu pagu bisa dicatat dengan merujuk DIPA tersebut.</p>
+      {onOpenDokumen && <button type="button" className="btn primary" onClick={onOpenDokumen}>Buka Dokumen Perencanaan</button>}
     </div>}
 
     {mode === 'pagu' && tree && allKegiatan.length > 0 && <div className="sdl-progar__filters" role="tablist" aria-label="Saring status pagu">
@@ -217,7 +241,9 @@ export default function ProgarR5H11({ mode, userId, onOpenProgram }: { mode: 'pr
                   return <tr key={k.id}>
                     <td><span className="sdl-progar__code">{k.kode}</span></td>
                     <td><strong>{k.nama}</strong>
-                      {mode === 'pagu' && g && <small>Dasar: {g.dasar} · dicatat {g.createdByName}, {readable(g.createdAt)}</small>}
+                      {mode === 'pagu' && g && <small>Dasar: {g.dokumen ? <button type="button" className="sdl-progar__file" title="Lihat dokumen DIPA" onClick={() => setPreview({ url: `/api/v1/subbagren/perencanaan/dokumen/${g.dokumen!.id}/berkas`, name: `${g.dokumen!.nomor || g.dokumen!.judul}.pdf`, mime: 'application/pdf' })}>👁 {g.dasar}</button> : g.dasar} · dicatat {g.createdByName}, {readable(g.createdAt)}</small>}
+                      {mode === 'pagu' && g?.status === 'draft' && g.dokumen?.digantikan && <small className="sdl-progar__rejected">DIPA dasar pagu ini sudah direvisi — ubah pagu agar merujuk Revisi DIPA terbaru.</small>}
+                      {mode === 'pagu' && g?.status === 'draft' && !g.dokumen && <small className="sdl-progar__rejected">Belum merujuk DIPA sah — ubah pagu dan pilih DIPA-nya.</small>}
                       {mode === 'pagu' && !g && k.ditolak && <small className="sdl-progar__rejected">Pagu {rupiah(k.ditolak.jumlah)} ditolak {k.ditolak.reviewedByName}: “{k.ditolak.reviewNote}”</small>}
                       {mode === 'program' && k.keterangan && <small>{k.keterangan}</small>}
                     </td>
@@ -226,7 +252,7 @@ export default function ProgarR5H11({ mode, userId, onOpenProgram }: { mode: 'pr
                     {(canManage || canApprove) && <td><div className="sdl-progar__row-actions">
                       {mode === 'program' && canManage && <><button type="button" className="btn" onClick={() => editKegiatan(p, k)}>Ubah</button>
                         <button type="button" className="btn sdl-progar__danger" disabled={Boolean(g)} title={g ? 'Kegiatan dengan pagu tidak dapat dihapus' : undefined} onClick={() => void deleteKegiatan(k)}>Hapus</button></>}
-                      {mode === 'pagu' && !g && canManage && <button type="button" className="btn primary" onClick={() => addPagu(p, k)}>Catat Pagu</button>}
+                      {mode === 'pagu' && !g && canManage && <button type="button" className="btn primary" disabled={dipas.length === 0} title={dipas.length === 0 ? 'Belum ada DIPA sah untuk tahun ini' : undefined} onClick={() => addPagu(p, k)}>Catat Pagu</button>}
                       {mode === 'pagu' && g?.status === 'draft' && canManage && <button type="button" className="btn" onClick={() => editPagu(p, k, g)}>Ubah</button>}
                       {mode === 'pagu' && g?.status === 'draft' && canApprove && (mine
                         ? <span className="sdl-progar__muted" title="Pagu yang Anda catat sendiri disetujui orang lain">Dicatat oleh Anda</span>
@@ -240,6 +266,7 @@ export default function ProgarR5H11({ mode, userId, onOpenProgram }: { mode: 'pr
         })}
 
     {dialog && <FormDialog dialog={dialog} onClose={() => setDialog(null)} />}
+    {preview && <LampiranPreviewR5F15 stored={preview} maxBytes={20 * 1024 * 1024} title="DIPA Dasar Pagu" note="Cocokkan jumlah pagu dengan angka kegiatan pada DIPA sebelum menyetujui." onClose={() => setPreview(null)} />}
   </div>
 }
 

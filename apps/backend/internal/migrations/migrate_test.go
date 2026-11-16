@@ -61,6 +61,7 @@ func TestEmbeddedMigrationOrderAndSafety(t *testing.T) {
 		"sql/049_progar_pagu.sql",
 		"sql/050_realisasi_kegiatan.sql",
 		"sql/051_dokumen_kinerja.sql",
+		"sql/052_pagu_dasar_dipa.sql",
 	}
 	items, err := load()
 	if err != nil {
@@ -146,6 +147,9 @@ func migrationSafetyIssue(name, body string) string {
 				// R5H5: jenis berkas Berkas Kerja (lampiran/pendukung). Satu ADD
 				// COLUMN NOT NULL ber-DEFAULT 'lampiran', tanpa backfill.
 				"sql/044_berkas_pendukung.sql": {"SDL_UNIT_WORK_FILES"},
+				// R5H14: rujukan pagu ke DIPA sah. Satu ADD COLUMN nullable tanpa
+				// DEFAULT, tanpa backfill (kewajiban ditegakkan di API Express).
+				"sql/052_pagu_dasar_dipa.sql": {"SDL_REN_PAGU"},
 			}
 			clauses := ""
 			for _, table := range reviewed[name] {

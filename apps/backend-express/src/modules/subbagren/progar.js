@@ -21,8 +21,9 @@ import { fail, parseDateOnly, parseGoInt, respond, textOk } from './shared.js'
  *   POST   /api/v1/subbagren/progar/program/:id/kegiatan  {kode,nama,keterangan}
  *   PUT    /api/v1/subbagren/progar/kegiatan/:id          {kode,nama,keterangan,version}
  *   DELETE /api/v1/subbagren/progar/kegiatan/:id          hanya bila tanpa pagu hidup
- *   POST   /api/v1/subbagren/progar/pagu                  {kegiatanId,jumlah,dasar,keterangan}
- *   PUT    /api/v1/subbagren/progar/pagu/:id              {jumlah,dasar,keterangan,version}  (draft saja)
+ *   POST   /api/v1/subbagren/progar/pagu                  {kegiatanId,jumlah,dokumenId,keterangan}
+ *   PUT    /api/v1/subbagren/progar/pagu/:id              {jumlah,dokumenId,keterangan,version}  (draft saja)
+ *          R5H14: dokumenId = DIPA/Revisi DIPA sah, belum digantikan, setahun (wajib)
  *   POST   /api/v1/subbagren/progar/pagu/:id/review       {keputusan,catatan,version}
  *
  * R5H12 -- realisasi per kegiatan (migrasi 050), memotong pagu yang disetujui:
@@ -124,14 +125,44 @@ async function audit(client, actor, event, type, subject) {
 
 const PAGU_COLUMNS = `p.id::text,p.kegiatan_id::text,p.jumlah::text,p.dasar,p.keterangan,p.status,p.version,
   p.created_at,p.reviewed_at,p.review_note,p.created_by::text,
-  cu.display_name AS created_name, ru.display_name AS reviewed_name`
+  cu.display_name AS created_name, ru.display_name AS reviewed_name,
+  p.dokumen_id::text,dk.jenis AS dokumen_jenis,dk.judul AS dokumen_judul,dk.nomor AS dokumen_nomor,
+  EXISTS(SELECT 1 FROM sdl_ren_dokumen x WHERE x.pengganti_dari=dk.id AND x.status='disahkan') AS dokumen_digantikan`
+
+const DIPA_JENIS = { dipa: 'DIPA', revisi_dipa: 'Revisi DIPA' }
 
 function mapPagu(r) {
   return {
     id: r.id, jumlah: r.jumlah, dasar: r.dasar, keterangan: r.keterangan, status: r.status,
     version: r.version, createdBy: r.created_by, createdByName: r.created_name, createdAt: r.created_at,
     reviewedByName: r.reviewed_name ?? null, reviewedAt: r.reviewed_at ?? null, reviewNote: r.review_note,
+    dokumen: r.dokumen_id ? {
+      id: r.dokumen_id, jenis: r.dokumen_jenis, judul: r.dokumen_judul, nomor: r.dokumen_nomor, digantikan: r.dokumen_digantikan,
+    } : null,
   }
+}
+
+/**
+ * R5H14 (migrasi 052): dasar pagu WAJIB dokumen DIPA/Revisi DIPA yang sah,
+ * belum digantikan revisi, dan setahun dengan program kegiatannya. Diperiksa
+ * saat mencatat, mengubah, DAN menyetujui -- DIPA bisa direvisi di antaranya.
+ * Mengembalikan teks `dasar` untuk tampilan ("DIPA SP DIPA-060.01/2026").
+ */
+async function dasarDipa(c, dokumenId, kegiatanId) {
+  if (!dokumenId) throw new HttpError(400, 'dasar_dipa_wajib')
+  if (typeof dokumenId !== 'string' || !UUID_RE.test(dokumenId)) throw new HttpError(400, 'invalid_input')
+  const r = await c.query(
+    `SELECT d.jenis,d.judul,d.nomor,d.status,d.tahun,pr.tahun AS program_tahun,
+            EXISTS(SELECT 1 FROM sdl_ren_dokumen x WHERE x.pengganti_dari=d.id AND x.status='disahkan') AS digantikan
+       FROM sdl_ren_dokumen d
+       JOIN sdl_ren_kegiatan k ON k.id=$2::uuid
+       JOIN sdl_ren_program pr ON pr.id=k.program_id
+      WHERE d.id=$1::uuid FOR SHARE OF d`, [dokumenId, kegiatanId])
+  if (r.rowCount !== 1) throw new HttpError(400, 'dasar_dipa_tidak_sah')
+  const d = r.rows[0]
+  if (!DIPA_JENIS[d.jenis] || d.status !== 'disahkan' || d.tahun !== d.program_tahun) throw new HttpError(400, 'dasar_dipa_tidak_sah')
+  if (d.digantikan) throw new HttpError(409, 'dasar_dipa_digantikan')
+  return `${DIPA_JENIS[d.jenis]} ${d.nomor || d.judul}`.slice(0, 240)
 }
 
 export function createProgarRouter({ pool, config }) {
@@ -176,6 +207,7 @@ export function createProgarRouter({ pool, config }) {
          JOIN sdl_ren_program pr ON pr.id=k.program_id AND pr.deleted_at IS NULL AND pr.tahun=$1
          JOIN sdl_users cu ON cu.id=p.created_by
          LEFT JOIN sdl_users ru ON ru.id=p.reviewed_by
+         LEFT JOIN sdl_ren_dokumen dk ON dk.id=p.dokumen_id
         ORDER BY p.created_at DESC,p.id DESC`, [tahun])).rows
 
     const live = new Map(); const rejected = new Map()
@@ -298,19 +330,21 @@ export function createProgarRouter({ pool, config }) {
   // ---- Pagu ----
   router.post('/pagu', json, handle(async (req, res) => {
     await need(req, 'subbagren.progar.manage')
-    const v = body(req, ['kegiatanId', 'jumlah', 'dasar', 'keterangan'])
+    const v = body(req, ['kegiatanId', 'jumlah', 'dokumenId', 'keterangan'])
     if (typeof v.kegiatanId !== 'string' || !UUID_RE.test(v.kegiatanId)) throw new HttpError(400, 'invalid_input')
-    const args = [v.kegiatanId, jumlah(v.jumlah), text(v.dasar, 3, 240), text(v.keterangan, 0, 1000), req.actor]
+    const nilai = jumlah(v.jumlah); const ket = text(v.keterangan, 0, 1000)
     const row = await withTransaction(pool, async (c) => {
       const found = await c.query(
         `SELECT 1 FROM sdl_ren_kegiatan k JOIN sdl_ren_program p ON p.id=k.program_id AND p.deleted_at IS NULL
           WHERE k.id=$1::uuid AND k.deleted_at IS NULL FOR SHARE OF k`, [v.kegiatanId])
       if (found.rowCount !== 1) throw new HttpError(404, 'not_found')
+      const dasar = await dasarDipa(c, v.dokumenId, v.kegiatanId)
       let r
       try {
         r = (await c.query(
-          `INSERT INTO sdl_ren_pagu(kegiatan_id,jumlah,dasar,keterangan,created_by) VALUES($1::uuid,$2::numeric,$3,$4,$5)
-           RETURNING id::text`, args)).rows[0]
+          `INSERT INTO sdl_ren_pagu(kegiatan_id,jumlah,dasar,dokumen_id,keterangan,created_by)
+           VALUES($1::uuid,$2::numeric,$3,$4::uuid,$5,$6) RETURNING id::text`,
+          [v.kegiatanId, nilai, dasar, v.dokumenId, ket, req.actor])).rows[0]
       } catch (error) {
         // Indeks unik parsial: kegiatan ini sudah punya pagu draft/disetujui.
         if (error?.code === '23505') throw new HttpError(409, 'pagu_exists')
@@ -325,16 +359,17 @@ export function createProgarRouter({ pool, config }) {
   router.put('/pagu/:id', json, handle(async (req, res) => {
     await need(req, 'subbagren.progar.manage')
     const gid = id(req.params.id)
-    const v = body(req, ['jumlah', 'dasar', 'keterangan', 'version'])
-    const args = [gid, jumlah(v.jumlah), text(v.dasar, 3, 240), text(v.keterangan, 0, 1000), version(v.version)]
+    const v = body(req, ['jumlah', 'dokumenId', 'keterangan', 'version'])
+    const nilai = jumlah(v.jumlah); const ket = text(v.keterangan, 0, 1000); const ver = version(v.version)
     await withTransaction(pool, async (c) => {
-      const cur = await c.query('SELECT status,version FROM sdl_ren_pagu WHERE id=$1::uuid FOR UPDATE', [gid])
+      const cur = await c.query('SELECT status,version,kegiatan_id::text FROM sdl_ren_pagu WHERE id=$1::uuid FOR UPDATE', [gid])
       if (cur.rowCount !== 1) throw new HttpError(404, 'not_found')
       if (cur.rows[0].status !== 'draft') throw new HttpError(409, 'pagu_not_draft')
-      if (cur.rows[0].version !== args[4]) throw new HttpError(409, 'version_conflict')
+      if (cur.rows[0].version !== ver) throw new HttpError(409, 'version_conflict')
+      const dasar = await dasarDipa(c, v.dokumenId, cur.rows[0].kegiatan_id)
       await c.query(
-        `UPDATE sdl_ren_pagu SET jumlah=$2::numeric,dasar=$3,keterangan=$4,version=version+1,updated_at=now()
-          WHERE id=$1::uuid`, args.slice(0, 4))
+        `UPDATE sdl_ren_pagu SET jumlah=$2::numeric,dasar=$3,dokumen_id=$4::uuid,keterangan=$5,version=version+1,updated_at=now()
+          WHERE id=$1::uuid`, [gid, nilai, dasar, v.dokumenId, ket])
       await audit(c, req.actor, 'pagu.update', 'pagu', gid)
     })
     respond(res, 200, { ok: true })
@@ -349,12 +384,14 @@ export function createProgarRouter({ pool, config }) {
     const catatan = text(v.catatan, v.keputusan === 'ditolak' ? 8 : 0, 500)
     const ver = version(v.version)
     await withTransaction(pool, async (c) => {
-      const cur = await c.query('SELECT status,version,created_by::text FROM sdl_ren_pagu WHERE id=$1::uuid FOR UPDATE', [gid])
+      const cur = await c.query('SELECT status,version,created_by::text,dokumen_id::text,kegiatan_id::text FROM sdl_ren_pagu WHERE id=$1::uuid FOR UPDATE', [gid])
       if (cur.rowCount !== 1) throw new HttpError(404, 'not_found')
       const p = cur.rows[0]
       if (p.status !== 'draft') throw new HttpError(409, 'pagu_not_draft')
       if (p.version !== ver) throw new HttpError(409, 'version_conflict')
       if (p.created_by === req.actor) throw new HttpError(403, 'self_review_forbidden')
+      // R5H14: yang disetujui harus tetap berdasar DIPA sah yang berlaku saat ini.
+      if (v.keputusan === 'disetujui') await dasarDipa(c, p.dokumen_id, p.kegiatan_id)
       await c.query(
         `UPDATE sdl_ren_pagu SET status=$2,review_note=$3,reviewed_by=$4,reviewed_at=now(),
                 version=version+1,updated_at=now() WHERE id=$1::uuid`, [gid, v.keputusan, catatan, req.actor])

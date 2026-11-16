@@ -1603,3 +1603,20 @@ uji `verify/r5h13-flow.js`. Prefix `/api/v1/subbagren/perencanaan`.
 | DELETE | `/kinerja/indikator/:id` | M | 409 `indikator_has_capaian` |
 | PUT | `/kinerja/indikator/:id/capaian/:tw` | M | `{nilai,catatan}`; tw 1–4; upsert |
 | GET | `/kinerja/lkip.xlsx?tahun=` | R | XLSX dua sheet: Capaian Kinerja (+ pagu/realisasi/serapan), Dokumen Sah (versi terbaru) |
+
+## R5H14 — Dasar pagu wajib DIPA sah (2026-11-13, EXPRESS SAJA)
+
+Migrasi `052_pagu_dasar_dipa.sql` (kolom `sdl_ren_pagu.dokumen_id`, nullable,
+tanpa backfill). Rancangan `docs/R5H14-PAGU-DASAR-DIPA.md`; uji
+`verify/r5h11-flow.js` bagian 3a dan 5a.
+
+- `POST /api/v1/subbagren/progar/pagu` kini `{kegiatanId,jumlah,dokumenId,keterangan}`;
+  `PUT /pagu/:id` kini `{jumlah,dokumenId,keterangan,version}`. Field `dasar`
+  **tidak lagi diterima** (400 `invalid_body`); server mengisinya dari dokumen
+  ("DIPA <nomor>").
+- `dokumenId` wajib: dokumen `dipa`/`revisi_dipa`, berstatus `disahkan`, belum
+  digantikan revisi sah, dan setahun dengan program kegiatannya.
+  400 `dasar_dipa_wajib` / `dasar_dipa_tidak_sah`; 409 `dasar_dipa_digantikan`.
+- `POST /pagu/:id/review` dengan `disetujui` memeriksa ulang aturan yang sama
+  (DIPA bisa direvisi di antara pencatatan dan persetujuan).
+- Objek pagu di `GET /` bertambah `dokumen:{id,jenis,judul,nomor,digantikan}|null`.
