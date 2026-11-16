@@ -1,5 +1,6 @@
 /* R5H10: Inbox gabungan -- "Perlu tindakan Anda" di atas daftar distribusi. */
-.sdl-inbox-h10{display:grid;gap:14px}
+.sdl-inbox-h10{display:grid;gap:14px;grid-template-columns:minmax(0,1fr);min-width:0}
+.sdl-inbox-h10>*{min-width:0}
 .sdl-inbox-h10__panel{padding:18px 20px}
 .sdl-inbox-h10__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .sdl-inbox-h10__head h2{margin:0;font-size:16px;font-weight:800}
