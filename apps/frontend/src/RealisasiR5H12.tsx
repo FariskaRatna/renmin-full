@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import BudgetR4A3 from './BudgetR4A3'
+import { LampiranPreviewR5F15 } from './LampiranPreviewR5F15'
 import { FormDialog, rupiah, type Dialog } from './ProgarR5H11'
 import { confirmDialog, showToast } from './UIFeedback'
 import './ProgarR5H11.css'
@@ -87,6 +88,8 @@ export default function RealisasiR5H12({ userId, onOpenPagu }: { userId: string;
   const [dialog, setDialog] = useState<Dialog | null>(null)
   const [legacy, setLegacy] = useState(false)
   const [uploading, setUploading] = useState('')
+  // Bukti dibuka di jendela pratinjau (bukan diunduh) supaya pemeriksa cukup melihat.
+  const [preview, setPreview] = useState<{ url: string; name: string; mime: string } | null>(null)
   const fileRef = useRef<HTMLInputElement | null>(null)
   const uploadTarget = useRef<Real | null>(null)
 
@@ -196,7 +199,7 @@ export default function RealisasiR5H12({ userId, onOpenPagu }: { userId: string;
                       {r.status === 'ditolak' && <small className="sdl-progar__rejected">Ditolak {r.reviewedByName}: “{r.reviewNote}”</small>}</td>
                     <td className="is-num">{rupiah(r.jumlah)}</td>
                     <td>{r.bukti
-                      ? <a className="sdl-progar__file" href={`${BASE}/realisasi/${r.id}/bukti`} download={r.bukti.filename} title={`${r.bukti.filename} · ${Math.ceil(r.bukti.size / 1024)} KB`}>📎 {r.bukti.filename}</a>
+                      ? <button type="button" className="sdl-progar__file" onClick={() => setPreview({ url: `${BASE}/realisasi/${r.id}/bukti`, name: r.bukti!.filename, mime: r.bukti!.mimeType })} title={`Lihat ${r.bukti.filename} · ${Math.ceil(r.bukti.size / 1024)} KB`}>👁 {r.bukti.filename}</button>
                       : <span className="sdl-progar__muted">Belum ada</span>}</td>
                     <td><span className={`sdl-progar__badge ${STATUS[r.status].cls}`}>{STATUS[r.status].label}</span></td>
                     {(canRecord || canVerify) && <td><div className="sdl-progar__row-actions">
@@ -220,5 +223,6 @@ export default function RealisasiR5H12({ userId, onOpenPagu }: { userId: string;
     </div>
 
     {dialog && <FormDialog dialog={dialog} onClose={() => setDialog(null)} />}
+    {preview && <LampiranPreviewR5F15 stored={preview} title="Bukti Bayar" note="Periksa kesesuaian nomor dan jumlah pada bukti sebelum memverifikasi." onClose={() => setPreview(null)} />}
   </div>
 }

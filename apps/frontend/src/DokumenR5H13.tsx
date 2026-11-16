@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { LampiranPreviewR5F15 } from './LampiranPreviewR5F15'
 import { FormDialog, type Dialog } from './ProgarR5H11'
 import { confirmDialog, showToast } from './UIFeedback'
 import './ProgarR5H11.css'
@@ -65,6 +66,8 @@ export default function DokumenR5H13({ userId }: { userId: string }) {
   const [dialog, setDialog] = useState<Dialog | null>(null)
   const [showOld, setShowOld] = useState(false)
   const [uploading, setUploading] = useState('')
+  // Dokumen dibuka di jendela pratinjau (bukan diunduh) supaya pemeriksa cukup melihat.
+  const [preview, setPreview] = useState<{ url: string; name: string; mime: string } | null>(null)
   const fileRef = useRef<HTMLInputElement | null>(null)
   const target = useRef<Doc | null>(null)
 
@@ -161,7 +164,7 @@ export default function DokumenR5H13({ userId }: { userId: string }) {
                   {d.status === 'ditolak' && <small className="sdl-progar__rejected">Ditolak {d.reviewedByName}: “{d.reviewNote}”</small>}
                   {d.status === 'disahkan' && d.reviewedAt && <small>Disahkan {d.reviewedByName}, {tgl(d.reviewedAt.slice(0, 10))}</small>}</td>
                 <td>{d.kegiatan ? <span className="sdl-progar__muted">Kegiatan {d.kegiatan.kode}</span> : d.program ? <span className="sdl-progar__muted">Program {d.program.kode}</span> : <span className="sdl-progar__muted">–</span>}</td>
-                <td>{d.berkas ? <a className="sdl-progar__file" href={`${BASE}/dokumen/${d.id}/berkas`} download={d.berkas.filename} title={`${d.berkas.filename} · ${Math.ceil(d.berkas.size / 1024)} KB`}>📄 {d.berkas.filename}</a> : <span className="sdl-progar__muted">Belum ada</span>}</td>
+                <td>{d.berkas ? <button type="button" className="sdl-progar__file" onClick={() => setPreview({ url: `${BASE}/dokumen/${d.id}/berkas`, name: d.berkas!.filename, mime: 'application/pdf' })} title={`Lihat ${d.berkas.filename} · ${Math.ceil(d.berkas.size / 1024)} KB`}>👁 {d.berkas.filename}</button> : <span className="sdl-progar__muted">Belum ada</span>}</td>
                 <td><span className={`sdl-progar__badge ${st.cls}`}>{st.label}</span></td>
                 {(canManage || canSahkan) && <td><div className="sdl-progar__row-actions">
                   {d.status === 'draft' && canManage && <>
@@ -179,5 +182,6 @@ export default function DokumenR5H13({ userId }: { userId: string }) {
         </section>)}
 
     {dialog && <FormDialog dialog={dialog} onClose={() => setDialog(null)} />}
+    {preview && <LampiranPreviewR5F15 stored={preview} maxBytes={20 * 1024 * 1024} title="Dokumen Perencanaan" note="Periksa isi dokumen sebelum mengesahkan." onClose={() => setPreview(null)} />}
   </div>
 }

@@ -10,3 +10,8 @@
 .sdl-r5f15__viewer p{color:#344e64;text-align:center;padding:22px}
 .sdl-r5f15__modal footer{font-size:12px;line-height:1.5;color:#52697b;background:#f7f9fb;padding:10px 22px}
 @media(max-width:640px){.sdl-r5f15__shade{padding:8px}.sdl-r5f15__modal{height:96vh;border-radius:12px}.sdl-r5f15__modal header{padding:12px 14px}.sdl-r5f15__modal footer{padding:9px 14px}}
+/* R5H13: PDF digambar pdf.js; halaman bertumpuk dan bisa digulir. */
+.sdl-r5f15__viewer.is-pdf{display:block;padding:20px}
+.sdl-r5f15__pages{display:flex;flex-direction:column;align-items:center;gap:14px}
+.sdl-r5f15__pages canvas{background:#fff;box-shadow:0 2px 10px rgba(16,32,56,.18);max-width:100%;height:auto}
+@media(max-width:640px){.sdl-r5f15__viewer.is-pdf{padding:10px}}

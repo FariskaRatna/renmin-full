@@ -1,5 +1,6 @@
 /* R5H11: Program Anggaran & Pagu Anggaran (Subbagren). */
-.sdl-progar{display:grid;gap:14px}
+.sdl-progar{display:grid;gap:14px;grid-template-columns:minmax(0,1fr);min-width:0}
+.sdl-progar>*{min-width:0}
 .sdl-progar__toolbar{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap}
 .sdl-progar__grow{flex:1}
 .sdl-progar__year{display:grid;gap:4px;font-size:11px;font-weight:750;color:var(--muted)}
@@ -93,7 +94,7 @@
 .sdl-progar__meter span{position:absolute;inset:0 auto 0 0;background:linear-gradient(90deg,#2f8f6a,#3aa77d);border-radius:8px}
 .sdl-progar__meter em{position:relative;display:block;padding:0 12px;line-height:30px;font-style:normal;font-size:12px;font-weight:750;color:#14243e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sdl-progar__nowrap{white-space:nowrap}
-.sdl-progar__file{font-size:12px;font-weight:700;color:#244f8f;text-decoration:none;max-width:180px;display:inline-block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
+.sdl-progar__file{all:unset;cursor:pointer;font-size:12px;font-weight:700;color:#244f8f;text-decoration:none;max-width:180px;display:inline-block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
 .sdl-progar__file:hover{text-decoration:underline}
 .sdl-progar__legacy{display:grid;gap:10px;justify-items:start}
 .sdl-progar__legacy-body{width:100%}
@@ -132,3 +133,9 @@ button.sdl-kinerja__cell:focus-visible{outline:3px solid rgba(47,82,144,.35)}
 :root[data-theme=dark] .sdl-progar .is-good{background:#173a2b !important;color:#8fd6b0 !important}
 :root[data-theme=dark] .sdl-progar .is-mid{background:#3b2f14 !important;color:#f0c46c !important}
 :root[data-theme=dark] .sdl-progar .is-low{background:#3e1f1c !important;color:#f0a39b !important}
+.sdl-progar__file:focus-visible{outline:3px solid rgba(47,82,144,.4);outline-offset:2px;border-radius:4px}
+
+/* R5H14: pemberitahuan DIPA belum sah */
+.sdl-progar__notice{padding:16px 18px;display:grid;gap:6px;justify-items:start;border-left:4px solid #d39a2c}
+.sdl-progar__notice strong{font-size:14px}
+.sdl-progar__notice p{margin:0;font-size:12.5px;color:var(--muted);line-height:1.6;max-width:760px}
