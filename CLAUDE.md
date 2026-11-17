@@ -407,3 +407,6 @@ Pengaman otomatis (`.claude/settings.json` + `.claude/hooks/`):
   dijalankan lewat `/verifikasi`.
 
 Gaya commit: `feat(<area>): ...`, `fix(<area>): ...`. Branch fitur: `feat/<kode-rilis>-<nama>`.
+
+
+Untuk semua pekerjaan UI, baca dan ikuti docs/DESIGN-BRIEF.md.

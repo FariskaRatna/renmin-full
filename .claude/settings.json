@@ -19,7 +19,8 @@
       "Bash(npm run verify:*)",
       "Bash(npm run harness:compare:*)",
       "Bash(npm run harness:list:*)",
-      "Bash(node --check:*)"
+      "Bash(node --check:*)",
+      "Bash(playwright-cli:*)"
     ],
     "ask": [
       "Bash(bash scripts/local-setup.sh up)",
