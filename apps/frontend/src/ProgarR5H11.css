@@ -32,7 +32,14 @@
 .sdl-progar__program-meta{display:grid;justify-items:end;gap:1px;text-align:right}
 .sdl-progar__program-meta span,.sdl-progar__program-meta small{font-size:11px;color:var(--muted)}
 .sdl-progar__program-meta strong{font-size:15px;font-variant-numeric:tabular-nums}
-.sdl-progar__actions{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px}
+/* Kepala kartu program: identitas di kiri; Ubah/Hapus Program di kanan ATAS, lalu
+ * ringkasan pagu di bawahnya; "Tambah Kegiatan" di baris sendiri dekat tabel.
+ * Ukuran tombol sama dengan tombol baris kegiatan. */
+.sdl-progar__program-head>div:first-child{grid-column:1;grid-row:1/3}
+.sdl-progar__program-tools{grid-column:2;grid-row:1;display:flex;justify-content:flex-end;flex-wrap:wrap;gap:6px}
+.sdl-progar__program-meta{grid-column:2;grid-row:2}
+.sdl-progar__actions{grid-column:1/-1;display:flex;justify-content:flex-end;flex-wrap:wrap;gap:6px}
+.sdl-progar__actions .btn,.sdl-progar__program-tools .btn{min-height:32px;padding:6px 11px}
 .sdl-progar__code{display:inline-block;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:11.5px;font-weight:700;padding:2px 7px;border-radius:6px;background:#eef2f7;color:#2f4566}
 
 .sdl-progar__table{margin-top:12px}
@@ -74,6 +81,8 @@
 @media(max-width:640px){
   .sdl-progar__program-head{grid-template-columns:1fr}
   .sdl-progar__program-meta{justify-items:start;text-align:left}
+  .sdl-progar__program-head>div:first-child,.sdl-progar__program-tools,.sdl-progar__program-meta{grid-column:1;grid-row:auto}
+  .sdl-progar__program-tools{justify-content:flex-start}
 }
 
 :root[data-theme=dark] .sdl-progar__code{background:#22324a;color:#b9c8dc}
@@ -139,3 +148,155 @@ button.sdl-kinerja__cell:focus-visible{outline:3px solid rgba(47,82,144,.35)}
 .sdl-progar__notice{padding:16px 18px;display:grid;gap:6px;justify-items:start;border-left:4px solid #d39a2c}
 .sdl-progar__notice strong{font-size:14px}
 .sdl-progar__notice p{margin:0;font-size:12.5px;color:var(--muted);line-height:1.6;max-width:760px}
+
+/* Dokumen Perencanaan: tombol Riwayat di baris dan jendela riwayat versi. */
+.sdl-progar__history{display:inline-flex;align-items:center;gap:4px;margin-top:6px;padding:3px 9px;border:1px solid var(--line,#d9e1ec);border-radius:999px;background:transparent;color:#2f5290;font-size:11.5px;font-weight:750;cursor:pointer}
+.sdl-progar__history:hover{background:#eef3fb}
+.sdl-progar__history:focus-visible{outline:3px solid rgba(47,82,144,.35);outline-offset:2px}
+.sdl-progar__riwayat{width:min(640px,100%)}
+.sdl-progar__versions{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.sdl-progar__versions li{display:grid;gap:3px;padding:12px 14px;border:1px solid var(--line,#d9e1ec);border-radius:12px}
+.sdl-progar__versions li.is-old{opacity:.78}
+.sdl-progar__versions li small{font-size:12px;color:var(--muted)}
+.sdl-progar__versions .sdl-progar__file{justify-self:start;margin-top:4px}
+.sdl-progar__version-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+:root[data-theme=dark] .sdl-progar__history{color:#9fbbe8;border-color:#2b3c55}
+:root[data-theme=dark] .sdl-progar__history:hover{background:#1b2a3c}
+
+/* Dokumen Perancangan / Final (2026-11-16): tautan antarmenu dan penanda revisi berjalan. */
+.sdl-progar__link{background:none;border:0;padding:0;font:inherit;font-weight:600;color:var(--primary,#2f62b0);cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.sdl-progar__link:focus-visible{outline:2px solid currentColor;outline-offset:2px;border-radius:2px}
+.sdl-progar__table small.sdl-progar__pending{color:#9a6400;font-weight:600}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .sdl-progar__table small.sdl-progar__pending{color:#f0b54a}}
+:root[data-theme="dark"] .sdl-progar__table small.sdl-progar__pending{color:#f0b54a}
+
+/* R5H16: formulir dokumen dengan Tahap Pekerjaan, dan garis tahap di baris. */
+.sdl-progar__dokdialog{width:min(720px,100%)}
+.sdl-progar__tahap-section{display:grid;gap:12px;border-top:1px solid var(--border);padding-top:14px}
+.sdl-progar__tahap-section h3{margin:0;font-size:14px}
+.sdl-progar__tahap-help{margin:0;font-size:12px;color:var(--muted)}
+.sdl-progar__tahap-block{border:1px solid var(--border);border-radius:12px;padding:12px 14px;display:grid;gap:10px;background:color-mix(in srgb,var(--card) 92%,#4b78ba 8%)}
+.sdl-progar__tahap-top{display:flex;align-items:center;justify-content:space-between}
+.sdl-progar__tahap-top strong{font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:#2f5290}
+.sdl-progar__tahap-x{all:unset;cursor:pointer;width:28px;height:28px;display:grid;place-items:center;border-radius:8px;color:var(--muted)}
+.sdl-progar__tahap-x:hover{background:rgba(178,58,48,.1);color:#b23a30}
+.sdl-progar__tahap-x:focus-visible{outline:3px solid rgba(47,82,144,.4)}
+.sdl-progar__tahap-file em{font-style:normal;font-weight:600;color:var(--muted)}
+.sdl-progar__tahap-file input[type=file]{padding:7px 10px;font-size:12px}
+.sdl-progar__tahap-add{justify-self:start;border-style:dashed}
+.sdl-progar__tahap{list-style:none;margin:6px 0 0;padding:0 0 0 10px;border-left:2px solid #c9d6ea;display:grid;gap:3px}
+.sdl-progar__tahap li{font-size:12px;display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px}
+.sdl-progar__tahap-name{font-weight:650;color:#1f6b4f}
+.sdl-progar__tahap-missing{color:#9a6400;font-weight:600}
+.sdl-progar__tahap .sdl-progar__file{max-width:200px}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .sdl-progar__tahap-top strong{color:#9fbdf0}:root:not([data-theme="light"]) .sdl-progar__tahap-name{color:#7fd3ae}:root:not([data-theme="light"]) .sdl-progar__tahap-missing{color:#f0b54a}:root:not([data-theme="light"]) .sdl-progar__tahap{border-left-color:#3a4c68}}
+:root[data-theme="dark"] .sdl-progar__tahap-top strong{color:#9fbdf0}
+:root[data-theme="dark"] .sdl-progar__tahap-name{color:#7fd3ae}
+:root[data-theme="dark"] .sdl-progar__tahap-missing{color:#f0b54a}
+:root[data-theme="dark"] .sdl-progar__tahap{border-left-color:#3a4c68}
+.sdl-progar__ta{display:inline-block;font-weight:700;font-size:11px;padding:0 6px;border-radius:6px;background:#e8eef8;color:#2f5290;margin-right:2px}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .sdl-progar__ta{background:#24344d;color:#9fbdf0}}
+:root[data-theme="dark"] .sdl-progar__ta{background:#24344d;color:#9fbdf0}
+
+/* Detail dokumen + judul yang bisa diklik (2026-11-17). */
+.sdl-progar__open{all:unset;cursor:pointer;font-weight:750;color:var(--ink)}
+.sdl-progar__open:hover{text-decoration:underline;text-underline-offset:3px}
+.sdl-progar__open:focus-visible{outline:3px solid rgba(47,82,144,.4);outline-offset:2px;border-radius:4px}
+.sdl-progar__detail{width:min(1000px,100%)}
+.sdl-progar__detail header p{display:flex;gap:8px;align-items:center}
+.sdl-progar__meta-list{display:grid;grid-template-columns:max-content 1fr;gap:6px 16px;margin:0;font-size:13px}
+.sdl-progar__meta-list dt{color:var(--muted);font-weight:650}
+.sdl-progar__meta-list dd{margin:0}
+.sdl-progar__num{font-variant-numeric:tabular-nums}
+.sdl-progar__detail-tahap{display:grid;gap:8px;border-top:1px solid var(--border);padding-top:12px}
+.sdl-progar__detail-tahap h3{margin:0;font-size:14px}
+.sdl-progar__isian{display:block;font-size:12px;line-height:1.45;white-space:pre-line}
+.sdl-progar__isian b{font-weight:650;color:var(--muted)}
+.sdl-progar__detail-tahap .sdl-progar__file{display:block;margin:2px 0}
+.sdl-progar__detail-actions{flex-wrap:wrap}
+@media(max-width:640px){.sdl-progar__meta-list{grid-template-columns:1fr}.sdl-progar__meta-list dd{margin-bottom:6px}}
+
+/* Lampiran tahap: banyak berkas per jenis (2026-11-17). */
+.sdl-progar__lampiran{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.sdl-progar__lampiran li{display:flex;align-items:center;gap:8px;font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:8px;background:var(--card)}
+.sdl-progar__lampiran li span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sdl-progar__lampiran li em{font-style:normal;color:var(--muted);font-size:11px}
+.sdl-progar__lampiran li.is-gone span{text-decoration:line-through;color:var(--muted)}
+.sdl-progar__mini{font:inherit;font-size:11px;font-weight:650;padding:2px 8px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--ink);cursor:pointer}
+.sdl-progar__mini:hover{background:rgba(178,58,48,.08)}
+.sdl-progar__mini:focus-visible{outline:3px solid rgba(47,82,144,.4)}
+.sdl-progar__fields .sdl-progar__tahap-file{display:grid;gap:5px;grid-column:1/-1}
+.sdl-progar__tahap-file>span{font-size:12px;font-weight:750}
+.sdl-progar__tahap-count{font-weight:650}
+.sdl-progar__table td .sdl-progar__open+.sdl-progar__tag{margin-left:6px}
+.sdl-progar__doclist{padding-top:14px}
+.sdl-progar__count{margin:0 0 10px;font-size:12.5px;font-weight:650;color:var(--muted)}
+.sdl-progar__jenis{white-space:nowrap;font-size:12.5px;font-weight:650;color:var(--muted)}
+.sdl-progar__doclist .sdl-progar__table td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:middle}
+.sdl-progar__doclist .sdl-progar__table tbody tr:last-child td{border-bottom:0}
+.sdl-progar__doclist .sdl-progar__table tbody tr:hover td{background:color-mix(in srgb,var(--card) 94%,#4b78ba 6%)}
+.sdl-progar__doclist .sdl-progar__table td small{display:block;margin-top:3px}
+.sdl-progar__doclist .sdl-progar__row-actions{flex-wrap:nowrap;justify-content:flex-end;white-space:nowrap}
+.sdl-progar__doclist .sdl-progar__table td:last-child{width:1%}
+
+/* Pemeriksaan tahap oleh Kasubbagren (2026-11-17). */
+.sdl-progar__check{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:650;cursor:pointer}
+.sdl-progar__check b{display:inline-block;min-width:20px;padding:0 6px;border-radius:10px;background:#fdf0d5;color:#8a5a00;text-align:center}
+.sdl-progar__ok{color:#1f6b4f;font-weight:600}
+.sdl-progar__rejected-inline{color:#b23a30;font-weight:600}
+.sdl-progar__cek-btns{display:flex;gap:6px;margin-top:6px}
+.sdl-progar__mini.is-ok{border-color:#1f6b4f;color:#1f6b4f}
+.sdl-progar__mini.is-ok:hover{background:rgba(31,107,79,.08)}
+.sdl-progar__cek-mini{font-weight:600;text-transform:none;letter-spacing:0;color:var(--muted)}
+.sdl-progar__detail-tahap .sdl-progar__badge{white-space:nowrap}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .sdl-progar__check b{background:#4a3a14;color:#f0c46a}:root:not([data-theme="light"]) .sdl-progar__ok{color:#7fd3ae}:root:not([data-theme="light"]) .sdl-progar__mini.is-ok{border-color:#7fd3ae;color:#7fd3ae}}
+:root[data-theme="dark"] .sdl-progar__check b{background:#4a3a14;color:#f0c46a}
+:root[data-theme="dark"] .sdl-progar__ok{color:#7fd3ae}
+:root[data-theme="dark"] .sdl-progar__mini.is-ok{border-color:#7fd3ae;color:#7fd3ae}
+.sdl-progar__tahap-locked{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.sdl-progar__tahap-locked li{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:12.5px;padding:8px 12px;border:1px solid var(--border);border-radius:10px;color:var(--muted)}
+.sdl-progar__tahap-locked li b{font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--ink)}
+.sdl-progar__tahap-locked li span{margin-left:auto;font-size:11.5px;font-weight:650;color:#1f6b4f}
+
+/* Register tahap pekerjaan di Detail (2026-11-17): satu baris per tahap, rincian per baris. */
+.sdl-progar__register td{vertical-align:middle}
+.sdl-progar__register tr.is-open td{border-bottom-color:transparent}
+.sdl-progar__register-more td{padding-top:0;background:color-mix(in srgb,var(--card) 94%,#4b78ba 6%)}
+.sdl-progar__register-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,220px);gap:8px 20px;padding:4px 0 8px}
+.sdl-progar__register-grid .sdl-progar__file{display:block;margin:2px 0}
+.sdl-progar__ringkas{font-size:12.5px;color:var(--muted);max-width:280px}
+.sdl-progar__ke{font-size:12px;font-weight:650;color:var(--muted);font-variant-numeric:tabular-nums}
+.sdl-progar__nowrap{white-space:nowrap}
+.sdl-progar__detail .sdl-progar__filters{margin-bottom:2px}
+.sdl-progar__footer-left{margin-right:auto}
+@media(max-width:640px){.sdl-progar__register-grid{grid-template-columns:1fr}.sdl-progar__register .sdl-progar__ringkas,.sdl-progar__register .sdl-progar__col-lamp{display:none}}
+/* Halaman detail tahap di dalam dialog Detail (2026-11-17). */
+.sdl-progar__backbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-bottom:14px;border-bottom:1px solid var(--border)}
+.sdl-progar__back{padding:7px 14px}
+.sdl-progar__tahap-head .sdl-progar__eyebrow{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sdl-progar__tahap-head h2{margin:6px 0 0}
+.sdl-progar__tahap-head p{margin:10px 0 0;flex-wrap:wrap}
+.sdl-progar__detail .sdl-progar__detail-tahap{gap:10px;padding-top:16px}
+.sdl-progar__detail .sdl-progar__detail-tahap h3{font-size:14px;font-weight:750}
+.sdl-progar__detail .sdl-progar__meta-list{gap:8px 20px}
+.sdl-progar__detail .sdl-progar__detail-actions{padding-top:16px;border-top:1px solid var(--border)}
+.sdl-progar__pre{white-space:pre-line}
+.sdl-progar__cek-line{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0}
+.sdl-progar__pager{display:inline-flex;gap:6px}
+.sdl-progar__row-link{cursor:pointer}
+.sdl-progar__row-link:hover td{background:color-mix(in srgb,var(--card) 94%,#4b78ba 6%)}
+/* Jarak sel register: .data-table tidak memberi padding pada td. */
+.sdl-progar__register th,.sdl-progar__register td{padding:12px 16px}
+.sdl-progar__register td{border-bottom:1px solid var(--border);line-height:1.45}
+.sdl-progar__register tbody tr:last-child td{border-bottom:0}
+.sdl-progar__register th:first-child,.sdl-progar__register td:first-child{padding-left:12px}
+.sdl-progar__register td:last-child{width:1%}
+.sdl-progar__reg-actions{display:flex;gap:8px;white-space:nowrap}
+.sdl-progar__reg-actions .sdl-progar__mini{padding:5px 12px}
+.sdl-progar__register td .sdl-progar__badge{white-space:nowrap}
+.sdl-progar__register td .sdl-progar__cek-btns{margin-top:6px}
+@media(max-width:640px){.sdl-progar__pager{width:100%}.sdl-progar__detail-actions{flex-wrap:wrap}}
+.sdl-progar__detail>*{min-width:0}
+@media(max-width:640px){.sdl-progar__detail .sdl-progar__meta-list{gap:2px 12px}.sdl-progar__detail .sdl-progar__meta-list dd{margin-bottom:8px}}
+.sdl-progar__register td:nth-child(3){white-space:nowrap}
+.sdl-progar__register .sdl-progar__ringkas{max-width:300px}

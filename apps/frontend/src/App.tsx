@@ -38,14 +38,14 @@ type Theme = 'light' | 'dark'
 // Server menolak proof CAPTCHA (captcha_invalid): kedaluwarsa atau sudah dipakai.
 class CaptchaRejected extends Error { constructor(){ super('CAPTCHA kedaluwarsa atau sudah dipakai. Verifikasi lagi.') } }
 type Screen = { view: 'portal' | 'executive' | 'arahan' | 'executive' | 'inbox' | 'tasks' | 'workspace' | 'roadmap' | 'security' | 'roles' | 'users' | 'master' | 'delegations' | 'profile' | 'login-preview'; unit?: UnitKey; menu?: string; tab?: string; recordID?: string; create?: boolean; sub?: RenSub }
-type IconName = 'grid'|'inbox'|'send'|'clipboard'|'calendar'|'archive'|'chart'|'users'|'book'|'file'|'layers'|'target'|'shield'|'folder'|'package'|'wrench'|'graduation'|'search'|'arrow'|'back'|'chevron'|'menu'|'x'|'sun'|'moon'|'bell'|'user'|'lock'|'clock'|'check'|'refresh'|'activity'|'database'|'settings'|'eye'|'list'|'info'|'external'|'key'|'mail'|'plus'
+type IconName = 'grid'|'inbox'|'send'|'clipboard'|'calendar'|'archive'|'chart'|'users'|'book'|'file'|'fileCheck'|'layers'|'target'|'shield'|'folder'|'package'|'wrench'|'graduation'|'search'|'arrow'|'back'|'chevron'|'menu'|'x'|'sun'|'moon'|'bell'|'user'|'lock'|'clock'|'check'|'refresh'|'activity'|'database'|'settings'|'eye'|'list'|'info'|'external'|'key'|'mail'|'plus'
 type UnitKey = 'urmin' | 'ren' | 'sumda' | 'binfung'
 // SUBBAGREN dibagi dua ruang kerja. Klik SUBBAGREN membuka halaman pilihan
 // dulu; modul di sidebar hanya yang termasuk ruang kerja yang dipilih.
 // Ini pengelompokan NAVIGASI saja, otorisasi tetap sepenuhnya di backend.
 type RenSub = 'progar' | 'pagu'
 const renSubs: {id:RenSub;title:string;name:string;description:string;icon:IconName;modules:string[]}[] = [
-  {id:'progar',title:'PROGAR',name:'Program & Perencanaan',description:'Dokumen perencanaan, monitoring kinerja & LKIP, serta usulan kebutuhan.',icon:'file',modules:['perencanaan','program','kinerja','usulan']},
+  {id:'progar',title:'PROGAR',name:'Program & Perencanaan',description:'Dokumen perencanaan, monitoring kinerja & LKIP, serta usulan kebutuhan.',icon:'file',modules:['perencanaan','dokumen-final','program','kinerja','usulan']},
   {id:'pagu',title:'PAGU ANGGARAN',name:'Pagu Anggaran',description:'Pagu per kegiatan dari Program Anggaran, serta realisasi anggaran (LRA).',icon:'layers',modules:['pagu','realisasi']}
 ]
 function renSubOf(s:Screen):RenSub|undefined{
@@ -67,6 +67,7 @@ const icons: Record<IconName, ReactNode> = {
   users:<><circle cx="9" cy="8" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2M17 5a3 3 0 0 1 0 6m2 9v-2a6 6 0 0 0-3-5"/></>,
   book:<><path d="M3 5a3 3 0 0 1 3-3h15v18H6a3 3 0 0 0-3 3zM3 5v15a3 3 0 0 1 3-3h15"/></>,
   file:<><path d="M6 2h8l4 4v16H6zM14 2v5h4M9 12h6m-6 4h6"/></>,
+  fileCheck:<><path d="M6 2h8l4 4v16H6zM14 2v5h4"/><path d="m9 14 2 2 4-4"/></>,
   layers:<><path d="m12 2 9 5-9 5-9-5zM3 12l9 5 9-5M3 17l9 5 9-5"/></>,
   target:<><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></>,
   shield:<><path d="m12 2 9 4v6c0 6-4 9-9 11-5-2-9-5-9-11V6z"/><path d="m9 12 2 2 4-4"/></>,
@@ -138,7 +139,8 @@ const units: Unit[] = [
     {id:'arsip',title:'Arsip & Dokumentasi',icon:'archive',description:'Register arsip, retensi dan lokasi penyimpanan.',columns:['Kode Arsip','Jenis','Lokasi','Tanggal','Akses']}
   ]},
   {id:'ren',title:'SUBBAGREN',name:'Subbagian Perencanaan',subtitle:'Perencanaan, program dan pengendalian kinerja',description:'Renstra/Renja/RKA-KL, pengelolaan usulan, anggaran dan laporan kinerja.',icon:'chart',accent:'#4b78ba',soft:'#edf3ff',modules:[
-    {id:'perencanaan',title:'Dokumen Perencanaan',icon:'file',description:'Renstra, Renja, RKA-KL, DIPA, TOR/KAK dan RAB.',columns:['Dokumen','Tahun','Referensi','Koordinator','Status']},
+    {id:'perencanaan',title:'Dokumen Perancangan',icon:'file',description:'Dokumen yang sedang disusun: draft, menunggu pengesahan, ditolak, atau sudah sah tetapi belum ditandai final.',columns:['Dokumen','Tahun','Referensi','Koordinator','Status']},
+    {id:'dokumen-final',title:'Dokumen Final',icon:'fileCheck',description:'Dokumen yang sudah disahkan dan ditandai final, beserta tahap pekerjaan dan riwayat versinya.',columns:['Dokumen','Tahun','Referensi','Koordinator','Status']},
     {id:'program',title:'Program Anggaran',icon:'layers',description:'Program dan kegiatan per tahun anggaran; dasar pencatatan pagu.',columns:['Kode','Program','Kegiatan','Pagu','Status']},
     {id:'pagu',title:'Pagu Anggaran',icon:'target',description:'Pagu per kegiatan dari Program Anggaran, disetujui Kasubbagren.',columns:['Kode','Kegiatan','Pagu','Dasar','Status']},
     {id:'realisasi',title:'Realisasi Anggaran (LRA)',icon:'chart',description:'Realisasi per kegiatan yang memotong pagu disetujui, dengan bukti bayar dan verifikasi.',columns:['Program','Periode','Pagu','Realisasi','Status']},
@@ -539,7 +541,7 @@ function App() {
           : chosenModule?.id==='surat-masuk' && unit.id==='urmin' ? <SuratMasuk initialID={effectiveScreen.recordID} initialCreate={effectiveScreen.create} isKabagrenmin={isKabagrenmin}/>
           : chosenModule?.id==='usulan' && unit.id==='ren' ? <UsulanR4A/>
           : chosenModule?.id==='realisasi' && unit.id==='ren' ? <RealisasiR5H12 userId={account.id} onOpenPagu={()=>navigate({view:'workspace',unit:'ren',menu:'pagu',sub:'pagu'})}/>
-          : chosenModule?.id==='perencanaan' && unit.id==='ren' ? <DokumenR5H13 userId={account.id}/>
+          : (chosenModule?.id==='perencanaan'||chosenModule?.id==='dokumen-final') && unit.id==='ren' ? <DokumenR5H13 key={chosenModule.id} mode={chosenModule.id==='perencanaan'?'rancang':'final'} userId={account.id} onOpenRancang={()=>navigate({view:'workspace',unit:'ren',menu:'perencanaan',sub:'progar'})} onOpenFinal={()=>navigate({view:'workspace',unit:'ren',menu:'dokumen-final',sub:'progar'})}/>
           : chosenModule?.id==='kinerja' && unit.id==='ren' ? <KinerjaR5H13/>
           : (chosenModule?.id==='program'||chosenModule?.id==='pagu') && unit.id==='ren' ? <ProgarR5H11 key={chosenModule.id} mode={chosenModule.id} userId={account.id} onOpenProgram={()=>navigate({view:'workspace',unit:'ren',menu:'program',sub:'progar'})} onOpenDokumen={()=>navigate({view:'workspace',unit:'ren',menu:'perencanaan',sub:'progar'})}/>
           : chosenModule?.id==='disposisi' && unit.id==='urmin' && activeTab==='semua' ? <SeluruhDisposisi onOpenLetter={incomingID=>navigate({view:'workspace',unit:'urmin',menu:'surat-masuk',tab:'daftar',recordID:incomingID})}/>

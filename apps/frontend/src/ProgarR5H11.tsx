@@ -87,7 +87,7 @@ const kegiatanFields: FieldDef[] = [
 // R5H14: dasar pagu WAJIB dipilih dari DIPA/Revisi DIPA yang sudah disahkan.
 const paguFields = (dipas: DipaOpt[]): FieldDef[] => [
   { key: 'jumlah', label: 'Jumlah Pagu (Rp)', type: 'rupiah', required: true, max: 16 },
-  { key: 'dokumenId', label: 'Dasar Pagu (DIPA sah)', type: 'select', required: true, max: 40, hint: 'Hanya DIPA/Revisi DIPA tahun ini yang sudah disahkan di Dokumen Perencanaan.',
+  { key: 'dokumenId', label: 'Dasar Pagu (DIPA sah)', type: 'select', required: true, max: 40, hint: 'Hanya DIPA/Revisi DIPA tahun ini yang sudah disahkan (tampil di Dokumen Final).',
     options: [{ value: '', label: '— Pilih DIPA —' }, ...dipas.map(d => ({ value: d.id, label: d.label }))] },
   { key: 'keterangan', label: 'Keterangan', type: 'textarea', max: 1000 },
 ]
@@ -145,7 +145,7 @@ export default function ProgarR5H11({ mode, userId, onOpenProgram, onOpenDokumen
   const editProgram = (p: Program) => setDialog({ title: 'Ubah Program', eyebrow: `PROGRAM ${p.kode}`, fields: programFields, values: { kode: p.kode, nama: p.nama, keterangan: p.keterangan }, submitLabel: 'Simpan Perubahan',
     onSubmit: v => run(() => api(`/program/${p.id}`, 'PUT', { kode: v.kode, nama: v.nama, keterangan: v.keterangan, version: p.version }), 'Program diperbarui.') })
   async function deleteProgram(p: Program) {
-    if (!await confirmDialog(`Hapus program ${p.kode} — ${p.nama}?`, { confirmLabel: 'Hapus', danger: true })) return
+    if (!await confirmDialog(`Hapus program ${p.kode} — ${p.nama}?`, { confirmLabel: 'Hapus Program', danger: true })) return
     try { await run(() => api(`/program/${p.id}`, 'DELETE'), 'Program dihapus.') } catch (e) { showToast(e instanceof Error ? e.message : 'Gagal menghapus.', 'error') }
   }
   const addKegiatan = (p: Program) => setDialog({ title: 'Tambah Kegiatan', eyebrow: `PROGRAM ${p.kode}`, context: p.nama, fields: kegiatanFields, values: { kode: '', nama: '', keterangan: '' }, submitLabel: 'Simpan Kegiatan',
@@ -153,7 +153,7 @@ export default function ProgarR5H11({ mode, userId, onOpenProgram, onOpenDokumen
   const editKegiatan = (p: Program, k: Kegiatan) => setDialog({ title: 'Ubah Kegiatan', eyebrow: `PROGRAM ${p.kode}`, context: p.nama, fields: kegiatanFields, values: { kode: k.kode, nama: k.nama, keterangan: k.keterangan }, submitLabel: 'Simpan Perubahan',
     onSubmit: v => run(() => api(`/kegiatan/${k.id}`, 'PUT', { kode: v.kode, nama: v.nama, keterangan: v.keterangan, version: k.version }), 'Kegiatan diperbarui.') })
   async function deleteKegiatan(k: Kegiatan) {
-    if (!await confirmDialog(`Hapus kegiatan ${k.kode} — ${k.nama}?`, { confirmLabel: 'Hapus', danger: true })) return
+    if (!await confirmDialog(`Hapus kegiatan ${k.kode} — ${k.nama}?`, { confirmLabel: 'Hapus Kegiatan', danger: true })) return
     try { await run(() => api(`/kegiatan/${k.id}`, 'DELETE'), 'Kegiatan dihapus.') } catch (e) { showToast(e instanceof Error ? e.message : 'Gagal menghapus.', 'error') }
   }
 
@@ -192,8 +192,8 @@ export default function ProgarR5H11({ mode, userId, onOpenProgram, onOpenDokumen
 
     {mode === 'pagu' && tree && dipas.length === 0 && <div className="panel sdl-progar__notice" role="status">
       <strong>Belum ada DIPA yang sah untuk tahun {tahun}</strong>
-      <p>Pagu ditetapkan oleh DIPA. Unggah DIPA (atau Revisi DIPA) di Dokumen Perencanaan dan minta Kasubbagren mengesahkannya; setelah itu pagu bisa dicatat dengan merujuk DIPA tersebut.</p>
-      {onOpenDokumen && <button type="button" className="btn primary" onClick={onOpenDokumen}>Buka Dokumen Perencanaan</button>}
+      <p>Pagu ditetapkan oleh DIPA. Unggah DIPA (atau Revisi DIPA) di Dokumen Perancangan dan minta Kasubbagren mengesahkannya; setelah sah ia pindah ke Dokumen Final, dan pagu bisa dicatat dengan merujuk DIPA tersebut.</p>
+      {onOpenDokumen && <button type="button" className="btn primary" onClick={onOpenDokumen}>Buka Dokumen Perancangan</button>}
     </div>}
 
     {mode === 'pagu' && tree && allKegiatan.length > 0 && <div className="sdl-progar__filters" role="tablist" aria-label="Saring status pagu">
@@ -220,15 +220,18 @@ export default function ProgarR5H11({ mode, userId, onOpenProgram, onOpenDokumen
                 <h3>{p.nama}</h3>
                 {p.keterangan && <p>{p.keterangan}</p>}
               </div>
+              {/* Ubah/Hapus Program di pojok kanan atas kartu: milik programnya, terpisah dari tombol kegiatan di bawah. */}
+              {mode === 'program' && canManage && <div className="sdl-progar__program-tools">
+                <button type="button" className="btn" onClick={() => editProgram(p)}>Ubah Program</button>
+                <button type="button" className="btn sdl-progar__danger" disabled={p.kegiatan.length > 0} title={p.kegiatan.length > 0 ? 'Hapus semua kegiatannya dulu sebelum menghapus program' : undefined} onClick={() => void deleteProgram(p)}>Hapus Program</button>
+              </div>}
               <div className="sdl-progar__program-meta">
                 <span>{p.kegiatan.length} kegiatan</span>
                 <strong>{rupiah(approved.toString())}</strong>
                 <small>pagu disetujui</small>
               </div>
               {mode === 'program' && canManage && <div className="sdl-progar__actions">
-                <button type="button" className="btn" onClick={() => addKegiatan(p)}>＋ Kegiatan</button>
-                <button type="button" className="btn" onClick={() => editProgram(p)}>Ubah</button>
-                <button type="button" className="btn sdl-progar__danger" onClick={() => void deleteProgram(p)}>Hapus</button>
+                <button type="button" className="btn" onClick={() => addKegiatan(p)}>＋ Tambah Kegiatan</button>
               </div>}
             </header>
 
@@ -250,10 +253,10 @@ export default function ProgarR5H11({ mode, userId, onOpenProgram, onOpenDokumen
                     <td className="is-num">{g ? rupiah(g.jumlah) : <span className="sdl-progar__muted">–</span>}</td>
                     <td>{g ? <span className={`sdl-progar__badge is-${g.status}`} title={g.reviewedAt ? `${STATUS_LABEL[g.status]} oleh ${g.reviewedByName}, ${readable(g.reviewedAt)}` : undefined}>{STATUS_LABEL[g.status]}</span> : <span className="sdl-progar__badge is-kosong">Belum ada pagu</span>}</td>
                     {(canManage || canApprove) && <td><div className="sdl-progar__row-actions">
-                      {mode === 'program' && canManage && <><button type="button" className="btn" onClick={() => editKegiatan(p, k)}>Ubah</button>
-                        <button type="button" className="btn sdl-progar__danger" disabled={Boolean(g)} title={g ? 'Kegiatan dengan pagu tidak dapat dihapus' : undefined} onClick={() => void deleteKegiatan(k)}>Hapus</button></>}
+                      {mode === 'program' && canManage && <><button type="button" className="btn" onClick={() => editKegiatan(p, k)}>Ubah Kegiatan</button>
+                        <button type="button" className="btn sdl-progar__danger" disabled={Boolean(g)} title={g ? 'Kegiatan dengan pagu tidak dapat dihapus' : undefined} onClick={() => void deleteKegiatan(k)}>Hapus Kegiatan</button></>}
                       {mode === 'pagu' && !g && canManage && <button type="button" className="btn primary" disabled={dipas.length === 0} title={dipas.length === 0 ? 'Belum ada DIPA sah untuk tahun ini' : undefined} onClick={() => addPagu(p, k)}>Catat Pagu</button>}
-                      {mode === 'pagu' && g?.status === 'draft' && canManage && <button type="button" className="btn" onClick={() => editPagu(p, k, g)}>Ubah</button>}
+                      {mode === 'pagu' && g?.status === 'draft' && canManage && <button type="button" className="btn" onClick={() => editPagu(p, k, g)}>Ubah Pagu</button>}
                       {mode === 'pagu' && g?.status === 'draft' && canApprove && (mine
                         ? <span className="sdl-progar__muted" title="Pagu yang Anda catat sendiri disetujui orang lain">Dicatat oleh Anda</span>
                         : <><button type="button" className="btn primary" onClick={() => void approvePagu(k, g)}>Setujui</button>

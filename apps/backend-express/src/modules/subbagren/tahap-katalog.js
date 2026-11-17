@@ -1,0 +1,234 @@
+import { parseDateOnly } from './shared.js'
+
+/**
+ * R5H16: katalog Tahap Pekerjaan dokumen Subbagren.
+ *
+ * Sumber: "Alur Pekerjaan Perencanaan dan Pelaporan Densus 88 AT Polri"
+ * (docs/Alur_Pekerjaan_Densus88_Format_Kolom.docx, 2026-11-16). Setiap baris
+ * "Tahapan pekerjaan" di dokumen itu dipetakan ke satu PEKERJAAN; pekerjaan
+ * yang bentuk isiannya sama memakai satu FORM. Katalog ini satu-satunya
+ * sumber: frontend memintanya lewat GET /tahap-katalog dan menggambar
+ * formulir dari situ, backend memvalidasi isian dengan daftar yang sama.
+ *
+ * Isian disimpan sebagai objek JSON berisi string saja (sdl_ren_dokumen_tahap.isian).
+ */
+
+const f = (key, label, type, max, extra = {}) => ({ key, label, type, max, ...extra })
+const CARA = ['Fisik (dijilid)', 'Surat dinas', 'Elektronik']
+const APLIKASI = ['SAKTI', 'e-jakstra', 'SAKTI dan e-jakstra', 'Lainnya']
+
+export const FORMS = {
+  undangan: {
+    fields: [
+      f('undanganNomor', 'Nomor surat undangan', 'text', 120, { half: true }),
+      f('undanganTanggal', 'Tanggal surat undangan', 'date', 10, { half: true }),
+      f('penyelenggara', 'Penyelenggara', 'text', 120, { default: 'Stamarena Polri' }),
+      f('rapatTanggal', 'Tanggal rapat', 'date', 10, { required: true, half: true }),
+      f('tempat', 'Tempat rapat', 'text', 160, { half: true }),
+      f('perwakilan', 'Perwakilan yang hadir', 'textarea', 1000, { hint: 'Satu nama/jabatan per baris.' }),
+    ],
+    berkas: [{ slot: 'undangan', label: 'Surat undangan', utama: true }],
+  },
+  pokja: {
+    fields: [
+      f('sprinNomor', 'Nomor Sprin', 'text', 120, { required: true, half: true }),
+      f('sprinTanggal', 'Tanggal Sprin', 'date', 10, { required: true, half: true }),
+      f('penandatangan', 'Penandatangan', 'text', 120, { default: 'Kadensus' }),
+      f('ketua', 'Ketua Tim Pokja', 'text', 160),
+      f('anggota', 'Anggota Tim Pokja', 'textarea', 2000, { hint: 'Satu nama/jabatan per baris.' }),
+    ],
+    berkas: [{ slot: 'sprin', label: 'Sprin Kadensus', utama: true }],
+  },
+  rapat: {
+    fields: [
+      f('tanggal', 'Tanggal rapat', 'date', 10, { required: true, half: true }),
+      f('tempat', 'Tempat rapat', 'text', 160, { half: true }),
+      f('pimpinan', 'Pimpinan rapat', 'text', 160, { half: true }),
+      f('peserta', 'Jumlah peserta', 'number', 5, { half: true }),
+      f('kesimpulan', 'Pokok bahasan / kesimpulan', 'textarea', 2000),
+      f('tindakLanjut', 'Tindak lanjut', 'textarea', 1000),
+    ],
+    berkas: [
+      { slot: 'notulen', label: 'Notulen rapat', utama: true },
+      { slot: 'draf', label: 'Draf dokumen', utama: true },
+      { slot: 'daftar_hadir', label: 'Daftar hadir' },
+    ],
+  },
+  pengesahan: {
+    fields: [
+      f('suratNomor', 'Nomor surat pengajuan', 'text', 120, { half: true }),
+      f('suratTanggal', 'Tanggal pengajuan', 'date', 10, { half: true }),
+      f('diajukanKepada', 'Diajukan kepada', 'text', 120, { default: 'Kadensus' }),
+      f('ttdTanggal', 'Tanggal ditandatangani', 'date', 10, { half: true }),
+      f('keputusanNomor', 'Nomor keputusan / pengesahan', 'text', 120, { half: true }),
+    ],
+    berkas: [
+      { slot: 'surat_pengajuan', label: 'Surat pengajuan pengesahan' },
+      { slot: 'dokumen_sah', label: 'Dokumen yang sudah ditandatangani', utama: true },
+    ],
+  },
+  distribusi: {
+    fields: [
+      f('tanggal', 'Tanggal distribusi', 'date', 10, { required: true, half: true }),
+      f('cara', 'Cara distribusi', 'select', 40, { options: CARA, half: true }),
+      f('tujuan', 'Tujuan distribusi', 'textarea', 1000, { hint: 'Subsatker/jajaran penerima, satu per baris.' }),
+      f('pengantarNomor', 'Nomor surat pengantar', 'text', 120),
+    ],
+    berkas: [{ slot: 'bukti', label: 'Bukti distribusi / tanda terima', utama: true }],
+  },
+  surat_masuk: {
+    fields: [
+      f('nomor', 'Nomor surat', 'text', 120, { half: true }),
+      f('tanggal', 'Tanggal surat', 'date', 10, { half: true }),
+      f('dari', 'Dari', 'text', 120, { default: 'Stamarena Polri' }),
+      f('perihal', 'Perihal', 'text', 240),
+      f('tenggat', 'Batas waktu', 'date', 10, { half: true }),
+    ],
+    berkas: [{ slot: 'surat', label: 'Surat yang diterima', utama: true }],
+  },
+  surat_keluar: {
+    fields: [
+      f('nomor', 'Nomor surat', 'text', 120, { half: true }),
+      f('tanggal', 'Tanggal surat', 'date', 10, { half: true }),
+      f('tujuan', 'Tujuan', 'textarea', 1000),
+      f('tenggat', 'Batas waktu jawaban', 'date', 10, { half: true }),
+    ],
+    berkas: [
+      { slot: 'surat', label: 'Surat yang dikirim', utama: true },
+      { slot: 'bukti_kirim', label: 'Bukti pengiriman' },
+    ],
+  },
+  kompilasi: {
+    fields: [
+      f('tanggal', 'Tanggal kompilasi', 'date', 10, { half: true }),
+      f('subsatker', 'Usulan yang sudah masuk', 'textarea', 2000, { hint: 'Subsatker yang usulannya sudah diterima, satu per baris.' }),
+      f('catatan', 'Catatan', 'textarea', 1000),
+    ],
+    berkas: [
+      { slot: 'rekap', label: 'Rekap / dokumen gabungan', utama: true },
+      { slot: 'rab', label: 'RAB' },
+      { slot: 'kak', label: 'KAK' },
+      { slot: 'rpd', label: 'RPD' },
+      { slot: 'kajian_teknis', label: 'Kajian Teknis (belanja modal)' },
+    ],
+  },
+  input_aplikasi: {
+    fields: [
+      f('aplikasi', 'Aplikasi', 'select', 40, { options: APLIKASI, required: true, half: true }),
+      f('tanggal', 'Tanggal input', 'date', 10, { half: true }),
+      f('operator', 'Operator', 'text', 160),
+    ],
+    berkas: [{ slot: 'hasil', label: 'Hasil unduhan (mis. RKKS dari SAKTI)', utama: true }],
+  },
+  pemeriksaan: {
+    fields: [
+      f('tanggal', 'Tanggal', 'date', 10, { required: true, half: true }),
+      f('pihak', 'Bersama', 'text', 160, { half: true }),
+      f('baNomor', 'Nomor Berita Acara / CHR', 'text', 120),
+      f('catatan', 'Catatan hasil', 'textarea', 2000),
+    ],
+    berkas: [{ slot: 'ba', label: 'Berita Acara / Catatan Hasil Reviu', utama: true }],
+  },
+  draf: {
+    fields: [
+      f('tanggal', 'Tanggal', 'date', 10, { half: true }),
+      f('catatan', 'Catatan', 'textarea', 1000),
+    ],
+    berkas: [{ slot: 'draf', label: 'Draf dokumen', utama: true }],
+  },
+}
+
+/** label: teks di dropdown; form: kunci FORMS; defaults: menimpa default isian. */
+export const PEKERJAAN = {
+  rakor: { label: 'Rapat koordinasi bersama Stamarena Polri', form: 'undangan' },
+  pokja: { label: 'Menyusun Tim Pokja', form: 'pokja' },
+  rapat: { label: 'Rapat penyusunan', form: 'rapat' },
+  pengesahan: { label: 'Mengajukan pengesahan', form: 'pengesahan' },
+  pengesahan_kapolri: { label: 'Pengesahan dan tanda tangan Kapolri', form: 'pengesahan', defaults: { diajukanKepada: 'Kapolri' } },
+  distribusi: { label: 'Mendistribusikan kepada jajaran', form: 'distribusi' },
+  terima_permintaan: { label: 'Menerima surat permintaan dari Stamarena', form: 'surat_masuk' },
+  terima_undangan: { label: 'Menerima undangan dan pagu dari Stamarena', form: 'surat_masuk' },
+  terima_dipa: { label: 'Menerima DIPA dari Kemenkeu/Stamarena', form: 'surat_masuk', defaults: { dari: 'Kemenkeu / Stamarena Polri' } },
+  permintaan_subsatker: { label: 'Surat permintaan kepada subsatker', form: 'surat_keluar' },
+  kompilasi: { label: 'Mengompilasi usulan subsatker', form: 'kompilasi' },
+  penggabungan: { label: 'Menggabungkan usulan menjadi dokumen satker', form: 'draf' },
+  penyusunan_draf: { label: 'Menyusun draf dokumen', form: 'draf' },
+  surat_usulan: { label: 'Surat usulan kepada Astamarena Kapolri', form: 'surat_keluar' },
+  pengiriman: { label: 'Mengirim dokumen kepada Stamarena', form: 'surat_keluar' },
+  input_aplikasi: { label: 'Input ke aplikasi SAKTI / e-jakstra', form: 'input_aplikasi' },
+  penelitian: { label: 'Penelitian dokumen bersama Stamarena', form: 'pemeriksaan', defaults: { pihak: 'Stamarena Polri' } },
+  reviu_apip: { label: 'Reviu bersama Tim APIP Itwasum', form: 'pemeriksaan', defaults: { pihak: 'APIP Itwasum Polri' } },
+  penjabaran: { label: 'Surat penjabaran kepada Astamarena Kapolri', form: 'surat_keluar' },
+  terima_dipa_petikan: { label: 'Menerima DIPA Petikan dari Kemenkeu', form: 'surat_masuk', defaults: { dari: 'Kementerian Keuangan' } },
+}
+
+/** Urutan tahap per jenis dokumen, mengikuti dokumen alur. Jenis lain: tanpa tahap. */
+export const JENIS_TAHAP = {
+  rancangan_renstra: ['pokja', 'rapat', 'pengesahan', 'distribusi'],
+  renstra: ['rakor', 'pokja', 'rapat', 'pengesahan', 'distribusi'],
+  rancangan_renja: ['pokja', 'rapat', 'pengesahan', 'distribusi'],
+  renja: ['rakor', 'pokja', 'rapat', 'pengesahan', 'distribusi'],
+  iku: ['rakor', 'pokja', 'rapat', 'pengesahan', 'distribusi'],
+  rkks_renbut: ['terima_permintaan', 'permintaan_subsatker', 'kompilasi', 'surat_usulan', 'input_aplikasi', 'distribusi'],
+  rkks_pagu_indikatif: ['terima_undangan', 'permintaan_subsatker', 'kompilasi', 'penggabungan', 'input_aplikasi', 'penelitian', 'penjabaran'],
+  rkks_pagu_anggaran: ['terima_undangan', 'permintaan_subsatker', 'kompilasi', 'penggabungan', 'input_aplikasi', 'penelitian', 'reviu_apip', 'penjabaran'],
+  rkks_pagu_alokasi: ['terima_undangan', 'permintaan_subsatker', 'kompilasi', 'penggabungan', 'input_aplikasi', 'penelitian', 'reviu_apip', 'penjabaran', 'terima_dipa_petikan'],
+  rendisgar: ['terima_dipa', 'penyusunan_draf', 'pengesahan', 'distribusi'],
+  rengiat: ['terima_dipa', 'penyusunan_draf', 'pengesahan', 'distribusi'],
+  renaksi: ['terima_dipa', 'permintaan_subsatker', 'kompilasi', 'pengesahan', 'distribusi'],
+  perjanjian_kinerja: ['terima_permintaan', 'penyusunan_draf', 'pengiriman', 'pengesahan_kapolri', 'distribusi'],
+}
+
+/** Katalog siap kirim ke frontend: field sudah digabung dengan default per pekerjaan. */
+/**
+ * Jenis yang TIDAK disahkan (keputusan pemilik 2026-11-17): siklus RKKS dan pagu
+ * (no. 5-8 alur pekerjaan Densus 88) adalah proses usulan ke Stamarena/SAKTI tanpa
+ * pengesahan internal. Dokumen ini langsung ditandai SELESAI setelah semua tahap
+ * diterima Kasubbagren.
+ */
+export const TANPA_SAH = new Set(['rkks_renbut', 'rkks_pagu_indikatif', 'rkks_pagu_anggaran', 'rkks_pagu_alokasi'])
+
+export function katalog() {
+  const pekerjaan = {}
+  for (const [key, p] of Object.entries(PEKERJAAN)) {
+    const form = FORMS[p.form]
+    pekerjaan[key] = {
+      label: p.label, form: p.form,
+      fields: form.fields.map((x) => (p.defaults?.[x.key] !== undefined ? { ...x, default: p.defaults[x.key] } : x)),
+      berkas: form.berkas,
+    }
+  }
+  return { jenis: JENIS_TAHAP, pekerjaan, tanpaSah: [...TANPA_SAH] }
+}
+
+export function slotOf(pekerjaan, slot) {
+  const p = PEKERJAAN[pekerjaan]
+  return p ? FORMS[p.form].berkas.find((b) => b.slot === slot) ?? null : null
+}
+
+/**
+ * Validasi isian: hanya kunci yang dikenal, semua string, panjang dibatasi,
+ * tanggal sah, angka bulat 0..99999, pilihan dari daftar, wajib terisi.
+ * Mengembalikan objek bersih (string kosong dibuang) atau null bila tidak sah.
+ */
+export function cleanIsian(pekerjaan, raw) {
+  const p = PEKERJAAN[pekerjaan]
+  if (!p || raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const fields = FORMS[p.form].fields
+  const known = new Set(fields.map((x) => x.key))
+  for (const k of Object.keys(raw)) if (!known.has(k)) return null
+  const out = {}
+  for (const fd of fields) {
+    const v = raw[fd.key]
+    if (v === undefined || v === null || v === '') { if (fd.required) return null; continue }
+    if (typeof v !== 'string') return null
+    const s = v.trim()
+    if (s === '') { if (fd.required) return null; continue }
+    if (s.length > fd.max) return null
+    if (fd.type === 'date' && !parseDateOnly(s)) return null
+    if (fd.type === 'number' && !/^(0|[1-9][0-9]{0,4})$/.test(s)) return null
+    if (fd.type === 'select' && !fd.options.includes(s)) return null
+    out[fd.key] = s
+  }
+  return out
+}

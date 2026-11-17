@@ -1,6 +1,6 @@
 # R5H14 — Pagu wajib berdasar DIPA yang sah
 
-Status: dibangun lokal 2026-11-13, belum di-commit, belum dideploy.
+Status: di-commit dan di-push ke `main` (`2cc2556`, 2026-11-16); belum dideploy ke produksi (migrasi 052).
 
 ## Latar
 

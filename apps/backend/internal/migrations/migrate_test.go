@@ -62,6 +62,10 @@ func TestEmbeddedMigrationOrderAndSafety(t *testing.T) {
 		"sql/050_realisasi_kegiatan.sql",
 		"sql/051_dokumen_kinerja.sql",
 		"sql/052_pagu_dasar_dipa.sql",
+		"sql/053_dokumen_tahap.sql",
+		"sql/054_dokumen_final.sql",
+		"sql/055_tahap_lampiran_banyak.sql",
+		"sql/056_tahap_cek.sql",
 	}
 	items, err := load()
 	if err != nil {
@@ -111,6 +115,13 @@ func migrationSafetyIssue(name, body string) string {
 		if name == "sql/027_urmin_attachment_10mb.sql" && stmt == reviewedSizeLimit {
 			continue
 		}
+		// R5H16 (2026-11-16): HANYA memperlebar daftar jenis dokumen Subbagren
+		// (sembilan jenis lama tetap ada, ditambah sebelas dari dokumen alur
+		// pekerjaan). Tidak ada kolom/tabel yang dihapus dan tidak ada backfill.
+		const reviewedJenisDokumen = "ALTER TABLE SDL_REN_DOKUMEN DROP CONSTRAINT SDL_REN_DOKUMEN_JENIS_CHECK, ADD CONSTRAINT SDL_REN_DOKUMEN_JENIS_CHECK CHECK (JENIS IN ('RENSTRA','RENJA','RKA_KL','DIPA','REVISI_DIPA','POK','TOR_KAK','RAB','LAINNYA','RANCANGAN_RENSTRA','RANCANGAN_RENJA','IKU','RKKS_RENBUT','RKKS_PAGU_INDIKATIF','RKKS_PAGU_ANGGARAN','RKKS_PAGU_ALOKASI','RENDISGAR','RENGIAT','RENAKSI','PERJANJIAN_KINERJA'))"
+		if name == "sql/053_dokumen_tahap.sql" && stmt == reviewedJenisDokumen {
+			continue
+		}
 		for _, forbidden := range []string{
 			"DROP TABLE", "TRUNCATE TABLE", "DELETE FROM", "DROP COLUMN",
 			"ALTER COLUMN", "RENAME COLUMN", "RENAME TO", "SET SCHEMA",
@@ -150,6 +161,12 @@ func migrationSafetyIssue(name, body string) string {
 				// R5H14: rujukan pagu ke DIPA sah. Satu ADD COLUMN nullable tanpa
 				// DEFAULT, tanpa backfill (kewajiban ditegakkan di API Express).
 				"sql/052_pagu_dasar_dipa.sql": {"SDL_REN_PAGU"},
+				// R5H16: penanda final dokumen. Dua ADD COLUMN nullable tanpa
+				// DEFAULT, tanpa backfill (aturan ditegakkan di API Express).
+				"sql/054_dokumen_final.sql": {"SDL_REN_DOKUMEN"},
+				// R5H16: status cek tahap oleh Kasubbagren. Empat ADD COLUMN;
+				// cek_status NOT NULL ber-DEFAULT, sisanya nullable/ber-DEFAULT.
+				"sql/056_tahap_cek.sql": {"SDL_REN_DOKUMEN_TAHAP"},
 			}
 			clauses := ""
 			for _, table := range reviewed[name] {

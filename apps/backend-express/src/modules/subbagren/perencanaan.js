@@ -9,6 +9,7 @@ import { BODY_LIMITS, rawBody } from '../../http/payload.js'
 import { buildXlsx } from '../../http/xlsx.js'
 import { HttpError, PERMIT_SQL, audit, body, handle, id, text, version } from './progar.js'
 import { parseDateOnly, parseGoInt, respond } from './shared.js'
+import { JENIS_TAHAP, PEKERJAAN, TANPA_SAH, cleanIsian, katalog, slotOf } from './tahap-katalog.js'
 
 /**
  * R5H13: Dokumen Perencanaan + Monitoring Kinerja & LKIP (migrasi 051).
@@ -18,12 +19,35 @@ import { parseDateOnly, parseGoInt, respond } from './shared.js'
  *   subbagren.dokumen.sahkan  sahkan/tolak dokumen yang diunggah ORANG LAIN
  *
  * Dokumen:
- *   GET    /dokumen?tahun=             daftar + info berkas + status revisi
+ *   GET    /dokumen?tahun=             daftar + info berkas + status revisi; tahun=semua -> semua tahun
  *   POST   /dokumen                    {tahun,jenis,judul,nomor,tanggal,programId,kegiatanId,keterangan,penggantiDari}
  *   PUT    /dokumen/:id                sama tanpa tahun/penggantiDari, + version (draft)
  *   POST   /dokumen/:id/berkas         multipart `file` PDF <= 20 MB (draft)
  *   GET    /dokumen/:id/berkas         unduh
  *   POST   /dokumen/:id/review         {keputusan:"disahkan"|"ditolak",catatan,version}
+ * Tahap Pekerjaan (R5H16, migrasi 053):
+ *   GET    /tahap-katalog                          jenis -> daftar pekerjaan, field & slot berkas
+ *   POST   /dokumen/:id/tahap                      {pekerjaan,isian}
+ *   PUT    /dokumen/:id/tahap/:tid                 {isian,version}
+ *   DELETE /dokumen/:id/tahap/:tid
+ *   POST   /dokumen/:id/tahap/:tid/lampiran/:slot  multipart `file` PDF <= 20 MB, MENAMBAH (maks 10 per slot; migrasi 055)
+ *   GET    /dokumen/:id/tahap/:tid/lampiran/:lid   unduh satu lampiran
+ *   DELETE /dokumen/:id/tahap/:tid/lampiran/:lid   hapus satu lampiran (selama tahap masih terbuka)
+ *   POST   /dokumen/:id/tahap/:tid/cek             {keputusan:"diterima"|"dikembalikan",catatan,version} (Kasubbagren; migrasi 056)
+ *   Tahap DITERIMA tetap bisa diubah/ditambah lampirannya selama dokumen belum final;
+ *   setiap perubahan mengembalikannya ke MENUNGGU dicek (keputusan 2026-11-17).
+ *   Yang dikunci: menghapus tahap yang sudah diterima, dan menghapus PDF bertanda tangan
+ *   terakhir dari dokumen yang sudah sah (pdf_sah_wajib_ada).
+ *   Jenis RKKS/pagu (TANPA_SAH) tidak disahkan: /final dari draft = SELESAI (min. 1 tahap).
+ *   Tandai final hanya bila semua tahap diterima. Dokumen berjenis tahap disahkan
+ *   dengan PDF bertanda tangan dari tahap pengesahan (slot dokumen_sah) sebagai PDF utama.
+ *   Tahap boleh diubah selama dokumen DRAFT, atau SAH tetapi belum FINAL dan
+ *   belum digantikan revisi. Setiap perubahan menaikkan version dokumen supaya
+ *   pengesahan atas keadaan lama ditolak.
+ * Final (migrasi 054):
+ *   POST   /dokumen/:id/final                     {final:true|false,version}
+ *   Sah != final: dokumen sah tetap di "Dokumen Perancangan" sampai ditandai
+ *   final (hanya dokumen sah yang belum digantikan). final:false mengembalikannya.
  * Kinerja:
  *   GET    /kinerja?tahun=             kegiatan + indikator + capaian TW I-IV + pagu/realisasi
  *   POST   /kinerja/indikator          {kegiatanId,nama,satuan,target:[tw1,tw2,tw3,tw4]}
@@ -36,11 +60,18 @@ import { parseDateOnly, parseGoInt, respond } from './shared.js'
  * dikirim sebagai string desimal ("12.5"), dua angka di belakang koma.
  */
 
-const JENIS = ['renstra', 'renja', 'rka_kl', 'dipa', 'revisi_dipa', 'pok', 'tor_kak', 'rab', 'lainnya']
-const JENIS_LABEL = { renstra: 'Renstra', renja: 'Renja', rka_kl: 'RKA-K/L', dipa: 'DIPA', revisi_dipa: 'Revisi DIPA', pok: 'POK', tor_kak: 'TOR/KAK', rab: 'RAB', lainnya: 'Lainnya' }
+const JENIS_LABEL = {
+  rancangan_renstra: 'Rancangan Renstra', renstra: 'Renstra', rancangan_renja: 'Rancangan Renja', renja: 'Renja', iku: 'IKU',
+  rkks_renbut: 'RKKS Renbut', rkks_pagu_indikatif: 'RKKS Pagu Indikatif', rkks_pagu_anggaran: 'RKKS Pagu Anggaran', rkks_pagu_alokasi: 'RKKS Pagu Alokasi',
+  rka_kl: 'RKA-K/L', dipa: 'DIPA', revisi_dipa: 'Revisi DIPA', pok: 'POK',
+  rendisgar: 'Rendisgar', rengiat: 'Rengiat', renaksi: 'Renaksi', perjanjian_kinerja: 'Perjanjian Kinerja',
+  tor_kak: 'TOR/KAK', rab: 'RAB', lainnya: 'Lainnya',
+}
+const JENIS = Object.keys(JENIS_LABEL)
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const DEC_RE = /^(0|[1-9][0-9]{0,15})(\.[0-9]{1,2})?$/
 const MAX_DOC = 20 << 20
+const MAX_LAMPIRAN_PER_SLOT = 10
 const SAFE_PDF_NAME = /^[\p{L}\p{N} ._()\-,]{1,150}\.pdf$/iu
 
 function tahunParam(req) {
@@ -48,6 +79,10 @@ function tahunParam(req) {
   const t = raw === '' ? new Date().getFullYear() : parseGoInt(raw)
   if (t === undefined || t < 2000 || t > 2100) throw new HttpError(400, 'invalid_year')
   return t
+}
+/** Daftar dokumen: `tahun=semua` memuat semua tahun (null); selain itu seperti tahunParam. */
+function tahunOrSemua(req) {
+  return String(req.query.tahun ?? '') === 'semua' ? null : tahunParam(req)
 }
 function dec(v) {
   if (typeof v !== 'string' || !DEC_RE.test(v)) throw new HttpError(400, 'invalid_input')
@@ -78,24 +113,48 @@ export function createPerencanaanRouter({ pool, config }) {
     respond(res, 200, { canRead: read, canManage: manage, canSahkan: sahkan })
   }))
 
+  router.get('/tahap-katalog', handle(async (req, res) => {
+    await need(req, 'subbagren.progar.read')
+    respond(res, 200, katalog())
+  }))
+
   // ================= Dokumen Perencanaan =================
   router.get('/dokumen', handle(async (req, res) => {
     await need(req, 'subbagren.progar.read')
-    const tahun = tahunParam(req)
+    const tahun = tahunOrSemua(req)
     const rows = (await pool.query(
       `SELECT d.id::text,d.tahun,d.jenis,d.judul,d.nomor,d.tanggal::text,d.keterangan,d.status,d.version,
               d.pengganti_dari::text,d.created_by::text,cu.display_name AS created_name,d.created_at,
               ru.display_name AS reviewed_name,d.reviewed_at,d.review_note,
               p.id::text AS program_id,p.kode AS program_kode,k.id::text AS kegiatan_id,k.kode AS kegiatan_kode,k.nama AS kegiatan_nama,
-              b.filename,b.size_bytes,
+              b.filename,b.size_bytes,d.final_at,fu.display_name AS final_name,
               EXISTS(SELECT 1 FROM sdl_ren_dokumen x WHERE x.pengganti_dari=d.id AND x.status='disahkan') AS digantikan
          FROM sdl_ren_dokumen d
          JOIN sdl_users cu ON cu.id=d.created_by
          LEFT JOIN sdl_users ru ON ru.id=d.reviewed_by
+         LEFT JOIN sdl_users fu ON fu.id=d.final_by
          LEFT JOIN sdl_ren_program p ON p.id=d.program_id
          LEFT JOIN sdl_ren_kegiatan k ON k.id=d.kegiatan_id
          LEFT JOIN sdl_ren_dokumen_berkas b ON b.dokumen_id=d.id
-        WHERE d.tahun=$1 ORDER BY d.jenis,d.created_at DESC`, [tahun])).rows
+        WHERE ($1::int IS NULL OR d.tahun=$1::int) ORDER BY d.jenis,d.tahun DESC,d.created_at DESC`, [tahun])).rows
+    const tahapRows = (await pool.query(
+      `SELECT t.id::text,t.dokumen_id::text,t.pekerjaan,t.isian,t.version,t.created_at,u.display_name AS updated_name,t.updated_at,
+              t.created_by::text,t.updated_by::text,t.cek_status,t.cek_note,t.cek_at,ck.display_name AS cek_name,
+              COALESCE((SELECT jsonb_agg(jsonb_build_object('id',b.id::text,'slot',b.slot,'filename',b.filename,'size',b.size_bytes) ORDER BY b.slot,b.uploaded_at,b.id)
+                          FROM sdl_ren_dokumen_tahap_lampiran b WHERE b.tahap_id=t.id),'[]'::jsonb) AS berkas
+         FROM sdl_ren_dokumen_tahap t JOIN sdl_ren_dokumen d ON d.id=t.dokumen_id AND ($1::int IS NULL OR d.tahun=$1::int)
+         JOIN sdl_users u ON u.id=t.updated_by
+         LEFT JOIN sdl_users ck ON ck.id=t.cek_by
+        ORDER BY t.created_at,t.id`, [tahun])).rows
+    const tahapBy = new Map()
+    for (const t of tahapRows) {
+      if (!tahapBy.has(t.dokumen_id)) tahapBy.set(t.dokumen_id, [])
+      tahapBy.get(t.dokumen_id).push({
+        id: t.id, pekerjaan: t.pekerjaan, pekerjaanLabel: PEKERJAAN[t.pekerjaan]?.label ?? t.pekerjaan, isian: t.isian,
+        version: t.version, createdAt: t.created_at, updatedAt: t.updated_at, updatedByName: t.updated_name, berkas: t.berkas,
+        createdBy: t.created_by, updatedBy: t.updated_by, cekStatus: t.cek_status, cekNote: t.cek_note, cekAt: t.cek_at ?? null, cekByName: t.cek_name ?? null,
+      })
+    }
     respond(res, 200, {
       tahun,
       items: rows.map((r) => ({
@@ -106,6 +165,8 @@ export function createPerencanaanRouter({ pool, config }) {
         program: r.program_id ? { id: r.program_id, kode: r.program_kode } : null,
         kegiatan: r.kegiatan_id ? { id: r.kegiatan_id, kode: r.kegiatan_kode, nama: r.kegiatan_nama } : null,
         berkas: r.filename ? { filename: r.filename, size: r.size_bytes } : null,
+        tahap: tahapBy.get(r.id) ?? [],
+        final: r.final_at !== null && r.final_at !== undefined, finalAt: r.final_at ?? null, finalByName: r.final_name ?? null,
       })),
     })
   }))
@@ -167,13 +228,21 @@ export function createPerencanaanRouter({ pool, config }) {
     const v = body(req, ['jenis', 'judul', 'nomor', 'tanggal', 'programId', 'kegiatanId', 'keterangan', 'version'])
     const d = dokInput(v); const ver = version(v.version)
     await withTransaction(pool, async (c) => {
-      const cur = await c.query('SELECT status,version,tahun,jenis,pengganti_dari FROM sdl_ren_dokumen WHERE id=$1::uuid FOR UPDATE', [did])
+      const cur = await c.query('SELECT status,version,tahun,jenis,pengganti_dari,final_at FROM sdl_ren_dokumen WHERE id=$1::uuid FOR UPDATE', [did])
       if (cur.rowCount !== 1) throw new HttpError(404, 'not_found')
       const o = cur.rows[0]
       if (o.status !== 'draft') throw new HttpError(409, 'dokumen_not_draft')
+      if (o.final_at !== null) throw new HttpError(409, 'dokumen_terkunci')
+      // Jenis tanpa pengesahan tidak bisa ditukar dengan jenis yang disahkan (dan sebaliknya)
+      // setelah dibuat: alur penyelesaiannya berbeda.
+      if (TANPA_SAH.has(d.jenis) !== TANPA_SAH.has(o.jenis)) throw new HttpError(409, 'jenis_beda_alur')
       if (o.version !== ver) throw new HttpError(409, 'version_conflict')
       // Revisi harus tetap berjenis sama dengan dokumen yang digantikannya.
       if (o.pengganti_dari && d.jenis !== o.jenis) throw new HttpError(400, 'invalid_link')
+      // Tahap yang sudah dicatat mengikuti daftar pekerjaan jenisnya.
+      if (d.jenis !== o.jenis && (await c.query('SELECT 1 FROM sdl_ren_dokumen_tahap WHERE dokumen_id=$1::uuid LIMIT 1', [did])).rowCount) {
+        throw new HttpError(409, 'jenis_terkunci_tahap')
+      }
       await checkLinks(c, o.tahun, d.programId, d.kegiatanId)
       await c.query(
         `UPDATE sdl_ren_dokumen SET jenis=$2,judul=$3,nomor=$4,tanggal=$5::date,program_id=$6::uuid,kegiatan_id=$7::uuid,
@@ -184,12 +253,8 @@ export function createPerencanaanRouter({ pool, config }) {
     respond(res, 200, { ok: true })
   }))
 
-  router.post('/dokumen/:id/berkas', handle(async (req, res) => {
-    await need(req, 'subbagren.progar.manage')
-    const did = id(req.params.id)
-    const cur = await pool.query('SELECT status FROM sdl_ren_dokumen WHERE id=$1::uuid', [did])
-    if (cur.rowCount !== 1) throw new HttpError(404, 'not_found')
-    if (cur.rows[0].status !== 'draft') throw new HttpError(409, 'dokumen_not_draft')
+  /** Satu PDF (<= 20 MB) dari multipart `file`, sudah diperiksa dan disegel. */
+  async function readPdf(req) {
     const up = await readSingleFile(req, { fieldName: 'file', maxBodyBytes: MAX_DOC + 65536, maxFileBytes: MAX_DOC, maxFiles: 2 })
     if (up.bodyExceeded || up.error === 'too_large') throw new HttpError(413, 'file_too_large')
     if (up.fileCount !== 1 || !up.file) throw new HttpError(400, 'one_file_required')
@@ -201,10 +266,20 @@ export function createPerencanaanRouter({ pool, config }) {
     if (!isPdf) throw new HttpError(400, 'invalid_file_type')
     let sealed
     try { sealed = sealEvidence(evidenceKey, blob) } catch { throw new HttpError(503, 'evidence_encryption_unavailable') }
-    const digest = createHash('sha256').update(blob).digest('hex')
+    return { blob, filename, sealed, digest: createHash('sha256').update(blob).digest('hex') }
+  }
+
+  router.post('/dokumen/:id/berkas', handle(async (req, res) => {
+    await need(req, 'subbagren.progar.manage')
+    const did = id(req.params.id)
+    const cur = await pool.query('SELECT status FROM sdl_ren_dokumen WHERE id=$1::uuid', [did])
+    if (cur.rowCount !== 1) throw new HttpError(404, 'not_found')
+    if (cur.rows[0].status !== 'draft') throw new HttpError(409, 'dokumen_not_draft')
+    const { blob, filename, sealed, digest } = await readPdf(req)
     await withTransaction(pool, async (c) => {
-      const lock = await c.query('SELECT status FROM sdl_ren_dokumen WHERE id=$1::uuid FOR UPDATE', [did])
+      const lock = await c.query('SELECT status,final_at FROM sdl_ren_dokumen WHERE id=$1::uuid FOR UPDATE', [did])
       if (lock.rows[0]?.status !== 'draft') throw new HttpError(409, 'dokumen_not_draft')
+      if (lock.rows[0].final_at !== null) throw new HttpError(409, 'dokumen_terkunci')
       await c.query(
         `INSERT INTO sdl_ren_dokumen_berkas(dokumen_id,filename,size_bytes,sha256,body,uploaded_by) VALUES($1::uuid,$2,$3,$4,$5,$6)
          ON CONFLICT (dokumen_id) DO UPDATE SET filename=EXCLUDED.filename,size_bytes=EXCLUDED.size_bytes,
@@ -224,6 +299,27 @@ export function createPerencanaanRouter({ pool, config }) {
     try { plain = openEvidence(evidenceKey, r.rows[0].body) } catch { throw new HttpError(503, 'evidence_integrity_failure') }
     if (createHash('sha256').update(plain).digest('hex') !== r.rows[0].sha256) throw new HttpError(503, 'evidence_integrity_failure')
     return { filename: r.rows[0].filename, plain }
+  }
+
+  /**
+   * Dokumen berjenis tahap: PDF utama = lampiran "Dokumen yang sudah
+   * ditandatangani" (slot dokumen_sah) pada tahap pengesahan (keputusan 2026-11-17).
+   */
+  async function signedFromTahap(c, did, jenis) {
+    if (!JENIS_TAHAP[jenis]) return false
+    const r = await c.query(
+      `SELECT 1 FROM sdl_ren_dokumen_tahap_lampiran l JOIN sdl_ren_dokumen_tahap t ON t.id=l.tahap_id
+        WHERE t.dokumen_id=$1::uuid AND l.slot='dokumen_sah' LIMIT 1`, [did])
+    return r.rowCount > 0
+  }
+
+  /** Dokumen sah berjenis tahap harus tetap punya PDF bertanda tangan setelah penghapusan. */
+  async function keepSignedPdf(c, did) {
+    const d = (await c.query('SELECT status,jenis FROM sdl_ren_dokumen WHERE id=$1::uuid', [did])).rows[0]
+    if (d.status !== 'disahkan' || !JENIS_TAHAP[d.jenis]) return
+    if ((await c.query('SELECT 1 FROM sdl_ren_dokumen_berkas WHERE dokumen_id=$1::uuid', [did])).rowCount) return
+    if (await signedFromTahap(c, did, d.jenis)) return
+    throw new HttpError(409, 'pdf_sah_wajib_ada')
   }
 
   router.get('/dokumen/:id/berkas', handle(async (req, res) => {
@@ -248,19 +344,223 @@ export function createPerencanaanRouter({ pool, config }) {
     const catatan = text(v.catatan, v.keputusan === 'ditolak' ? 8 : 0, 500)
     const ver = version(v.version)
     await withTransaction(pool, async (c) => {
-      const cur = await c.query('SELECT status,version,created_by::text FROM sdl_ren_dokumen WHERE id=$1::uuid FOR UPDATE', [did])
+      const cur = await c.query('SELECT status,version,created_by::text,jenis FROM sdl_ren_dokumen WHERE id=$1::uuid FOR UPDATE', [did])
       if (cur.rowCount !== 1) throw new HttpError(404, 'not_found')
       const o = cur.rows[0]
+      if (TANPA_SAH.has(o.jenis)) throw new HttpError(409, 'jenis_tanpa_pengesahan')
       if (o.status !== 'draft') throw new HttpError(409, 'dokumen_not_draft')
       if (o.version !== ver) throw new HttpError(409, 'version_conflict')
       if (o.created_by === req.actor) throw new HttpError(403, 'self_review_forbidden')
-      if (v.keputusan === 'disahkan' && !(await openBerkas(c, did))) throw new HttpError(409, 'berkas_required')
+      if (v.keputusan === 'disahkan' && !(await openBerkas(c, did)) && !(await signedFromTahap(c, did, o.jenis))) throw new HttpError(409, 'berkas_required')
       await c.query(
         `UPDATE sdl_ren_dokumen SET status=$2,review_note=$3,reviewed_by=$4,reviewed_at=now(),version=version+1,updated_at=now()
           WHERE id=$1::uuid`, [did, v.keputusan, catatan, req.actor])
       await audit(c, req.actor, v.keputusan === 'disahkan' ? 'dokumen.sahkan' : 'dokumen.tolak', 'dokumen', did)
     })
     respond(res, 200, { ok: true, status: v.keputusan })
+  }))
+
+  // ================= Tahap Pekerjaan (R5H16) =================
+  /**
+   * Kunci dokumen (FOR UPDATE) dan pastikan tahap `pekerjaan` boleh dicatat
+   * atau diubah: dokumen draft, atau dokumen sah yang belum final dan belum
+   * digantikan revisi.
+   */
+  async function lockForTahap(c, did, pekerjaan) {
+    const r = await c.query(
+      `SELECT d.jenis,d.status,d.final_at,EXISTS(SELECT 1 FROM sdl_ren_dokumen x WHERE x.pengganti_dari=d.id AND x.status='disahkan') AS digantikan
+         FROM sdl_ren_dokumen d WHERE d.id=$1::uuid FOR UPDATE`, [did])
+    if (r.rowCount !== 1) throw new HttpError(404, 'not_found')
+    const d = r.rows[0]
+    if (!(JENIS_TAHAP[d.jenis] ?? []).includes(pekerjaan)) throw new HttpError(400, 'pekerjaan_tidak_sesuai')
+    if (d.final_at !== null || !(d.status === 'draft' || (d.status === 'disahkan' && !d.digantikan))) throw new HttpError(409, 'dokumen_terkunci')
+  }
+  async function bumpDokumen(c, did) {
+    await c.query('UPDATE sdl_ren_dokumen SET version=version+1,updated_at=now() WHERE id=$1::uuid', [did])
+  }
+  /** Tahap milik dokumen ini (404 bila milik dokumen lain: cegah IDOR). */
+  async function tahapOf(c, did, tid, lock = false) {
+    const r = await c.query(
+      `SELECT pekerjaan,version,cek_status,updated_by::text FROM sdl_ren_dokumen_tahap WHERE id=$1::uuid AND dokumen_id=$2::uuid${lock ? ' FOR UPDATE' : ''}`, [tid, did])
+    if (r.rowCount !== 1) throw new HttpError(404, 'not_found')
+    return r.rows[0]
+  }
+  /** Tahap yang sudah diterima tidak boleh DIHAPUS (bukti yang sudah diperiksa); mengubahnya boleh. */
+  function notAccepted(t) { if (t.cek_status === 'diterima') throw new HttpError(409, 'tahap_sudah_diterima') }
+
+  router.post('/dokumen/:id/final', json, handle(async (req, res) => {
+    await need(req, 'subbagren.progar.manage')
+    const did = id(req.params.id)
+    const v = body(req, ['final', 'version'])
+    if (typeof v.final !== 'boolean') throw new HttpError(400, 'invalid_input')
+    const ver = version(v.version)
+    await withTransaction(pool, async (c) => {
+      const r = await c.query(
+        `SELECT d.jenis,d.status,d.version,d.final_at,EXISTS(SELECT 1 FROM sdl_ren_dokumen x WHERE x.pengganti_dari=d.id AND x.status='disahkan') AS digantikan
+           FROM sdl_ren_dokumen d WHERE d.id=$1::uuid FOR UPDATE`, [did])
+      if (r.rowCount !== 1) throw new HttpError(404, 'not_found')
+      const o = r.rows[0]
+      if (o.version !== ver) throw new HttpError(409, 'version_conflict')
+      // Jenis tanpa pengesahan: final = SELESAI, langsung dari draft.
+      const tanpaSah = TANPA_SAH.has(o.jenis)
+      if (tanpaSah ? o.status !== 'draft' : (o.status !== 'disahkan' || o.digantikan)) throw new HttpError(409, 'final_hanya_dokumen_sah')
+      if (tanpaSah && v.final && !(await c.query('SELECT 1 FROM sdl_ren_dokumen_tahap WHERE dokumen_id=$1::uuid LIMIT 1', [did])).rowCount) {
+        throw new HttpError(409, 'tahap_kosong')
+      }
+      if (v.final === (o.final_at !== null)) throw new HttpError(409, v.final ? 'sudah_final' : 'belum_final')
+      if (v.final && (await c.query("SELECT 1 FROM sdl_ren_dokumen_tahap WHERE dokumen_id=$1::uuid AND cek_status<>'diterima' LIMIT 1", [did])).rowCount) {
+        throw new HttpError(409, 'tahap_belum_diterima')
+      }
+      await c.query(
+        `UPDATE sdl_ren_dokumen SET final_at=CASE WHEN $2 THEN now() END,final_by=CASE WHEN $2 THEN $3::uuid END,
+                version=version+1,updated_at=now() WHERE id=$1::uuid`, [did, v.final, req.actor])
+      await audit(c, req.actor, v.final ? 'dokumen.final' : 'dokumen.final.batal', 'dokumen', did)
+    })
+    respond(res, 200, { ok: true, final: v.final })
+  }))
+
+  router.post('/dokumen/:id/tahap/:tid/cek', json, handle(async (req, res) => {
+    await need(req, 'subbagren.dokumen.sahkan')
+    const did = id(req.params.id); const tid = id(req.params.tid)
+    const v = body(req, ['keputusan', 'catatan', 'version'])
+    if (v.keputusan !== 'diterima' && v.keputusan !== 'dikembalikan') throw new HttpError(400, 'invalid_input')
+    const catatan = text(v.catatan, v.keputusan === 'dikembalikan' ? 8 : 0, 500)
+    const ver = version(v.version)
+    await withTransaction(pool, async (c) => {
+      await c.query('SELECT 1 FROM sdl_ren_dokumen WHERE id=$1::uuid FOR UPDATE', [did])
+      const t = await tahapOf(c, did, tid, true)
+      await lockForTahap(c, did, t.pekerjaan)
+      if (t.version !== ver) throw new HttpError(409, 'version_conflict')
+      if (t.cek_status !== 'menunggu') throw new HttpError(409, 'tahap_bukan_menunggu')
+      // Pengubah terakhir tidak boleh mengecek entrinya sendiri (maker-checker).
+      if (t.updated_by === req.actor) throw new HttpError(403, 'self_review_forbidden')
+      await c.query(
+        `UPDATE sdl_ren_dokumen_tahap SET cek_status=$2,cek_note=$3,cek_by=$4,cek_at=now(),version=version+1 WHERE id=$1::uuid`,
+        [tid, v.keputusan, catatan, req.actor])
+      await bumpDokumen(c, did)
+      await audit(c, req.actor, v.keputusan === 'diterima' ? 'dokumen.tahap.terima' : 'dokumen.tahap.kembalikan', 'dokumen', did)
+    })
+    respond(res, 200, { ok: true, cekStatus: v.keputusan })
+  }))
+
+  router.post('/dokumen/:id/tahap', json, handle(async (req, res) => {
+    await need(req, 'subbagren.progar.manage')
+    const did = id(req.params.id)
+    const v = body(req, ['pekerjaan', 'isian'])
+    if (typeof v.pekerjaan !== 'string' || !Object.hasOwn(PEKERJAAN, v.pekerjaan)) throw new HttpError(400, 'invalid_input')
+    const isian = cleanIsian(v.pekerjaan, v.isian)
+    if (!isian) throw new HttpError(400, 'invalid_input')
+    const row = await withTransaction(pool, async (c) => {
+      await lockForTahap(c, did, v.pekerjaan)
+      const n = await c.query('SELECT count(*)::int AS n FROM sdl_ren_dokumen_tahap WHERE dokumen_id=$1::uuid', [did])
+      if (n.rows[0].n >= 50) throw new HttpError(409, 'batas_tahap')
+      const r = (await c.query(
+        `INSERT INTO sdl_ren_dokumen_tahap(dokumen_id,pekerjaan,isian,created_by,updated_by) VALUES($1::uuid,$2,$3::jsonb,$4,$4) RETURNING id::text`,
+        [did, v.pekerjaan, JSON.stringify(isian), req.actor])).rows[0]
+      await bumpDokumen(c, did)
+      await audit(c, req.actor, 'dokumen.tahap.create', 'dokumen', did)
+      return r
+    })
+    respond(res, 201, { id: row.id })
+  }))
+
+  router.put('/dokumen/:id/tahap/:tid', json, handle(async (req, res) => {
+    await need(req, 'subbagren.progar.manage')
+    const did = id(req.params.id); const tid = id(req.params.tid)
+    const v = body(req, ['isian', 'version'])
+    const ver = version(v.version)
+    await withTransaction(pool, async (c) => {
+      await c.query('SELECT 1 FROM sdl_ren_dokumen WHERE id=$1::uuid FOR UPDATE', [did])
+      const t = await tahapOf(c, did, tid, true)
+      await lockForTahap(c, did, t.pekerjaan)
+      if (t.version !== ver) throw new HttpError(409, 'version_conflict')
+      const isian = cleanIsian(t.pekerjaan, v.isian)
+      if (!isian) throw new HttpError(400, 'invalid_input')
+      await c.query(
+        `UPDATE sdl_ren_dokumen_tahap SET isian=$2::jsonb,cek_status='menunggu',cek_by=NULL,cek_at=NULL,version=version+1,updated_by=$3,updated_at=now() WHERE id=$1::uuid`,
+        [tid, JSON.stringify(isian), req.actor])
+      await bumpDokumen(c, did)
+      await audit(c, req.actor, 'dokumen.tahap.update', 'dokumen', did)
+    })
+    respond(res, 200, { ok: true })
+  }))
+
+  router.delete('/dokumen/:id/tahap/:tid', handle(async (req, res) => {
+    await need(req, 'subbagren.progar.manage')
+    const did = id(req.params.id); const tid = id(req.params.tid)
+    await withTransaction(pool, async (c) => {
+      await c.query('SELECT 1 FROM sdl_ren_dokumen WHERE id=$1::uuid FOR UPDATE', [did])
+      const t = await tahapOf(c, did, tid, true)
+      await lockForTahap(c, did, t.pekerjaan)
+      notAccepted(t)
+      await c.query('DELETE FROM sdl_ren_dokumen_tahap WHERE id=$1::uuid', [tid])
+      await keepSignedPdf(c, did)
+      await bumpDokumen(c, did)
+      await audit(c, req.actor, 'dokumen.tahap.delete', 'dokumen', did)
+    })
+    respond(res, 200, { ok: true })
+  }))
+
+  router.post('/dokumen/:id/tahap/:tid/lampiran/:slot', handle(async (req, res) => {
+    await need(req, 'subbagren.progar.manage')
+    const did = id(req.params.id); const tid = id(req.params.tid); const slot = String(req.params.slot)
+    // Periksa kepemilikan dan slot SEBELUM membaca berkas besar.
+    const t0 = await tahapOf(pool, did, tid)
+    if (!slotOf(t0.pekerjaan, slot)) throw new HttpError(400, 'invalid_input')
+    const { blob, filename, sealed, digest } = await readPdf(req)
+    const row = await withTransaction(pool, async (c) => {
+      await c.query('SELECT 1 FROM sdl_ren_dokumen WHERE id=$1::uuid FOR UPDATE', [did])
+      const t = await tahapOf(c, did, tid, true)
+      await lockForTahap(c, did, t.pekerjaan)
+      const n = await c.query('SELECT count(*)::int AS n FROM sdl_ren_dokumen_tahap_lampiran WHERE tahap_id=$1::uuid AND slot=$2', [tid, slot])
+      if (n.rows[0].n >= MAX_LAMPIRAN_PER_SLOT) throw new HttpError(409, 'batas_lampiran')
+      const r = (await c.query(
+        `INSERT INTO sdl_ren_dokumen_tahap_lampiran(tahap_id,slot,filename,size_bytes,sha256,body,uploaded_by)
+         VALUES($1::uuid,$2,$3,$4,$5,$6,$7) RETURNING id::text`,
+        [tid, slot, filename, blob.length, digest, sealed, req.actor])).rows[0]
+      await c.query(`UPDATE sdl_ren_dokumen_tahap SET cek_status='menunggu',cek_by=NULL,cek_at=NULL,version=version+1,updated_by=$2,updated_at=now() WHERE id=$1::uuid`, [tid, req.actor])
+      await bumpDokumen(c, did)
+      await audit(c, req.actor, 'dokumen.tahap.lampiran.upload', 'dokumen', did)
+      return r
+    })
+    respond(res, 201, { id: row.id, sha256: digest })
+  }))
+
+  // Lampiran selalu dicari bersama tahap_id-nya, dan tahap bersama dokumen_id-nya
+  // (tahapOf): id lampiran milik dokumen lain menghasilkan 404 (cegah IDOR).
+  router.delete('/dokumen/:id/tahap/:tid/lampiran/:lid', handle(async (req, res) => {
+    await need(req, 'subbagren.progar.manage')
+    const did = id(req.params.id); const tid = id(req.params.tid); const lid = id(req.params.lid)
+    await withTransaction(pool, async (c) => {
+      await c.query('SELECT 1 FROM sdl_ren_dokumen WHERE id=$1::uuid FOR UPDATE', [did])
+      const t = await tahapOf(c, did, tid, true)
+      await lockForTahap(c, did, t.pekerjaan)
+      const r = await c.query('DELETE FROM sdl_ren_dokumen_tahap_lampiran WHERE id=$1::uuid AND tahap_id=$2::uuid', [lid, tid])
+      if (r.rowCount !== 1) throw new HttpError(404, 'not_found')
+      await keepSignedPdf(c, did)
+      await c.query(`UPDATE sdl_ren_dokumen_tahap SET cek_status='menunggu',cek_by=NULL,cek_at=NULL,version=version+1,updated_by=$2,updated_at=now() WHERE id=$1::uuid`, [tid, req.actor])
+      await bumpDokumen(c, did)
+      await audit(c, req.actor, 'dokumen.tahap.lampiran.delete', 'dokumen', did)
+    })
+    respond(res, 200, { ok: true })
+  }))
+
+  router.get('/dokumen/:id/tahap/:tid/lampiran/:lid', handle(async (req, res) => {
+    await need(req, 'subbagren.progar.read')
+    const did = id(req.params.id); const tid = id(req.params.tid); const lid = id(req.params.lid)
+    await tahapOf(pool, did, tid)
+    const r = await pool.query('SELECT filename,sha256,body FROM sdl_ren_dokumen_tahap_lampiran WHERE id=$1::uuid AND tahap_id=$2::uuid', [lid, tid])
+    if (r.rowCount !== 1) throw new HttpError(404, 'not_found')
+    let plain
+    try { plain = openEvidence(evidenceKey, r.rows[0].body) } catch { throw new HttpError(503, 'evidence_integrity_failure') }
+    if (createHash('sha256').update(plain).digest('hex') !== r.rows[0].sha256) throw new HttpError(503, 'evidence_integrity_failure')
+    await withTransaction(pool, (c) => audit(c, req.actor, 'dokumen.tahap.lampiran.download', 'dokumen', did))
+    res.set('Content-Type', 'application/octet-stream')
+    res.set('Content-Disposition', contentDisposition('attachment', r.rows[0].filename))
+    res.set('X-Content-Type-Options', 'nosniff')
+    res.set('Content-Security-Policy', 'sandbox')
+    res.set('Cache-Control', 'no-store')
+    res.status(200).end(plain)
   }))
 
   // ================= Monitoring Kinerja & LKIP =================

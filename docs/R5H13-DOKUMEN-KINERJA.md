@@ -1,6 +1,6 @@
 # R5H13 — Dokumen Perencanaan dan Monitoring Kinerja & LKIP
 
-Status: dibangun lokal 2026-11-13, belum di-commit, belum dideploy.
+Status: di-commit dan di-push ke `main` (`4d970dd`, 2026-11-13); belum dideploy ke produksi (migrasi 051). Lanjutan: R5H15 (riwayat versi), R5H16 (tahap pekerjaan; menu kini "Dokumen Perancangan" + "Dokumen Final").
 
 ## Keputusan pemilik sistem (2026-11-13)
 

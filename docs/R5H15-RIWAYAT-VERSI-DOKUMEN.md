@@ -1,7 +1,15 @@
 # R5H15 — Riwayat versi Dokumen Perencanaan
 
-Status: **rancangan, belum ada kode.** Disusun 2026-11-16 dari keputusan pemilik
-sistem di sesi yang sama. Lanjutan R5H13 (Dokumen Perencanaan) dan menyentuh
+Status: **rancangan; sebagian tampilan sudah dikerjakan.** Disusun 2026-11-16 dari
+keputusan pemilik sistem di sesi yang sama.
+
+Sudah dikerjakan lebih dulu (2026-11-16, frontend saja, tanpa migrasi): tombol
+**"Riwayat · N versi"** di baris dokumen membuka jendela Riwayat Versi (v1…vN,
+status, pengunggah, keputusan, pratinjau PDF tiap versi), disusun di layar dari
+`penggantiDari` pada daftar yang sudah ada. Centang "Tampilkan versi lama"
+dihapus. Sisa rancangan di bawah (PDF tidak ditimpa, Perbaiki setelah ditolak,
+satu baris per rantai selama revisi diproses, definisi `digantikan` per rantai)
+tetap butuh backend + migrasi 057. Lanjutan R5H13 (Dokumen Perencanaan) dan menyentuh
 R5H14 (pagu berdasar DIPA sah).
 
 ## Kebutuhan (kata pemilik)
@@ -95,7 +103,7 @@ bagian R5H15.
 
 ## Migrasi
 
-`053_riwayat_versi_dokumen.sql` (baru; **051 tidak disentuh**). Daftarkan di
+`057_riwayat_versi_dokumen.sql` (baru; **051 tidak disentuh**). Daftarkan di
 **kedua** manifes — `apps/backend/internal/migrations/migrate_test.go` dan
 `apps/backend-express/src/migrations/index.js` — dalam commit yang sama dengan
 file SQL-nya (pelajaran insiden 050, 2026-11-13).
@@ -158,7 +166,7 @@ disahkan. Sudah begitu sejak R5H13; perlu keputusan terpisah.
    bukan record baru).
 
 Gerbang: `bash scripts/security-test-express.sh` tetap 21/21; build image Go
-(`migrate_test.go` memuat 053); `npm run build` frontend. Demo browser:
+(`migrate_test.go` memuat 057); `npm run build` frontend. Demo browser:
 unggah 3 PDF → sahkan → buat revisi → tolak → perbaiki → sahkan, lihat daftar
 tetap satu baris dan riwayat lengkap.
 
