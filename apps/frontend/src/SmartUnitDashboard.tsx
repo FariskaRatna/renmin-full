@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
 import './SmartUnitDashboard.css'
+import { LraChart } from './MyinterestR5H20'
 
 type UnitKey = 'urmin'|'ren'|'sumda'|'binfung'
 type Source = { id:string; title:string; route:string; endpoint:string; kind?:string }
@@ -162,7 +163,8 @@ export default function SmartUnitDashboard({unit,title,accent,onOpen}:{unit:Unit
         {busy?<p className="sdl-dash-muted">Memuat aktivitas…</p>:filtered.length===0?<div className="sdl-dash-empty">Tidak ada data yang cocok dengan filter.</div>:<div className="sdl-dash-recent">{filtered.slice(0,detailsOpen?50:5).map((item,i)=><button key={`${item.source}-${item.id}-${i}`} type="button" onClick={()=>onOpen(groupCounts.find(g=>g.source===item.source)?.route||'__unitwork')}><span className="sdl-dash-recent-dot" style={{background:groupCounts.find(g=>g.source===item.source)?.color||accent}}/><span className="sdl-dash-recent-main"><strong>{item.title}</strong><small>{item.label} · {dateLabel(item.date)}</small></span><span className="sdl-dash-recent-status">{item.status}</span><span aria-hidden="true">↗</span></button>)}</div>}
         {detailsOpen&&filtered.length>50&&<small className="sdl-dash-muted">Menampilkan 50 catatan terbaru.</small>}
       </section>
-      {data?.budget&&<section className="sdl-dash-panel sdl-dash-panel--wide"><div className="sdl-dash-panel-head"><div><h3>Budget Performance</h3><p>Pagu dan realisasi terverifikasi · tahun berjalan</p></div><button type="button" className="sdl-dash-text-link" onClick={()=>onOpen('realisasi')}>Buka realisasi ↗</button></div><div className="sdl-dash-budget"><strong>Rp {money(data.budget.realization)}</strong><span>dari Rp {money(data.budget.pagu)} pagu terverifikasi</span><div className="sdl-dash-budget-track"><div style={{width:`${data.budget.pagu>0?Math.min(100,100*data.budget.realization/data.budget.pagu):0}%`}}/></div><small>{data.budget.pagu>0?(100*data.budget.realization/data.budget.pagu).toFixed(1):'0'}% serapan terverifikasi</small></div></section>}
+      {unit==='ren'&&<LraChart variant="dash" onOpen={()=>onOpen('myinterest')} wrap={c=><section className="sdl-dash-panel sdl-dash-panel--wide" aria-label="LRA realisasi belanja">{c}</section>}/>}
+      {unit!=='ren'&&data?.budget&&<section className="sdl-dash-panel sdl-dash-panel--wide"><div className="sdl-dash-panel-head"><div><h3>Budget Performance</h3><p>Pagu dan realisasi terverifikasi · tahun berjalan</p></div><button type="button" className="sdl-dash-text-link" onClick={()=>onOpen('realisasi')}>Buka realisasi ↗</button></div><div className="sdl-dash-budget"><strong>Rp {money(data.budget.realization)}</strong><span>dari Rp {money(data.budget.pagu)} pagu terverifikasi</span><div className="sdl-dash-budget-track"><div style={{width:`${data.budget.pagu>0?Math.min(100,100*data.budget.realization/data.budget.pagu):0}%`}}/></div><small>{data.budget.pagu>0?(100*data.budget.realization/data.budget.pagu).toFixed(1):'0'}% serapan terverifikasi</small></div></section>}
     </div>
     <div className="sdl-dash-shortcuts"><span>Quick access</span>{config.slice(0,4).map(s=><button key={s.id} type="button" onClick={()=>onOpen(s.route)}>{s.title} <span>↗</span></button>)}</div>
   </section>

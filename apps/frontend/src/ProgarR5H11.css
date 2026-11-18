@@ -303,3 +303,23 @@ button.sdl-kinerja__cell:focus-visible{outline:3px solid rgba(47,82,144,.35)}
 /* Estimasi anggaran di Detail dokumen (2026-11-17). */
 .sdl-progar__anggaran>span{display:inline-flex;align-items:center;gap:10px}
 .sdl-progar__anggaran small{display:block;margin-top:3px;font-size:12px}
+/* R5H19: ringkasan realisasi laporan, revisi POK/RPD, RPD bulanan (2026-11-18). */
+.sdl-progar__ringkasan-note{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:0 0 12px;font-size:13px}
+.sdl-progar__ringkasan tfoot th,.sdl-progar__detail tfoot th{padding:12px 16px;border-top:2px solid var(--border);font-weight:750;text-align:left}
+.sdl-progar__detail tfoot th.is-num{text-align:right}
+.sdl-progar__rpd{display:grid;gap:10px;margin:10px 0 4px}
+.sdl-progar__rpd-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px 12px}
+.sdl-progar__rpd-grid label{display:grid;gap:4px;font-size:12px;font-weight:650;color:var(--muted)}
+.sdl-progar__rpd-grid input{min-width:0;width:100%;padding:8px 10px;text-align:right}
+.sdl-progar__rpd-total{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin:0;font-size:13px}
+.sdl-progar__rpd-item{padding:12px 0;border-top:1px solid var(--border)}
+.sdl-progar__rpd-item:first-of-type{border-top:0}
+.sdl-progar__rpd-item>p{margin:0 0 8px}
+.sdl-progar__rpd-table th,.sdl-progar__rpd-table td{padding:8px 10px;font-size:12.5px}
+.sdl-progar__rpd-table th[scope=row]{text-align:left;white-space:nowrap}
+.sdl-progar__pos-rpd{margin:12px 0 0;display:grid;gap:8px}
+.sdl-progar__pos-rpd>p{margin:0;display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;font-size:13px}
+@media (max-width:640px){.sdl-progar__rpd-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.sdl-progar__ringkasan td:first-child strong,.sdl-progar__ringkasan td:first-child small{display:block;min-width:220px}
+.sdl-progar__file.is-full{max-width:none;white-space:normal;text-align:left}
+.sdl-progar__auto{display:block;padding:9px 12px;border:1px dashed var(--border);border-radius:10px;font-size:13.5px;color:var(--ink);font-variant-numeric:tabular-nums}

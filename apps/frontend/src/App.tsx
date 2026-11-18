@@ -20,6 +20,7 @@ import { InboxDistribusi } from './InboxDistribusiR5F2'
 import { InboxSaya } from './InboxSayaR5H10'
 import RealisasiR5H12 from './RealisasiR5H12'
 import DokumenR5H13 from './DokumenR5H13'
+import MyinterestR5H20 from './MyinterestR5H20'
 import TugasDisposisi from './TugasDisposisiR5F3'
 import SeluruhDisposisi from './SeluruhDisposisiR5H5'
 import LocalCaptcha, { solveCaptcha, type CaptchaProof } from './LocalCaptcha'
@@ -43,7 +44,7 @@ type UnitKey = 'urmin' | 'ren' | 'sumda' | 'binfung'
 type RenSub = 'progar' | 'pagu'
 const renSubs: {id:RenSub;title:string;name:string;description:string;icon:IconName;modules:string[]}[] = [
   {id:'progar',title:'PROGAR',name:'Program & Perencanaan',description:'Dokumen perancangan dan dokumen final beserta tahap pekerjaan dan estimasi anggarannya.',icon:'file',modules:['perencanaan','dokumen-final']},
-  {id:'pagu',title:'DALGAR',name:'Pengendalian Anggaran',description:'Realisasi anggaran dokumen final, laporan anggaran dan kinerja, serta revisi anggaran.',icon:'layers',modules:['realisasi','laporan','revisi-anggaran']}
+  {id:'pagu',title:'DALGAR',name:'Pengendalian Anggaran',description:'Data LRA resmi myinterest, realisasi anggaran dokumen final, laporan anggaran dan kinerja, serta revisi anggaran.',icon:'layers',modules:['myinterest','realisasi','laporan','revisi-anggaran']}
 ]
 function renSubOf(s:Screen):RenSub|undefined{
   if(s.unit!=='ren')return undefined
@@ -138,9 +139,10 @@ const units: Unit[] = [
   {id:'ren',title:'SUBBAGREN',name:'Subbagian Perencanaan',subtitle:'Perencanaan, pagu dan realisasi anggaran',description:'Dokumen perencanaan Renstra/Renja/RKKS, pagu dan realisasi anggaran.',icon:'chart',accent:'#4b78ba',soft:'#edf3ff',modules:[
     {id:'perencanaan',title:'Dokumen Perancangan',icon:'file',description:'Dokumen yang sedang disusun: draft, menunggu pengesahan, ditolak, atau sudah sah tetapi belum ditandai final.',columns:['Dokumen','Tahun','Referensi','Koordinator','Status']},
     {id:'dokumen-final',title:'Dokumen Final',icon:'fileCheck',description:'Dokumen yang sudah disahkan dan ditandai final, beserta tahap pekerjaan dan riwayat versinya.',columns:['Dokumen','Tahun','Referensi','Koordinator','Status']},
+    {id:'myinterest',title:'Data myinterest (LRA)',icon:'chart',description:'Grafik, rincian, dan riwayat data resmi myinterest yang diunggah di tahap 1 LRA bulanan.',columns:['Data s.d.','Berkas','Realisasi','Diimpor']},
     {id:'laporan',title:'Laporan',icon:'clipboard',description:'LRA, Penggunaan Anggaran, EKA PN, Capaian Kinerja, LKIP dan Hibah: langkah, bukti, dan status selesai.',columns:['Jenis','Laporan','Tahap','Status']},
     {id:'revisi-anggaran',title:'Revisi Anggaran (POK/RPD)',icon:'refresh',description:'Revisi POK dan RPD dari permintaan subsatker sampai DIPA baru terbit.',columns:['Jenis','Revisi','Tahap','Status']},
-    {id:'realisasi',title:'Realisasi Anggaran (LRA)',icon:'chart',description:'Realisasi yang memotong anggaran dokumen final, dengan bukti bayar dan verifikasi.',columns:['Program','Periode','Pagu','Realisasi','Status']}
+    {id:'realisasi',title:'Realisasi Anggaran Dokumen',icon:'chart',description:'Catatan internal: realisasi yang memotong anggaran dokumen final, dengan bukti bayar dan verifikasi. Angka resmi LRA ada di Data myinterest.',columns:['Program','Periode','Pagu','Realisasi','Status']}
   ]},
   {id:'sumda',title:'SUBBAGSUMDA',name:'Subbagian Sumber Daya',subtitle:'Administrasi personel dan pengelolaan logistik',description:'Administrasi SDM, layanan kepegawaian, pendidikan, BMN dan pemeliharaan.',icon:'users',accent:'#956db9',soft:'#f3effd',modules:[
     {id:'personel',title:'Data Administrasi Personel',icon:'users',description:'Register administrasi personel.',columns:['ID Internal','Personel','Kategori','Unit','Status']},
@@ -535,6 +537,7 @@ function App() {
           : workMenu==='__tasks' ? <TugasDisposisi currentUserId={account.id} initialID={effectiveScreen.recordID} onOpenDirective={id=>navigate({view:'arahan',recordID:id})}/>
           : chosenModule?.id==='surat-masuk' && unit.id==='urmin' ? <SuratMasuk initialID={effectiveScreen.recordID} initialCreate={effectiveScreen.create} isKabagrenmin={isKabagrenmin}/>
           : chosenModule?.id==='realisasi' && unit.id==='ren' ? <RealisasiR5H12 userId={account.id} onOpenDokumen={()=>navigate({view:'workspace',unit:'ren',menu:'perencanaan',sub:'progar'})}/>
+          : chosenModule?.id==='myinterest' && unit.id==='ren' ? <MyinterestR5H20 onOpenLaporan={()=>navigate({view:'workspace',unit:'ren',menu:'laporan',sub:'pagu'})}/>
           : (chosenModule?.id==='laporan'||chosenModule?.id==='revisi-anggaran') && unit.id==='ren' ? <DokumenR5H13 key={chosenModule.id} mode={chosenModule.id==='laporan'?'laporan':'revisi'} userId={account.id}/>
           : (chosenModule?.id==='perencanaan'||chosenModule?.id==='dokumen-final') && unit.id==='ren' ? <DokumenR5H13 key={chosenModule.id} mode={chosenModule.id==='perencanaan'?'rancang':'final'} userId={account.id} onOpenRancang={()=>navigate({view:'workspace',unit:'ren',menu:'perencanaan',sub:'progar'})} onOpenFinal={()=>navigate({view:'workspace',unit:'ren',menu:'dokumen-final',sub:'progar'})}/>
           : chosenModule?.id==='disposisi' && unit.id==='urmin' && activeTab==='semua' ? <SeluruhDisposisi onOpenLetter={incomingID=>navigate({view:'workspace',unit:'urmin',menu:'surat-masuk',tab:'daftar',recordID:incomingID})}/>

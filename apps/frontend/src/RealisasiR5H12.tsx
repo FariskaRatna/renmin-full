@@ -3,6 +3,8 @@ import { JENIS } from './DokumenR5H13'
 import { LampiranPreviewR5F15 } from './LampiranPreviewR5F15'
 import { FormDialog, rupiah, type Dialog } from './ProgarR5H11'
 import { confirmDialog, showToast } from './UIFeedback'
+import { RpdDialog } from './DalgarR5H19'
+import { BULAN } from './DokumenTahapR5H16'
 import './ProgarR5H11.css'
 
 /**
@@ -14,14 +16,18 @@ import './ProgarR5H11.css'
  * menolak. Hanya realisasi terverifikasi yang mengurangi sisa; server menolak
  * verifikasi yang melampaui anggaran dokumen. Data pagu/realisasi lama tidak
  * ditampilkan lagi (keputusan pemilik), tetapi tetap tersimpan.
+ *
+ * R5H19 (2026-11-18): setiap pos punya RPD (rencana penarikan dana) 12 bulan.
+ * RPD awal diisi di sini; perubahan berikutnya lewat Revisi RPD (DALGAR > Revisi
+ * Anggaran). Rencana dibandingkan dengan realisasi terverifikasi per bulan.
  */
 
 type Bukti = { filename: string; mimeType: string; size: number }
 type Real = { id: string; tanggal: string; uraian: string; nomorBukti: string; jumlah: string; status: 'draft' | 'terverifikasi' | 'ditolak'; version: number; createdBy: string; createdByName: string; createdAt: string; reviewedByName: string | null; reviewedAt: string | null; reviewNote: string; bukti: Bukti | null }
-type Item = { dokumenId: string; anggaran: string; terverifikasi: string; menunggu: string; sisa: string; aktif: boolean; digantikan: boolean; dokumen: { jenis: string; judul: string; nomor: string }; realisasi: Real[] }
+type Item = { dokumenId: string; anggaran: string; terverifikasi: string; menunggu: string; sisa: string; aktif: boolean; digantikan: boolean; hibah: boolean; rpd: string[] | null; dokumen: { jenis: string; judul: string; nomor: string }; realisasi: Real[] }
 type Data = { tahun: number; items: Item[]; totals: { anggaran: string; terverifikasi: string; menunggu: string; sisa: string } }
 const jenisLabel = (j: string) => JENIS.find(([k]) => k === j)?.[1] ?? j
-type Caps = { canRead: boolean; canRecordRealisasi: boolean; canVerifyRealisasi: boolean }
+type Caps = { canRead: boolean; canManage: boolean; canRecordRealisasi: boolean; canVerifyRealisasi: boolean }
 
 const BASE = '/api/v1/subbagren/progar'
 const ERRORS: Record<string, string> = {
@@ -87,6 +93,7 @@ export default function RealisasiR5H12({ userId, onOpenDokumen }: { userId: stri
   const [loading, setLoading] = useState(true)
   const [dialog, setDialog] = useState<Dialog | null>(null)
   const [uploading, setUploading] = useState('')
+  const [rpdPos, setRpdPos] = useState<Item | null>(null)
   // Bukti dibuka di jendela pratinjau (bukan diunduh) supaya pemeriksa cukup melihat.
   const [preview, setPreview] = useState<{ url: string; name: string; mime: string } | null>(null)
   const fileRef = useRef<HTMLInputElement | null>(null)
@@ -172,7 +179,7 @@ export default function RealisasiR5H12({ userId, onOpenDokumen }: { userId: stri
           return <section key={it.dokumenId} className="panel sdl-progar__program" aria-label={`Realisasi ${it.dokumen.judul}`}>
             <header className="sdl-progar__program-head">
               <div>
-                <span className="sdl-progar__code">{jenisLabel(it.dokumen.jenis)}</span>{it.dokumen.nomor && <> <span className="sdl-progar__code">{it.dokumen.nomor}</span></>}
+                <span className="sdl-progar__code">{jenisLabel(it.dokumen.jenis)}</span>{it.dokumen.nomor && <> <span className="sdl-progar__code">{it.dokumen.nomor}</span></>}{it.hibah && <> <span className="sdl-progar__tag">Dana hibah</span></>}
                 <h3>{it.dokumen.judul}</h3>
                 {!it.aktif && <p className="sdl-progar__rejected">{it.digantikan ? 'Sudah digantikan revisi' : 'Tidak lagi final'} — realisasi baru tidak bisa dicatat di pos ini.</p>}
               </div>
@@ -187,6 +194,7 @@ export default function RealisasiR5H12({ userId, onOpenDokumen }: { userId: stri
               </div>
               {canRecord && <div className="sdl-progar__actions"><button type="button" className="btn primary" disabled={it.sisa === '0' || !it.aktif} title={!it.aktif ? 'Pos tidak aktif' : it.sisa === '0' ? 'Anggaran sudah terserap penuh' : undefined} onClick={() => record(it)}>＋ Catat Realisasi</button></div>}
             </header>
+            <RpdRingkas it={it} canManage={Boolean(caps?.canManage)} onIsi={() => setRpdPos(it)} />
             {it.realisasi.length === 0 ? <p className="sdl-progar__hint">Belum ada realisasi untuk dokumen ini.</p>
               : <div className="table-scroll"><table className="data-table sdl-progar__table">
                 <thead><tr><th>Tanggal</th><th>Uraian</th><th className="is-num">Jumlah</th><th>Bukti</th><th>Status</th>{(canRecord || canVerify) && <th><span className="sdl-progar__sr">Aksi</span></th>}</tr></thead>
@@ -217,6 +225,30 @@ export default function RealisasiR5H12({ userId, onOpenDokumen }: { userId: stri
         })}
 
     {dialog && <FormDialog dialog={dialog} onClose={() => setDialog(null)} />}
+    {rpdPos && <RpdDialog pos={{ dokumenId: rpdPos.dokumenId, judul: rpdPos.dokumen.judul, anggaran: rpdPos.anggaran, tahun }} onClose={() => setRpdPos(null)}
+      onDone={() => { setRpdPos(null); showToast('RPD disimpan.', 'success'); void load() }} />}
     {preview && <LampiranPreviewR5F15 stored={preview} title="Bukti Bayar" note="Periksa kesesuaian nomor dan jumlah pada bukti sebelum memverifikasi." onClose={() => setPreview(null)} />}
   </div>
+}
+
+/** RPD satu pos: rencana vs realisasi terverifikasi per bulan (dilipat supaya halaman tetap ringkas). */
+function RpdRingkas({ it, canManage, onIsi }: { it: Item; canManage: boolean; onIsi: () => void }) {
+  if (!it.rpd) return <div className="sdl-progar__pos-rpd"><p><span className="sdl-progar__muted">RPD (rencana penarikan dana) belum diisi.</span>
+    {canManage && it.aktif && it.anggaran !== '0' && <button type="button" className="sdl-progar__mini" onClick={onIsi}>Isi RPD</button>}</p></div>
+  const real = Array(12).fill(0n) as bigint[]
+  for (const r of it.realisasi) if (r.status === 'terverifikasi') real[Number(r.tanggal.slice(5, 7)) - 1] += BigInt(r.jumlah)
+  const total = it.rpd.reduce((n, x) => n + BigInt(x), 0n)
+  const pas = total === BigInt(it.anggaran)
+  const angka = (v: bigint | string) => { const s = v.toString(); return s === '0' ? '–' : rupiah(s).slice(3) }
+  return <details className="sdl-progar__pos-rpd">
+    <summary>Rencana penarikan dana (RPD) vs realisasi per bulan{!pas && <span className="sdl-progar__rejected-inline"> · total RPD {rupiah(total.toString())} belum sama dengan anggaran</span>}</summary>
+    {!pas && <p className="sdl-progar__muted">Anggaran berubah setelah RPD diisi. Sesuaikan lewat Revisi RPD di menu Revisi Anggaran.</p>}
+    <div className="table-scroll"><table className="data-table sdl-progar__table sdl-progar__rpd-table">
+      <thead><tr><th />{BULAN.map(b => <th key={b} className="is-num">{b.slice(0, 3)}</th>)}</tr></thead>
+      <tbody>
+        <tr><th scope="row">Rencana</th>{it.rpd.map((x, i) => <td key={i} className="is-num">{angka(x)}</td>)}</tr>
+        <tr><th scope="row">Realisasi</th>{real.map((x, i) => <td key={i} className="is-num">{angka(x)}</td>)}</tr>
+      </tbody>
+    </table></div>
+  </details>
 }
