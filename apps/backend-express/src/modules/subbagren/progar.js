@@ -7,6 +7,8 @@ import { withTransaction } from '../../db.js'
 import { contentDisposition, readSingleFile } from '../../http/multipart.js'
 import { BODY_LIMITS, parsePayload, rawBody } from '../../http/payload.js'
 import { validateEvidence } from './budget.js'
+import { cekTotalRpd, cleanRpd, lockPosAktif, rpdMap, tulisRpd } from './dalgar.js'
+import { registerMyinterest } from './myinterest.js'
 import { fail, parseDateOnly, parseGoInt, respond, textOk } from './shared.js'
 
 /**
@@ -41,6 +43,11 @@ import { fail, parseDateOnly, parseGoInt, respond, textOk } from './shared.js'
  *   POST   /api/v1/subbagren/progar/realisasi-dokumen/:id/bukti   multipart `file`
  *   GET    /api/v1/subbagren/progar/realisasi-dokumen/:id/bukti
  *   POST   /api/v1/subbagren/progar/realisasi-dokumen/:id/review  {keputusan,catatan,version}
+ * R5H19 (migrasi 060): RPD bulanan per pos.
+ *   PUT    /api/v1/subbagren/progar/realisasi-dokumen/pos/:dokumenId/rpd  {rpd:[12 string digit]}
+ *          hanya RPD AWAL (pos belum punya RPD); total 12 bulan = anggaran pos.
+ *          Perubahan berikutnya lewat Revisi RPD (DALGAR > Revisi Anggaran).
+ * R5H20 (migrasi 062): impor myinterest -- lihat myinterest.js (/myinterest).
  *
  * Hak akses (permission pada grant unit 'subbagren', scope tidak dipakai --
  * lihat 049_progar_pagu.sql):
@@ -625,7 +632,7 @@ export function createProgarRouter({ pool, config }) {
   // Pos anggaran = dokumen Final/Selesai yang punya "Anggaran (estimasi)" (057),
   // belum digantikan revisi. Dokumen yang sudah punya realisasi tetap tampil
   // walau tidak aktif lagi (dibuka kembali / digantikan), supaya riwayat tidak hilang.
-  const POS_SQL = `SELECT d.id::text,d.tahun,d.jenis,d.judul,d.nomor,d.anggaran::text AS anggaran,d.final_at,
+  const POS_SQL = `SELECT d.id::text,d.tahun,d.jenis,d.judul,d.nomor,d.anggaran::text AS anggaran,d.final_at,d.hibah,
        EXISTS(SELECT 1 FROM sdl_ren_dokumen x WHERE x.pengganti_dari=d.id AND x.status='disahkan') AS digantikan
      FROM sdl_ren_dokumen d`
   const posAktif = (d) => d.anggaran !== null && d.final_at !== null && !d.digantikan
@@ -637,9 +644,11 @@ export function createProgarRouter({ pool, config }) {
     if (tahun === undefined || tahun < 2000 || tahun > 2100) throw new HttpError(400, 'invalid_year')
     const pos = (await pool.query(
       `${POS_SQL}
-        WHERE d.tahun=$1 AND ((d.anggaran IS NOT NULL AND d.final_at IS NOT NULL)
+        WHERE d.tahun=$1 AND d.jenis NOT IN ('lap_lra','lap_penggunaan_anggaran','lap_eka_pn','lap_capaian_kinerja','lap_lkip','lap_hibah','revisi_pok','revisi_rpd')
+          AND ((d.anggaran IS NOT NULL AND d.final_at IS NOT NULL)
               OR EXISTS(SELECT 1 FROM sdl_ren_realisasi_dok r WHERE r.dokumen_id=d.id))
         ORDER BY d.jenis,lower(d.judul)`, [tahun])).rows
+    const rpd = await rpdMap(pool, pos.map((d) => d.id))
     const real = (await pool.query(
       `SELECT r.id::text,r.dokumen_id::text,r.tanggal::text,r.uraian,r.nomor_bukti,r.jumlah::text,r.status,r.version,
               r.created_by::text,cu.display_name AS created_name,r.created_at,r.reviewed_at,r.review_note,
@@ -660,7 +669,7 @@ export function createProgarRouter({ pool, config }) {
       tot.anggaran += ag; tot.terverifikasi += ver; tot.menunggu += wait
       return {
         dokumenId: d.id, anggaran: ag.toString(), terverifikasi: ver.toString(), menunggu: wait.toString(), sisa: (ag - ver).toString(),
-        aktif: posAktif(d), digantikan: d.digantikan,
+        aktif: posAktif(d), digantikan: d.digantikan, hibah: d.hibah, rpd: rpd.get(d.id) ?? null,
         dokumen: { jenis: d.jenis, judul: d.judul, nomor: d.nomor },
         realisasi: rows.map((r) => ({
           id: r.id, tanggal: r.tanggal, uraian: r.uraian, nomorBukti: r.nomor_bukti, jumlah: r.jumlah, status: r.status,
@@ -813,6 +822,26 @@ export function createProgarRouter({ pool, config }) {
     })
     respond(res, 200, { ok: true, status: v.keputusan })
   }))
+
+  // R5H19: RPD awal per pos. Sekali saja; perubahan berikutnya lewat Revisi RPD.
+  router.put('/realisasi-dokumen/pos/:dokumenId/rpd', json, handle(async (req, res) => {
+    await need(req, 'subbagren.progar.manage')
+    const did = id(req.params.dokumenId)
+    const v = body(req, ['rpd'])
+    const rpd = cleanRpd(v.rpd)
+    await withTransaction(pool, async (c) => {
+      const pos = await lockPosAktif(c, did)
+      if ((await rpdMap(c, [did])).has(did)) throw new HttpError(409, 'rpd_sudah_ada')
+      cekTotalRpd(rpd, pos.anggaran)
+      await tulisRpd(c, did, rpd, req.actor)
+      await c.query('UPDATE sdl_ren_dokumen SET version=version+1,updated_at=now() WHERE id=$1::uuid', [did])
+      await audit(c, req.actor, 'dokumen.rpd.create', 'dokumen', did)
+    })
+    respond(res, 200, { ok: true })
+  }))
+
+  // R5H20: data resmi myinterest (migrasi 062).
+  registerMyinterest(router, { pool, need, HttpError, audit, handle, id })
 
   return router
 }

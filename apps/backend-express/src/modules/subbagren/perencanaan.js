@@ -9,7 +9,10 @@ import { BODY_LIMITS, rawBody } from '../../http/payload.js'
 import { buildXlsx } from '../../http/xlsx.js'
 import { HttpError, PERMIT_SQL, audit, body, handle, id, text, version } from './progar.js'
 import { parseDateOnly, parseGoInt, respond } from './shared.js'
-import { JENIS_TAHAP, PEKERJAAN, TANPA_SAH, cleanIsian, cleanPeriode, katalog, slotOf } from './tahap-katalog.js'
+import { JENIS_TAHAP, PEKERJAAN, TANPA_SAH, autoKeys, cleanIsian, cleanPeriode, katalog, slotOf } from './tahap-katalog.js'
+import { FormatError, MAX_FILE as MAX_XLSX, parseMyinterest } from './myinterest-xlsx.js'
+import { hapusPotretLampiran, simpanPotret } from './myinterest.js'
+import { MAX_BUTIR_REVISI, REVISI_JENIS, RINGKASAN_JENIS, cekTotalRpd, cleanRpd, hitungRingkasan, lockPosAktif, rpdMap, terapkanRevisi, verifiedSum } from './dalgar.js'
 
 /**
  * R5H13: Dokumen Perencanaan + Monitoring Kinerja & LKIP (migrasi 051).
@@ -32,6 +35,9 @@ import { JENIS_TAHAP, PEKERJAAN, TANPA_SAH, cleanIsian, cleanPeriode, katalog, s
  *   DELETE /dokumen/:id/tahap/:tid
  *   POST   /dokumen/:id/tahap/:tid/lampiran/:slot  multipart `file` PDF <= 20 MB, MENAMBAH (maks 10 per slot; migrasi 055)
  *   GET    /dokumen/:id/tahap/:tid/lampiran/:lid   unduh satu lampiran
+ *   R5H20: slot berjenis xlsx (tahap 1 LRA "myinterest"): satu file Excel <= 2 MB, data harus
+ *   1 Januari s.d. tanggal di bulan laporan; langsung diimpor sebagai potret myinterest dan
+ *   menggantikan file lama. Menghapus lampirannya menghapus (lunak) potretnya.
  *   DELETE /dokumen/:id/tahap/:tid/lampiran/:lid   hapus satu lampiran (selama tahap masih terbuka)
  *   POST   /dokumen/:id/tahap/:tid/cek             {keputusan:"diterima"|"dikembalikan",catatan,version} (Kasubbagren; migrasi 056)
  *   Tahap DITERIMA tetap bisa diubah/ditambah lampirannya selama dokumen belum final;
@@ -41,6 +47,15 @@ import { JENIS_TAHAP, PEKERJAAN, TANPA_SAH, cleanIsian, cleanPeriode, katalog, s
  *   PUT    /dokumen/:id/anggaran                   {anggaran:"digit"|"",catatan,version} estimasi (migrasi 057);
  *          boleh selama belum final/selesai dan belum digantikan revisi.
  *   Jenis RKKS/pagu (TANPA_SAH) tidak disahkan: /final dari draft = SELESAI (min. 1 tahap).
+ * DALGAR tersambung ke anggaran (R5H19, migrasi 060):
+ *   PUT    /dokumen/:id/anggaran juga menerima {hibah:true|false} (pos dana hibah).
+ *   GET    /dokumen/:id/ringkasan        LRA/Penggunaan Anggaran/EKA PN/Hibah: realisasi per pos;
+ *          dihitung langsung selama Dalam proses, potret tetap setelah Selesai.
+ *   GET    /dokumen/:id/revisi-item      butir Revisi POK (anggaran baru) / Revisi RPD (12 bulan)
+ *   PUT    /dokumen/:id/revisi-item      {items:[{dokumenId,anggaran|rpd}],version} ganti seluruh daftar (belum Selesai)
+ *   Revisi diterapkan ke pos saat ditandai Selesai; revisi yang sudah diterapkan tidak bisa dibuka kembali.
+ *   PUT    /dokumen/:id/dipa             {dipaId:""|uuid,version} Revisi RPD -> dokumen DIPA/Revisi DIPA setahun (migrasi 061).
+ *          Revisi RPD Selesai hanya bila tahap "DIPA baru terbit" diterima dengan PDF DIPA dan DIPA sudah ditautkan.
  *   Tandai final hanya bila semua tahap diterima. Dokumen berjenis tahap disahkan
  *   dengan PDF bertanda tangan dari tahap pengesahan (slot dokumen_sah) sebagai PDF utama.
  *   Tahap boleh diubah selama dokumen DRAFT, atau SAH tetapi belum FINAL dan
@@ -108,6 +123,8 @@ export function createPerencanaanRouter({ pool, config }) {
   const evidenceKey = config?.evidenceKey
   const router = Router()
   const json = rawBody(BODY_LIMITS.USULAN)
+  // Butir Revisi RPD: hingga 40 pos x 12 bulan.
+  const jsonBesar = rawBody(BODY_LIMITS.UNIT_WORK)
   const can = async (actor, p) => (await pool.query(PERMIT_SQL, [actor, p])).rows[0].ok === true
   const need = async (req, p) => { if (!(await can(req.actor, p))) throw new HttpError(403, 'access_denied') }
 
@@ -133,7 +150,7 @@ export function createPerencanaanRouter({ pool, config }) {
               ru.display_name AS reviewed_name,d.reviewed_at,d.review_note,
               p.id::text AS program_id,p.kode AS program_kode,k.id::text AS kegiatan_id,k.kode AS kegiatan_kode,k.nama AS kegiatan_nama,
               b.filename,b.size_bytes,d.final_at,fu.display_name AS final_name,
-              d.anggaran::text AS anggaran,d.anggaran_note,d.anggaran_at,au.display_name AS anggaran_name,
+              d.anggaran::text AS anggaran,d.anggaran_note,d.anggaran_at,au.display_name AS anggaran_name,d.hibah,d.dipa_id::text AS dipa_id,
               EXISTS(SELECT 1 FROM sdl_ren_dokumen x WHERE x.pengganti_dari=d.id AND x.status='disahkan') AS digantikan
          FROM sdl_ren_dokumen d
          JOIN sdl_users cu ON cu.id=d.created_by
@@ -174,7 +191,7 @@ export function createPerencanaanRouter({ pool, config }) {
         berkas: r.filename ? { filename: r.filename, size: r.size_bytes } : null,
         tahap: tahapBy.get(r.id) ?? [],
         final: r.final_at !== null && r.final_at !== undefined, finalAt: r.final_at ?? null, finalByName: r.final_name ?? null,
-        anggaran: r.anggaran ?? null, anggaranNote: r.anggaran_note ?? '', anggaranAt: r.anggaran_at ?? null, anggaranByName: r.anggaran_name ?? null,
+        anggaran: r.anggaran ?? null, anggaranNote: r.anggaran_note ?? '', anggaranAt: r.anggaran_at ?? null, anggaranByName: r.anggaran_name ?? null, hibah: r.hibah, dipaId: r.dipa_id ?? null,
       })),
     })
   }))
@@ -268,7 +285,8 @@ export function createPerencanaanRouter({ pool, config }) {
   router.put('/dokumen/:id/anggaran', json, handle(async (req, res) => {
     await need(req, 'subbagren.progar.manage')
     const did = id(req.params.id)
-    const v = body(req, ['anggaran', 'catatan', 'version'])
+    const v = body(req, ['anggaran', 'catatan', 'version', 'hibah'])
+    if (v.hibah !== undefined && typeof v.hibah !== 'boolean') throw new HttpError(400, 'invalid_input')
     if (typeof v.anggaran !== 'string' || !/^(|0|[1-9][0-9]{0,15})$/.test(v.anggaran)) throw new HttpError(400, 'invalid_input')
     const nilai = v.anggaran === '' ? null : v.anggaran
     const catatan = text(v.catatan, 0, 500)
@@ -286,8 +304,9 @@ export function createPerencanaanRouter({ pool, config }) {
         `SELECT COALESCE(sum(jumlah),0)::text AS s FROM sdl_ren_realisasi_dok WHERE dokumen_id=$1::uuid AND status='terverifikasi'`, [did])).rows[0].s)
       if (terpakai > 0n && (nilai === null || BigInt(nilai) < terpakai)) throw new HttpError(409, 'anggaran_di_bawah_realisasi')
       await c.query(
-        `UPDATE sdl_ren_dokumen SET anggaran=$2::bigint,anggaran_note=$3,anggaran_by=$4,anggaran_at=now(),version=version+1,updated_at=now()
-          WHERE id=$1::uuid`, [did, nilai, nilai === null ? '' : catatan, req.actor])
+        `UPDATE sdl_ren_dokumen SET anggaran=$2::bigint,anggaran_note=$3,anggaran_by=$4,anggaran_at=now(),
+                hibah=COALESCE($5::boolean,hibah),version=version+1,updated_at=now()
+          WHERE id=$1::uuid`, [did, nilai, nilai === null ? '' : catatan, req.actor, v.hibah ?? null])
       await audit(c, req.actor, 'dokumen.anggaran.update', 'dokumen', did)
     })
     respond(res, 200, { ok: true })
@@ -360,6 +379,31 @@ export function createPerencanaanRouter({ pool, config }) {
     if ((await c.query('SELECT 1 FROM sdl_ren_dokumen_berkas WHERE dokumen_id=$1::uuid', [did])).rowCount) return
     if (await signedFromTahap(c, did, d.jenis)) return
     throw new HttpError(409, 'pdf_sah_wajib_ada')
+  }
+
+  /**
+   * R5H20: file Excel myinterest untuk tahap 1 LRA (slot berjenis xlsx). Dibaca dan
+   * diperiksa penuh SEBELUM transaksi; disegel seperti lampiran lain.
+   */
+  async function readMyinterestFile(req) {
+    const up = await readSingleFile(req, { fieldName: 'file', maxBodyBytes: MAX_XLSX + 65536, maxFileBytes: MAX_XLSX, maxFiles: 2 })
+    if (up.bodyExceeded || up.error === 'too_large') throw new HttpError(413, 'file_too_large')
+    if (up.fileCount !== 1 || !up.file) throw new HttpError(400, 'one_file_required')
+    const blob = up.file.buffer
+    const filename = up.file.filename.trim()
+    if (!/^[\p{L}\p{N} ._()\-,]{1,150}\.xlsx$/iu.test(filename)) throw new HttpError(400, 'invalid_file_type')
+    let data
+    try { data = parseMyinterest(blob) } catch (e) { throw new HttpError(400, e instanceof FormatError ? e.code : 'bukan_xlsx') }
+    let sealed
+    try { sealed = sealEvidence(evidenceKey, blob) } catch { throw new HttpError(503, 'evidence_encryption_unavailable') }
+    return { blob, filename, sealed, digest: createHash('sha256').update(blob).digest('hex'), data }
+  }
+  /** Data myinterest harus kumulatif sejak 1 Januari dan bertanggal di bulan laporan LRA. */
+  function cekBulanLra(d, data) {
+    if (d.jenis !== 'lap_lra' || !/^B(0[1-9]|1[0-2])$/.test(d.periode)) throw new HttpError(409, 'periode_tidak_sesuai')
+    const mm = d.periode.slice(1)
+    if (data.tanggalAwal !== `${d.tahun}-01-01`) throw new HttpError(400, 'rentang_tidak_didukung')
+    if (!data.tanggalAkhir.startsWith(`${d.tahun}-${mm}-`)) throw new HttpError(400, 'myinterest_bulan_tidak_cocok')
   }
 
   router.get('/dokumen/:id/berkas', handle(async (req, res) => {
@@ -436,7 +480,7 @@ export function createPerencanaanRouter({ pool, config }) {
     const ver = version(v.version)
     await withTransaction(pool, async (c) => {
       const r = await c.query(
-        `SELECT d.jenis,d.status,d.version,d.final_at,EXISTS(SELECT 1 FROM sdl_ren_dokumen x WHERE x.pengganti_dari=d.id AND x.status='disahkan') AS digantikan
+        `SELECT d.id::text,d.tahun,d.judul,d.periode,d.jenis,d.status,d.version,d.final_at,d.dipa_id::text AS dipa_id,EXISTS(SELECT 1 FROM sdl_ren_dokumen x WHERE x.pengganti_dari=d.id AND x.status='disahkan') AS digantikan
            FROM sdl_ren_dokumen d WHERE d.id=$1::uuid FOR UPDATE`, [did])
       if (r.rowCount !== 1) throw new HttpError(404, 'not_found')
       const o = r.rows[0]
@@ -451,12 +495,142 @@ export function createPerencanaanRouter({ pool, config }) {
       if (v.final && (await c.query("SELECT 1 FROM sdl_ren_dokumen_tahap WHERE dokumen_id=$1::uuid AND cek_status<>'diterima' LIMIT 1", [did])).rowCount) {
         throw new HttpError(409, 'tahap_belum_diterima')
       }
+      // R5H19: revisi yang sudah mengubah anggaran/RPD tidak bisa dibuka kembali;
+      // koreksinya lewat revisi baru supaya jejak perubahan tetap utuh.
+      if (!v.final && REVISI_JENIS[o.jenis] &&
+          (await c.query('SELECT 1 FROM sdl_ren_revisi_item WHERE revisi_id=$1::uuid AND diterapkan_at IS NOT NULL LIMIT 1', [did])).rowCount) {
+        throw new HttpError(409, 'revisi_sudah_diterapkan')
+      }
+      // Revisi RPD (keputusan 2026-11-18): baru Selesai setelah DIPA revisinya terbit
+      // (tahap "DIPA baru terbit" diterima + PDF DIPA) dan dokumen DIPA ditautkan.
+      if (v.final && o.jenis === 'revisi_rpd') {
+        const terbit = await c.query(
+          `SELECT 1 FROM sdl_ren_dokumen_tahap t JOIN sdl_ren_dokumen_tahap_lampiran l ON l.tahap_id=t.id AND l.slot='dipa'
+            WHERE t.dokumen_id=$1::uuid AND t.pekerjaan='dipa_baru' AND t.cek_status='diterima' LIMIT 1`, [did])
+        if (!terbit.rowCount) throw new HttpError(409, 'dipa_baru_belum')
+        if (!o.dipa_id) throw new HttpError(409, 'dipa_belum_ditautkan')
+        await dipaTarget(c, o.dipa_id, o.tahun)
+      }
+      if (v.final && REVISI_JENIS[o.jenis]) await terapkanRevisi(c, o, req.actor)
+      // Laporan beranggaran: potret ringkasan saat Selesai, dihapus saat dibuka kembali.
+      const ringkasan = v.final && RINGKASAN_JENIS.has(o.jenis) ? await hitungRingkasan(c, o) : null
       await c.query(
         `UPDATE sdl_ren_dokumen SET final_at=CASE WHEN $2 THEN now() END,final_by=CASE WHEN $2 THEN $3::uuid END,
-                version=version+1,updated_at=now() WHERE id=$1::uuid`, [did, v.final, req.actor])
+                ringkasan=$4::jsonb,version=version+1,updated_at=now() WHERE id=$1::uuid`, [did, v.final, req.actor, ringkasan === null ? null : JSON.stringify(ringkasan)])
       await audit(c, req.actor, v.final ? 'dokumen.final' : 'dokumen.final.batal', 'dokumen', did)
     })
     respond(res, 200, { ok: true, final: v.final })
+  }))
+
+  // ================= DALGAR tersambung (R5H19) =================
+  router.get('/dokumen/:id/ringkasan', handle(async (req, res) => {
+    await need(req, 'subbagren.progar.read')
+    const did = id(req.params.id)
+    const r = await pool.query('SELECT tahun,jenis,periode,final_at,ringkasan FROM sdl_ren_dokumen WHERE id=$1::uuid', [did])
+    if (r.rowCount !== 1) throw new HttpError(404, 'not_found')
+    const d = r.rows[0]
+    if (!RINGKASAN_JENIS.has(d.jenis)) throw new HttpError(409, 'tanpa_ringkasan')
+    if (d.final_at !== null && d.ringkasan) { respond(res, 200, { beku: true, ...d.ringkasan }); return }
+    respond(res, 200, { beku: false, ...(await hitungRingkasan(pool, d)) })
+  }))
+
+  /** DIPA tujuan tautan: jenis DIPA/Revisi DIPA, setahun, tidak ditolak, belum digantikan. */
+  async function dipaTarget(c, dipaId, tahun) {
+    const r = await c.query(
+      `SELECT d.jenis,d.tahun,d.status,EXISTS(SELECT 1 FROM sdl_ren_dokumen x WHERE x.pengganti_dari=d.id AND x.status='disahkan') AS digantikan
+         FROM sdl_ren_dokumen d WHERE d.id=$1::uuid FOR SHARE OF d`, [dipaId])
+    const d = r.rows[0]
+    if (!d || !['dipa', 'revisi_dipa'].includes(d.jenis) || d.tahun !== tahun || d.status === 'ditolak' || d.digantikan) throw new HttpError(409, 'dipa_tidak_sesuai')
+  }
+
+  // Revisi RPD -> dokumen DIPA yang sudah ada (keputusan 2026-11-18). dipaId "" = lepas tautan.
+  router.put('/dokumen/:id/dipa', json, handle(async (req, res) => {
+    await need(req, 'subbagren.progar.manage')
+    const did = id(req.params.id)
+    const v = body(req, ['dipaId', 'version'])
+    const dipaId = optUuid(v.dipaId)
+    const ver = version(v.version)
+    await withTransaction(pool, async (c) => {
+      const r = await c.query('SELECT tahun,jenis,version,final_at FROM sdl_ren_dokumen WHERE id=$1::uuid FOR UPDATE', [did])
+      if (r.rowCount !== 1) throw new HttpError(404, 'not_found')
+      const o = r.rows[0]
+      if (o.jenis !== 'revisi_rpd') throw new HttpError(409, 'bukan_revisi_anggaran')
+      if (o.version !== ver) throw new HttpError(409, 'version_conflict')
+      if (o.final_at !== null) throw new HttpError(409, 'dokumen_terkunci')
+      if (dipaId) await dipaTarget(c, dipaId, o.tahun)
+      await c.query('UPDATE sdl_ren_dokumen SET dipa_id=$2::uuid,version=version+1,updated_at=now() WHERE id=$1::uuid', [did, dipaId])
+      await audit(c, req.actor, 'dokumen.dipa.link', 'dokumen', did)
+    })
+    respond(res, 200, { ok: true })
+  }))
+
+  router.get('/dokumen/:id/revisi-item', handle(async (req, res) => {
+    await need(req, 'subbagren.progar.read')
+    const did = id(req.params.id)
+    const d = await pool.query('SELECT jenis FROM sdl_ren_dokumen WHERE id=$1::uuid', [did])
+    if (d.rowCount !== 1) throw new HttpError(404, 'not_found')
+    if (!REVISI_JENIS[d.rows[0].jenis]) throw new HttpError(409, 'bukan_revisi_anggaran')
+    const rows = (await pool.query(
+      `SELECT i.dokumen_id::text,i.anggaran_baru::text,i.rpd_baru::text[] AS rpd_baru,i.anggaran_lama::text,i.rpd_lama::text[] AS rpd_lama,i.diterapkan_at,
+              p.jenis,p.judul,p.nomor,p.anggaran::text AS anggaran,
+              (SELECT COALESCE(sum(jumlah),0)::text FROM sdl_ren_realisasi_dok r WHERE r.dokumen_id=p.id AND r.status='terverifikasi') AS terverifikasi
+         FROM sdl_ren_revisi_item i JOIN sdl_ren_dokumen p ON p.id=i.dokumen_id
+        WHERE i.revisi_id=$1::uuid ORDER BY p.jenis,lower(p.judul),p.id`, [did])).rows
+    const rpd = await rpdMap(pool, rows.map((x) => x.dokumen_id))
+    respond(res, 200, {
+      mode: REVISI_JENIS[d.rows[0].jenis],
+      items: rows.map((x) => ({
+        dokumenId: x.dokumen_id, jenis: x.jenis, jenisLabel: JENIS_LABEL[x.jenis] ?? x.jenis, judul: x.judul, nomor: x.nomor,
+        anggaranSekarang: x.anggaran, terverifikasi: x.terverifikasi, rpdSekarang: rpd.get(x.dokumen_id) ?? null,
+        anggaranBaru: x.anggaran_baru, rpdBaru: x.rpd_baru, anggaranLama: x.anggaran_lama, rpdLama: x.rpd_lama, diterapkanAt: x.diterapkan_at ?? null,
+      })),
+    })
+  }))
+
+  router.put('/dokumen/:id/revisi-item', jsonBesar, handle(async (req, res) => {
+    await need(req, 'subbagren.progar.manage')
+    const did = id(req.params.id)
+    const v = body(req, ['items', 'version'])
+    const ver = version(v.version)
+    if (!Array.isArray(v.items) || v.items.length > MAX_BUTIR_REVISI) throw new HttpError(400, 'invalid_input')
+    await withTransaction(pool, async (c) => {
+      const r = await c.query('SELECT tahun,jenis,status,version,final_at FROM sdl_ren_dokumen WHERE id=$1::uuid FOR UPDATE', [did])
+      if (r.rowCount !== 1) throw new HttpError(404, 'not_found')
+      const o = r.rows[0]
+      const mode = REVISI_JENIS[o.jenis]
+      if (!mode) throw new HttpError(409, 'bukan_revisi_anggaran')
+      if (o.version !== ver) throw new HttpError(409, 'version_conflict')
+      if (o.final_at !== null || o.status !== 'draft') throw new HttpError(409, 'dokumen_terkunci')
+      const allowed = ['dokumenId', mode === 'anggaran' ? 'anggaran' : 'rpd']
+      const seen = new Set(); const clean = []
+      for (const it of v.items) {
+        if (it === null || typeof it !== 'object' || Array.isArray(it)) throw new HttpError(400, 'invalid_input')
+        if (Object.keys(it).some((k) => !allowed.includes(k))) throw new HttpError(400, 'invalid_input')
+        if (typeof it.dokumenId !== 'string' || !UUID_RE.test(it.dokumenId) || seen.has(it.dokumenId.toLowerCase())) throw new HttpError(400, 'invalid_input')
+        seen.add(it.dokumenId.toLowerCase())
+        clean.push(it)
+      }
+      // Urut id: pos dikunci dalam urutan yang sama dengan penerapan (cegah deadlock).
+      clean.sort((a, b) => a.dokumenId.toLowerCase().localeCompare(b.dokumenId.toLowerCase()))
+      await c.query('DELETE FROM sdl_ren_revisi_item WHERE revisi_id=$1::uuid', [did])
+      for (const it of clean) {
+        const pos = await lockPosAktif(c, it.dokumenId, o.tahun)
+        if (mode === 'anggaran') {
+          if (typeof it.anggaran !== 'string' || !/^(0|[1-9][0-9]{0,15})$/.test(it.anggaran)) throw new HttpError(400, 'invalid_input')
+          if (BigInt(it.anggaran) < await verifiedSum(c, it.dokumenId)) throw new HttpError(409, 'anggaran_di_bawah_realisasi')
+          await c.query('INSERT INTO sdl_ren_revisi_item(revisi_id,dokumen_id,anggaran_baru,created_by) VALUES($1::uuid,$2::uuid,$3::bigint,$4)',
+            [did, it.dokumenId, it.anggaran, req.actor])
+        } else {
+          const rpd = cleanRpd(it.rpd)
+          cekTotalRpd(rpd, pos.anggaran)
+          await c.query('INSERT INTO sdl_ren_revisi_item(revisi_id,dokumen_id,rpd_baru,created_by) VALUES($1::uuid,$2::uuid,$3::bigint[],$4)',
+            [did, it.dokumenId, rpd, req.actor])
+        }
+      }
+      await c.query('UPDATE sdl_ren_dokumen SET version=version+1,updated_at=now() WHERE id=$1::uuid', [did])
+      await audit(c, req.actor, 'dokumen.revisi_item.update', 'dokumen', did)
+    })
+    respond(res, 200, { ok: true })
   }))
 
   router.post('/dokumen/:id/tahap/:tid/cek', json, handle(async (req, res) => {
@@ -516,6 +690,9 @@ export function createPerencanaanRouter({ pool, config }) {
       if (t.version !== ver) throw new HttpError(409, 'version_conflict')
       const isian = cleanIsian(t.pekerjaan, v.isian)
       if (!isian) throw new HttpError(400, 'invalid_input')
+      // Isian otomatis (mis. tanggal/jam unduh dari file myinterest) dipertahankan.
+      const lama = (await c.query('SELECT isian FROM sdl_ren_dokumen_tahap WHERE id=$1::uuid', [tid])).rows[0].isian ?? {}
+      for (const k of autoKeys(t.pekerjaan)) if (typeof lama[k] === 'string') isian[k] = lama[k]
       await c.query(
         `UPDATE sdl_ren_dokumen_tahap SET isian=$2::jsonb,cek_status='menunggu',cek_by=NULL,cek_at=NULL,version=version+1,updated_by=$3,updated_at=now() WHERE id=$1::uuid`,
         [tid, JSON.stringify(isian), req.actor])
@@ -546,18 +723,35 @@ export function createPerencanaanRouter({ pool, config }) {
     const did = id(req.params.id); const tid = id(req.params.tid); const slot = String(req.params.slot)
     // Periksa kepemilikan dan slot SEBELUM membaca berkas besar.
     const t0 = await tahapOf(pool, did, tid)
-    if (!slotOf(t0.pekerjaan, slot)) throw new HttpError(400, 'invalid_input')
-    const { blob, filename, sealed, digest } = await readPdf(req)
+    const s0 = slotOf(t0.pekerjaan, slot)
+    if (!s0) throw new HttpError(400, 'invalid_input')
+    const xlsx = s0.jenis === 'xlsx'
+    const { blob, filename, sealed, digest, data } = xlsx ? await readMyinterestFile(req) : await readPdf(req)
     const row = await withTransaction(pool, async (c) => {
-      await c.query('SELECT 1 FROM sdl_ren_dokumen WHERE id=$1::uuid FOR UPDATE', [did])
+      const d = (await c.query('SELECT tahun,jenis,periode FROM sdl_ren_dokumen WHERE id=$1::uuid FOR UPDATE', [did])).rows[0]
+      if (!d) throw new HttpError(404, 'not_found')
       const t = await tahapOf(c, did, tid, true)
       await lockForTahap(c, did, t.pekerjaan)
-      const n = await c.query('SELECT count(*)::int AS n FROM sdl_ren_dokumen_tahap_lampiran WHERE tahap_id=$1::uuid AND slot=$2', [tid, slot])
-      if (n.rows[0].n >= MAX_LAMPIRAN_PER_SLOT) throw new HttpError(409, 'batas_lampiran')
+      if (xlsx) {
+        cekBulanLra(d, data)
+        // Satu berkas per slot: unggahan baru menggantikan yang lama beserta potretnya.
+        const old = (await c.query('DELETE FROM sdl_ren_dokumen_tahap_lampiran WHERE tahap_id=$1::uuid AND slot=$2 RETURNING sha256', [tid, slot])).rows
+        for (const o of old) await hapusPotretLampiran(c, o.sha256, req.actor, audit)
+      } else {
+        const n = await c.query('SELECT count(*)::int AS n FROM sdl_ren_dokumen_tahap_lampiran WHERE tahap_id=$1::uuid AND slot=$2', [tid, slot])
+        if (n.rows[0].n >= MAX_LAMPIRAN_PER_SLOT) throw new HttpError(409, 'batas_lampiran')
+      }
       const r = (await c.query(
         `INSERT INTO sdl_ren_dokumen_tahap_lampiran(tahap_id,slot,filename,size_bytes,sha256,body,uploaded_by)
          VALUES($1::uuid,$2,$3,$4,$5,$6,$7) RETURNING id::text`,
         [tid, slot, filename, blob.length, digest, sealed, req.actor])).rows[0]
+      // Angka myinterest langsung berlaku (keputusan 2026-11-18); tahapnya tetap diperiksa Kasubbagren.
+      if (xlsx) {
+        await simpanPotret(c, data, { filename, digest, actor: req.actor, audit })
+        // Tanggal & jam unduh tahap diambil dari file, bukan diketik.
+        await c.query(`UPDATE sdl_ren_dokumen_tahap SET isian=(isian - 'tanggal' - 'jamUnduh') || $2::jsonb WHERE id=$1::uuid`,
+          [tid, JSON.stringify({ ...(data.unduhTanggal ? { tanggal: data.unduhTanggal } : {}), ...(data.unduhJam ? { jamUnduh: data.unduhJam } : {}) })])
+      }
       await c.query(`UPDATE sdl_ren_dokumen_tahap SET cek_status='menunggu',cek_by=NULL,cek_at=NULL,version=version+1,updated_by=$2,updated_at=now() WHERE id=$1::uuid`, [tid, req.actor])
       await bumpDokumen(c, did)
       await audit(c, req.actor, 'dokumen.tahap.lampiran.upload', 'dokumen', did)
@@ -575,8 +769,12 @@ export function createPerencanaanRouter({ pool, config }) {
       await c.query('SELECT 1 FROM sdl_ren_dokumen WHERE id=$1::uuid FOR UPDATE', [did])
       const t = await tahapOf(c, did, tid, true)
       await lockForTahap(c, did, t.pekerjaan)
-      const r = await c.query('DELETE FROM sdl_ren_dokumen_tahap_lampiran WHERE id=$1::uuid AND tahap_id=$2::uuid', [lid, tid])
+      const r = await c.query('DELETE FROM sdl_ren_dokumen_tahap_lampiran WHERE id=$1::uuid AND tahap_id=$2::uuid RETURNING slot,sha256', [lid, tid])
       if (r.rowCount !== 1) throw new HttpError(404, 'not_found')
+      if (slotOf(t.pekerjaan, r.rows[0].slot)?.jenis === 'xlsx') {
+        await hapusPotretLampiran(c, r.rows[0].sha256, req.actor, audit)
+        await c.query(`UPDATE sdl_ren_dokumen_tahap SET isian=isian - 'tanggal' - 'jamUnduh' WHERE id=$1::uuid`, [tid])
+      }
       await keepSignedPdf(c, did)
       await c.query(`UPDATE sdl_ren_dokumen_tahap SET cek_status='menunggu',cek_by=NULL,cek_at=NULL,version=version+1,updated_by=$2,updated_at=now() WHERE id=$1::uuid`, [tid, req.actor])
       await bumpDokumen(c, did)

@@ -151,6 +151,20 @@ export const FORMS = {
       { slot: 'data_dukung', label: 'Data dukung' },
     ],
   },
+  // R5H20 (2026-11-18): LRA langkah 1-2 alur Densus 88 -- unduhan myinterest diunggah
+  // di sini dan langsung diimpor sebagai potret resmi (jenis berkas 'xlsx', satu berkas).
+  unduh_myinterest: {
+    fields: [
+      // Tanggal & jam unduh diisi SERVER dari baris "Waktu unduh excel" file (keputusan 2026-11-18).
+      f('tanggal', 'Tanggal unduh', 'date', 10, { auto: true, half: true, hint: 'Terisi otomatis dari file Excel.' }),
+      f('jamUnduh', 'Jam unduh', 'text', 40, { auto: true, half: true, hint: 'Terisi otomatis dari file Excel.' }),
+      f('dasar', 'Dasar penyusunan', 'text', 240, { default: 'Surat arahan penyusunan LRA pengganti aplikasi SMAP', hint: 'Surat arahan yang menjadi dasar LRA bulanan.' }),
+      f('catatan', 'Catatan', 'textarea', 1000),
+    ],
+    berkas: [
+      { slot: 'myinterest', label: 'File Excel myinterest: Realisasi Belanja per Jenis Kegiatan (1 Januari s.d. akhir bulan laporan)', utama: true, jenis: 'xlsx' },
+    ],
+  },
   ttd: {
     fields: [
       f('ajuTanggal', 'Tanggal diajukan', 'date', 10, { half: true }),
@@ -238,6 +252,7 @@ export const PEKERJAAN = {
   permintaan_direktorat: { label: 'Surat permintaan laporan kepada subsatker / Direktorat', form: 'surat_keluar' },
   kompilasi_laporan: { label: 'Mengompilasi laporan subsatker / Direktorat', form: 'kompilasi' },
   susun_laporan: { label: 'Menyusun laporan dan surat pengantar', form: 'laporan' },
+  unduh_myinterest: { label: 'Mengunduh realisasi dari myinterest (data s.d. akhir bulan laporan)', form: 'unduh_myinterest' },
   ttd_kadensus: { label: 'Mengajukan persetujuan dan tanda tangan Kadensus', form: 'ttd' },
   rapat_pemeriksaan: { label: 'Rapat dan pemeriksaan bersama Stamarena Polri', form: 'pemeriksaan', defaults: { pihak: 'Stamarena Polri' } },
   kirim_laporan: { label: 'Mengirim surat dan laporan kepada Astamarena Kapolri', form: 'kirim' },
@@ -266,7 +281,8 @@ export const JENIS_TAHAP = {
   renaksi: ['terima_dipa', 'permintaan_subsatker', 'kompilasi', 'pengesahan', 'distribusi'],
   perjanjian_kinerja: ['terima_permintaan', 'penyusunan_draf', 'pengiriman', 'pengesahan_kapolri', 'distribusi'],
   // R5H17 -- DALGAR: Laporan (no. 14-19) dan Revisi Anggaran (no. 20).
-  lap_lra: ['terima_permintaan_laporan', 'susun_laporan', 'ttd_kadensus', 'kirim_laporan'],
+  // R5H20: langkah 1 LRA = unduh myinterest (berdasar surat arahan pengganti SMAP), sesuai docx no. 14.
+  lap_lra: ['unduh_myinterest', 'susun_laporan', 'ttd_kadensus', 'kirim_laporan'],
   lap_penggunaan_anggaran: ['terima_undangan_rapat', 'susun_laporan', 'ttd_kadensus', 'rapat_pemeriksaan', 'kirim_laporan'],
   lap_eka_pn: ['terima_undangan_rapat', 'susun_laporan', 'rapat_pemeriksaan'],
   lap_capaian_kinerja: ['terima_permintaan_laporan', 'permintaan_direktorat', 'kompilasi_laporan', 'susun_laporan', 'ttd_kadensus', 'kirim_laporan', 'rapat_bahan'],
@@ -323,6 +339,12 @@ export function slotOf(pekerjaan, slot) {
  * tanggal sah, angka bulat 0..99999, pilihan dari daftar, wajib terisi.
  * Mengembalikan objek bersih (string kosong dibuang) atau null bila tidak sah.
  */
+/** Kunci isian yang hanya diisi server (`auto`), mis. tanggal/jam unduh myinterest. */
+export function autoKeys(pekerjaan) {
+  const p = PEKERJAAN[pekerjaan]
+  return p ? FORMS[p.form].fields.filter((x) => x.auto).map((x) => x.key) : []
+}
+
 export function cleanIsian(pekerjaan, raw) {
   const p = PEKERJAAN[pekerjaan]
   if (!p || raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null
@@ -331,6 +353,7 @@ export function cleanIsian(pekerjaan, raw) {
   for (const k of Object.keys(raw)) if (!known.has(k)) return null
   const out = {}
   for (const fd of fields) {
+    if (fd.auto) continue // nilai dari klien diabaikan; server yang mengisi
     const v = raw[fd.key]
     if (v === undefined || v === null || v === '') { if (fd.required) return null; continue }
     if (typeof v !== 'string') return null
