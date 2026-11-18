@@ -581,6 +581,79 @@ sebelumnya".
   - `PUT` dengan tanggal palsu diabaikan.
   - Dashboard Subbagren dan Dashboard pimpinan menampilkan keterangan tersebut.
 
+### 7q. Tahap PROGAR tanpa pengecekan Kasubbagren (2026-11-18)
+
+Keputusan pemilik: tahap pekerjaan di dokumen **PROGAR** (Dokumen Perancangan/Final)
+langsung berlaku tanpa cek Kasubbagren. Tahap **DALGAR** (laporan, revisi anggaran)
+tetap Menunggu dicek -> Diterima/Dikembalikan. Pengesahan dokumen (Sahkan/Tolak) tidak
+berubah. Tanpa migrasi; kolom `cek_status` tetap ada tetapi diabaikan untuk PROGAR.
+
+- Backend: `tahapPerluCek(jenis)` di `dalgar.js` (= jenis DALGAR). `/final` hanya
+  mensyaratkan semua tahap diterima untuk DALGAR; hapus tahap yang sudah diterima hanya
+  dikunci untuk DALGAR; `POST /tahap/:tid/cek` pada dokumen PROGAR -> 409 `tahap_tanpa_cek`.
+  `tahapOf` kini ikut membaca `jenis` dokumen (`FOR UPDATE OF t`).
+- Frontend: kolom/bagian "Pemeriksaan", status cek, saringan "Belum diterima", tombol
+  Terima/Kembalikan, dan antrean "Perlu dicek saya" untuk tahap tidak tampil pada PROGAR.
+  Tandai Final/Selesai PROGAR tidak lagi menunggu cek.
+- Uji (Chrome): cek tahap Renstra [UJI TAHAP] -> 409 `tahap_tanpa_cek`; tabel tahap tanpa
+  kolom Pemeriksaan; Tandai Final aktif meski 4 tahap lama "menunggu"; final -> 200 lalu
+  dikembalikan -> 200; LRA November Selesai masih 409 `tahap_belum_diterima`; tanpa error.
+
+### 7r. Lampiran dokumen di luar tahap pekerjaan (2026-11-18, migrasi 063)
+
+Permintaan pemilik: Dokumen Perancangan dan Dokumen Final punya lampiran sendiri, terpisah
+dari lampiran tiap tahap pekerjaan. Keputusan: **PDF, Excel (.xlsx), atau Word (.docx)**;
+bisa ditambah/dihapus selama dokumen belum final; **terkunci setelah Final**.
+R5H15 bergeser ke migrasi **064**.
+
+- Migrasi `063_dokumen_lampiran.sql`: tabel baru `sdl_ren_dokumen_lampiran` (dokumen_id,
+  jenis pdf|xlsx|docx, filename, size_bytes <= 20 MB, sha256, body tersegel AES-GCM,
+  uploaded_by/at). Terdaftar di `migrate_test.go` dan `migrations/index.js`.
+- API: `POST /dokumen/:id/lampiran` (multipart `file`), `GET`/`DELETE /dokumen/:id/lampiran/:lid`;
+  daftar dokumen membawa `lampiran[]`. Maks 30 per dokumen. PDF diperiksa seperti biasa;
+  .xlsx/.docx harus zip OOXML utuh dengan bagian intinya, berkas bermakro (`vbaProject.bin`)
+  ditolak. Unduhan selalu `attachment` + `nosniff` + CSP sandbox; id lampiran dokumen lain -> 404.
+  Terbuka = belum final dan (draft, atau sah dan belum digantikan); selain itu 409 `dokumen_terkunci`.
+- UI: bagian **Lampiran Dokumen** di detail dokumen PROGAR (tidak di DALGAR), di atas Tahap
+  Pekerjaan: label jenis, nama berkas (PDF dipratinjau, Excel/Word diunduh), pengunggah,
+  tanggal, ukuran, Hapus; ＋ Tambah Lampiran bisa memilih beberapa berkas sekaligus.
+- Uji (Chrome): 3 berkas sekaligus tersimpan; .docx palsu, .docx bermakro, dan .exe ditolak;
+  pratinjau PDF terbuka; unduhan .docx byte-sama; IDOR 404; hapus jalan; dokumen final 409 dan
+  tampil "Terkunci"; tanpa error. Data uji: 2 lampiran di "[UJI TAHAP] Renstra".
+
+### 7s. LRA dan myinterest dikembalikan ke bentuk sebelumnya (2026-11-18)
+
+Keputusan pemilik: **membatalkan §7o–§7p** (unggah myinterest di tahap 1 LRA, tanggal/jam
+unduh otomatis di tahap). Impor myinterest kembali ke **menu sendiri** "Data myinterest (LRA)".
+
+- LRA kembali ke alur semula: `terima_permintaan_laporan` → `susun_laporan` →
+  `ttd_kadensus` → `kirim_laporan`. Pekerjaan/form `unduh_myinterest`, slot berjenis `xlsx`,
+  isian `auto` (`autoKeys`), `readMyinterestFile`/`cekBulanLra`, dan `waktuUnduhOf` dibuang.
+- Menu Data myinterest kembali punya **⤒ Impor file myinterest** (Operator,
+  `subbagren.realisasi.manage`), Riwayat impor dengan **Hapus**, dan tautan "Buka menu Laporan".
+  API `POST /myinterest` dan `DELETE /myinterest/:id` dipasang lagi (POST memakai `simpanPotret`).
+  Kolom LRA di riwayat dibuang.
+- Tetap dipertahankan: ringkasan LRA membaca potret myinterest (seperti sebelum §7o) dan
+  keterangan "Data myinterest per … · diunduh … pukul …" (`fmtUnduh`) di grafik, LRA, riwayat.
+- Data uji: tahap `unduh_myinterest` di "LRA November 2028" dihapus (potret 30 Nov tetap ada).
+- Uji (Chrome): pilihan pekerjaan LRA 4 langkah lama; ringkasan LRA November tetap dari
+  myinterest; impor (menggantikan tanggal sama), file rusak ditolak, hapus + impor ulang jalan;
+  dashboard menampilkan keterangan tanggal; Kabagrenmin POST 403; tanpa error.
+
+### 7t. Tahap "Mengunduh realisasi dari myinterest" kembali, hanya sebagai lampiran (2026-11-18)
+
+Keputusan pemilik: tahap unduh myinterest tetap ada di LRA, tetapi file hasil unduhan
+**hanya lampiran** -- tidak diimpor dan tidak memengaruhi dashboard/ringkasan LRA (angka
+tetap dari menu Data myinterest).
+
+- Katalog: form/pekerjaan `unduh_myinterest` (Tanggal unduh -- diketik, Dasar penyusunan,
+  Catatan; slot `unduhan` berjenis `office`). `lap_lra`: terima_permintaan_laporan,
+  unduh_myinterest, susun_laporan, ttd_kadensus, kirim_laporan.
+- Slot berjenis `office` menerima PDF/.xlsx/.docx (pemeriksaan sama dengan lampiran dokumen,
+  `readLampiranDokumen`); slot lain tetap PDF saja. Frontend menyesuaikan accept dan pesan.
+- Uji (Chrome): tahap ditambahkan ke LRA November dengan 1 Excel + 1 PDF; jumlah impor
+  myinterest tetap 3; unduhan Excel byte-sama; tanpa error.
+
 ## Keputusan terbuka (menunggu pemilik)
 
 1. **Nama menu:** usulan *Penyusunan Dokumen* + *Dokumen Sah* (sesuai istilah

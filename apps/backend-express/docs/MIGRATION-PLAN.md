@@ -7,11 +7,12 @@
 
 ## LANJUT DARI SINI
 
-> **Pembaruan 2026-11-16.** Tabel di bawah adalah keadaan paritas per
+> **Pembaruan 2026-11-18.** Tabel di bawah adalah keadaan paritas per
 > 2026-11-01 dan tetap benar untuk 142 endpoint asli. Sejak itu Express juga
-> memuat **domain baru yang tidak punya padanan Go** (Subbagren PROGAR: R5H11
-> Program/Pagu, R5H12 Realisasi, R5H13 Dokumen & Kinerja, R5H14 Pagu←DIPA,
-> R5H16 Tahap Pekerjaan; migrasi 049–053). Harness golden-file tidak
+> memuat **domain baru yang tidak punya padanan Go** (Subbagren PROGAR/DALGAR:
+> R5H11 Program/Pagu, R5H12 Realisasi, R5H13 Dokumen & Kinerja, R5H14 Pagu←DIPA,
+> R5H16 Tahap Pekerjaan, R5H17–R5H18 anggaran & DALGAR, R5H19–R5H20 laporan/revisi
+> tersambung & impor myinterest, lampiran dokumen; migrasi 049–063). Harness golden-file tidak
 > mencakupnya; yang menjaganya `verify/r5h1*-flow.js`. Posisi terbaru ada di
 > `docs/CATATAN-SESI-*.md` paling akhir, bukan di sini.
 
