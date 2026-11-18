@@ -1,19 +1,24 @@
+import { createHash } from 'node:crypto'
+
+import { withTransaction } from '../../db.js'
+import { readSingleFile } from '../../http/multipart.js'
 import { parseGoInt, respond } from './shared.js'
+import { FormatError, MAX_FILE, parseMyinterest } from './myinterest-xlsx.js'
 
 /**
  * R5H20 (migrasi 062): data resmi myinterest "Realisasi Belanja per Jenis Kegiatan".
- * EXPRESS SAJA.
- *
- * Keputusan pemilik (2026-11-18): file myinterest HANYA diunggah di tahap 1 LRA
- * ("Mengunduh realisasi dari myinterest", slot `myinterest`) dan langsung berlaku.
- * Unggahan itu diimpor oleh perencanaan.js lewat simpanPotret(); menghapus
- * lampirannya menghapus (lunak) potretnya. Menu Data myinterest hanya membaca:
- *   GET /api/v1/subbagren/progar/myinterest?tahun=2026|terbaru
- *       daftar potret (+ LRA bulannya) + potret terbaru per kegiatan/jenis + seri bulanan
+ * EXPRESS SAJA. Dipasang di router progar (/api/v1/subbagren/progar):
+ *   GET    /myinterest?tahun=2026|terbaru   daftar impor + potret terbaru per kegiatan/jenis + seri bulanan
+ *   POST   /myinterest                      multipart `file` .xlsx <= 2 MB (subbagren.realisasi.manage)
+ *          impor ulang tanggal data yang sama menggantikan potret lama (yang lama dihapus lunak)
+ *   DELETE /myinterest/:id                  hapus lunak (salah file)
+ * Keputusan pemilik 2026-11-18 (terakhir): impor di menu sendiri "Data myinterest (LRA)",
+ * bukan di tahap LRA; LRA kembali ke alur semula dan membaca potret dari menu ini.
  * Baca: subbagren.progar.read (termasuk Kabagrenmin untuk dashboard pimpinan).
  * Angka dikirim sebagai string digit (rupiah bulat).
  */
 
+const SAFE_NAME = /^[\p{L}\p{N} ._()\-,]{1,150}\.xlsx$/iu
 const JENIS = ['pegawai', 'barang', 'modal', 'bunga', 'subsidi', 'hibah', 'bansos', 'lain', 'transfer']
 
 /** Potret aktif terakhir dengan tanggal_akhir dalam [awal, akhir]. */
@@ -33,7 +38,7 @@ export async function kegiatanPotret(c, imporId) {
 }
 
 /**
- * Simpan satu hasil parseMyinterest sebagai potret aktif. Potret aktif bertanggal
+ * Simpan satu hasil parseMyinterest sebagai potret aktif (dipakai POST /myinterest). Potret aktif bertanggal
  * sama digantikan (dihapus lunak). Dipanggil di dalam transaksi pemanggil.
  */
 export async function simpanPotret(c, data, { filename, digest, actor, audit }) {
@@ -59,14 +64,7 @@ export async function simpanPotret(c, data, { filename, digest, actor, audit }) 
   return { id: r.id, menggantikan: lama.length > 0 }
 }
 
-/** Lampiran myinterest dihapus dari tahap LRA: potret yang berasal darinya ikut dihapus (lunak). */
-export async function hapusPotretLampiran(c, digest, actor, audit) {
-  const r = (await c.query(
-    'UPDATE sdl_ren_myinterest_impor SET deleted_at=now(),deleted_by=$2 WHERE sha256=$1 AND deleted_at IS NULL RETURNING id::text', [digest, actor])).rows
-  for (const x of r) await audit(c, actor, 'myinterest.delete', 'myinterest', x.id)
-}
-
-export function registerMyinterest(router, { pool, need, HttpError, handle }) {
+export function registerMyinterest(router, { pool, need, HttpError, audit, handle, id }) {
   router.get('/myinterest', handle(async (req, res) => {
     await need(req, 'subbagren.progar.read')
     const raw = String(req.query.tahun ?? '')
@@ -115,17 +113,46 @@ export function registerMyinterest(router, { pool, need, HttpError, handle }) {
         bulanIni: m === 1 ? kum.toString() : prev ? (kum - BigInt(prev.total_realisasi)).toString() : null,
       })
     }
-    // LRA bulan potret (periode 'B01'..'B12' setahun): tautan dari riwayat.
-    const lra = new Map((await pool.query(
-      `SELECT DISTINCT ON (periode) periode,id::text,judul FROM sdl_ren_dokumen WHERE jenis='lap_lra' AND tahun=$1 AND periode<>''
-        ORDER BY periode,created_at DESC`, [tahun])).rows.map((r) => [Number(r.periode.slice(1)), { id: r.id, judul: r.judul }]))
     respond(res, 200, {
       tahun, terbaru, bulanan,
       impor: impor.map((i) => ({
         id: i.id, tanggalAwal: i.tanggal_awal, tanggalAkhir: i.tanggal_akhir, waktuUnduh: i.waktu_unduh, filename: i.filename,
         totalPagu: i.total_pagu, totalRealisasi: i.total_realisasi, importedAt: i.imported_at, importedByName: i.imported_name,
-        lra: lra.get(Number(i.tanggal_akhir.slice(5, 7))) ?? null,
       })),
     })
+  }))
+
+  router.post('/myinterest', handle(async (req, res) => {
+    await need(req, 'subbagren.realisasi.manage')
+    const up = await readSingleFile(req, { fieldName: 'file', maxBodyBytes: MAX_FILE + 65536, maxFileBytes: MAX_FILE, maxFiles: 2 })
+    if (up.bodyExceeded || up.error === 'too_large') throw new HttpError(413, 'file_too_large')
+    if (up.fileCount !== 1 || !up.file) throw new HttpError(400, 'one_file_required')
+    const filename = up.file.filename.trim()
+    if (!SAFE_NAME.test(filename)) throw new HttpError(400, 'invalid_file_type')
+    let data
+    try { data = parseMyinterest(up.file.buffer) } catch (e) {
+      if (e instanceof FormatError) throw new HttpError(400, e.code)
+      throw new HttpError(400, 'bukan_xlsx')
+    }
+    const tahun = Number(data.tanggalAkhir.slice(0, 4))
+    // Angka myinterest kumulatif sejak 1 Januari; rentang lain tidak bisa dibandingkan antarbulan.
+    if (data.tanggalAwal !== `${tahun}-01-01` || tahun < 2000 || tahun > 2100) throw new HttpError(400, 'rentang_tidak_didukung')
+    const digest = createHash('sha256').update(up.file.buffer).digest('hex')
+    const out = await withTransaction(pool, (c) => simpanPotret(c, data, { filename, digest, actor: req.actor, audit }))
+    respond(res, 201, {
+      ...out, tahun, tanggalAkhir: data.tanggalAkhir, kegiatan: data.kegiatan.length,
+      totalPagu: data.totalPagu.toString(), totalRealisasi: data.totalRealisasi.toString(),
+    })
+  }))
+
+  router.delete('/myinterest/:id', handle(async (req, res) => {
+    await need(req, 'subbagren.realisasi.manage')
+    const iid = id(req.params.id)
+    await withTransaction(pool, async (c) => {
+      const r = await c.query('UPDATE sdl_ren_myinterest_impor SET deleted_at=now(),deleted_by=$2 WHERE id=$1::uuid AND deleted_at IS NULL RETURNING 1', [iid, req.actor])
+      if (!r.rowCount) throw new HttpError(404, 'not_found')
+      await audit(c, req.actor, 'myinterest.delete', 'myinterest', iid)
+    })
+    respond(res, 200, { ok: true })
   }))
 }

@@ -72,6 +72,7 @@ func TestEmbeddedMigrationOrderAndSafety(t *testing.T) {
 		"sql/060_laporan_revisi_rpd.sql",
 		"sql/061_revisi_rpd_dipa.sql",
 		"sql/062_myinterest_impor.sql",
+		"sql/063_dokumen_lampiran.sql",
 	}
 	items, err := load()
 	if err != nil {

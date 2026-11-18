@@ -15,6 +15,12 @@ export const RINGKASAN_JENIS = new Set(['lap_lra', 'lap_penggunaan_anggaran', 'l
 /** Revisi anggaran yang mengubah angka pos saat ditandai Selesai. */
 export const REVISI_JENIS = { revisi_pok: 'anggaran', revisi_rpd: 'rpd' }
 const BUKAN_POS = ['lap_lra', 'lap_penggunaan_anggaran', 'lap_eka_pn', 'lap_capaian_kinerja', 'lap_lkip', 'lap_hibah', 'revisi_pok', 'revisi_rpd']
+/**
+ * Tahap pekerjaan yang dicek Kasubbagren (Menunggu dicek -> Diterima/Dikembalikan)
+ * hanya milik dokumen DALGAR. Tahap PROGAR langsung berlaku tanpa pengecekan
+ * (keputusan pemilik 2026-11-18).
+ */
+export const tahapPerluCek = (jenis) => BUKAN_POS.includes(jenis)
 export const MAX_BUTIR_REVISI = 40
 
 const DIGANTIKAN = `EXISTS(SELECT 1 FROM sdl_ren_dokumen x WHERE x.pengganti_dari=d.id AND x.status='disahkan')`

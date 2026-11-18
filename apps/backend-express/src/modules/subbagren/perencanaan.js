@@ -9,10 +9,9 @@ import { BODY_LIMITS, rawBody } from '../../http/payload.js'
 import { buildXlsx } from '../../http/xlsx.js'
 import { HttpError, PERMIT_SQL, audit, body, handle, id, text, version } from './progar.js'
 import { parseDateOnly, parseGoInt, respond } from './shared.js'
-import { JENIS_TAHAP, PEKERJAAN, TANPA_SAH, autoKeys, cleanIsian, cleanPeriode, katalog, slotOf } from './tahap-katalog.js'
-import { FormatError, MAX_FILE as MAX_XLSX, parseMyinterest } from './myinterest-xlsx.js'
-import { hapusPotretLampiran, simpanPotret } from './myinterest.js'
-import { MAX_BUTIR_REVISI, REVISI_JENIS, RINGKASAN_JENIS, cekTotalRpd, cleanRpd, hitungRingkasan, lockPosAktif, rpdMap, terapkanRevisi, verifiedSum } from './dalgar.js'
+import { JENIS_TAHAP, PEKERJAAN, TANPA_SAH, cleanIsian, cleanPeriode, katalog, slotOf } from './tahap-katalog.js'
+import { zipNames } from './myinterest-xlsx.js'
+import { MAX_BUTIR_REVISI, REVISI_JENIS, RINGKASAN_JENIS, cekTotalRpd, cleanRpd, hitungRingkasan, lockPosAktif, rpdMap, tahapPerluCek, terapkanRevisi, verifiedSum } from './dalgar.js'
 
 /**
  * R5H13: Dokumen Perencanaan + Monitoring Kinerja & LKIP (migrasi 051).
@@ -35,11 +34,15 @@ import { MAX_BUTIR_REVISI, REVISI_JENIS, RINGKASAN_JENIS, cekTotalRpd, cleanRpd,
  *   DELETE /dokumen/:id/tahap/:tid
  *   POST   /dokumen/:id/tahap/:tid/lampiran/:slot  multipart `file` PDF <= 20 MB, MENAMBAH (maks 10 per slot; migrasi 055)
  *   GET    /dokumen/:id/tahap/:tid/lampiran/:lid   unduh satu lampiran
- *   R5H20: slot berjenis xlsx (tahap 1 LRA "myinterest"): satu file Excel <= 2 MB, data harus
- *   1 Januari s.d. tanggal di bulan laporan; langsung diimpor sebagai potret myinterest dan
- *   menggantikan file lama. Menghapus lampirannya menghapus (lunak) potretnya.
+ *          Slot berjenis 'office' menerima PDF/.xlsx/.docx (tanpa impor), mis. hasil unduhan myinterest LRA.
  *   DELETE /dokumen/:id/tahap/:tid/lampiran/:lid   hapus satu lampiran (selama tahap masih terbuka)
+ *   POST   /dokumen/:id/lampiran            multipart `file` PDF/.xlsx/.docx <= 20 MB: lampiran DOKUMEN di luar
+ *          tahap (migrasi 063; maks 30). GET/DELETE /dokumen/:id/lampiran/:lid. Ubah hanya selama
+ *          dokumen belum final (draft, atau sah belum final & belum digantikan); terkunci setelah Final.
  *   POST   /dokumen/:id/tahap/:tid/cek             {keputusan:"diterima"|"dikembalikan",catatan,version} (Kasubbagren; migrasi 056)
+ *   Sejak 2026-11-18 pengecekan tahap HANYA untuk dokumen DALGAR (laporan/revisi anggaran).
+ *   Tahap dokumen PROGAR langsung berlaku: tidak ada antrean cek, tidak mengunci hapus,
+ *   tidak menghalangi Final/Selesai, dan /cek menolaknya (409 tahap_tanpa_cek).
  *   Tahap DITERIMA tetap bisa diubah/ditambah lampirannya selama dokumen belum final;
  *   setiap perubahan mengembalikannya ke MENUNGGU dicek (keputusan 2026-11-17).
  *   Yang dikunci: menghapus tahap yang sudah diterima, dan menghapus PDF bertanda tangan
@@ -56,7 +59,7 @@ import { MAX_BUTIR_REVISI, REVISI_JENIS, RINGKASAN_JENIS, cekTotalRpd, cleanRpd,
  *   Revisi diterapkan ke pos saat ditandai Selesai; revisi yang sudah diterapkan tidak bisa dibuka kembali.
  *   PUT    /dokumen/:id/dipa             {dipaId:""|uuid,version} Revisi RPD -> dokumen DIPA/Revisi DIPA setahun (migrasi 061).
  *          Revisi RPD Selesai hanya bila tahap "DIPA baru terbit" diterima dengan PDF DIPA dan DIPA sudah ditautkan.
- *   Tandai final hanya bila semua tahap diterima. Dokumen berjenis tahap disahkan
+ *   DALGAR: tandai Selesai hanya bila semua tahap diterima. Dokumen berjenis tahap disahkan
  *   dengan PDF bertanda tangan dari tahap pengesahan (slot dokumen_sah) sebagai PDF utama.
  *   Tahap boleh diubah selama dokumen DRAFT, atau SAH tetapi belum FINAL dan
  *   belum digantikan revisi. Setiap perubahan menaikkan version dokumen supaya
@@ -92,6 +95,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const DEC_RE = /^(0|[1-9][0-9]{0,15})(\.[0-9]{1,2})?$/
 const MAX_DOC = 20 << 20
 const MAX_LAMPIRAN_PER_SLOT = 10
+const MAX_LAMPIRAN_DOKUMEN = 30
+const SAFE_LAMPIRAN_NAME = /^[\p{L}\p{N} ._()\-,]{1,150}\.(pdf|xlsx|docx)$/iu
 const SAFE_PDF_NAME = /^[\p{L}\p{N} ._()\-,]{1,150}\.pdf$/iu
 
 function tahunParam(req) {
@@ -170,6 +175,16 @@ export function createPerencanaanRouter({ pool, config }) {
          JOIN sdl_users u ON u.id=t.updated_by
          LEFT JOIN sdl_users ck ON ck.id=t.cek_by
         ORDER BY t.created_at,t.id`, [tahun])).rows
+    const lampRows = (await pool.query(
+      `SELECT l.id::text,l.dokumen_id::text,l.jenis,l.filename,l.size_bytes,l.uploaded_at,u.display_name AS uploaded_name
+         FROM sdl_ren_dokumen_lampiran l JOIN sdl_ren_dokumen d ON d.id=l.dokumen_id AND ($1::int IS NULL OR d.tahun=$1::int)
+         JOIN sdl_users u ON u.id=l.uploaded_by
+        ORDER BY l.uploaded_at,l.id`, [tahun])).rows
+    const lampBy = new Map()
+    for (const l of lampRows) {
+      if (!lampBy.has(l.dokumen_id)) lampBy.set(l.dokumen_id, [])
+      lampBy.get(l.dokumen_id).push({ id: l.id, jenis: l.jenis, filename: l.filename, size: l.size_bytes, uploadedAt: l.uploaded_at, uploadedByName: l.uploaded_name })
+    }
     const tahapBy = new Map()
     for (const t of tahapRows) {
       if (!tahapBy.has(t.dokumen_id)) tahapBy.set(t.dokumen_id, [])
@@ -190,6 +205,7 @@ export function createPerencanaanRouter({ pool, config }) {
         kegiatan: r.kegiatan_id ? { id: r.kegiatan_id, kode: r.kegiatan_kode, nama: r.kegiatan_nama } : null,
         berkas: r.filename ? { filename: r.filename, size: r.size_bytes } : null,
         tahap: tahapBy.get(r.id) ?? [],
+        lampiran: lampBy.get(r.id) ?? [],
         final: r.final_at !== null && r.final_at !== undefined, finalAt: r.final_at ?? null, finalByName: r.final_name ?? null,
         anggaran: r.anggaran ?? null, anggaranNote: r.anggaran_note ?? '', anggaranAt: r.anggaran_at ?? null, anggaranByName: r.anggaran_name ?? null, hibah: r.hibah, dipaId: r.dipa_id ?? null,
       })),
@@ -381,31 +397,6 @@ export function createPerencanaanRouter({ pool, config }) {
     throw new HttpError(409, 'pdf_sah_wajib_ada')
   }
 
-  /**
-   * R5H20: file Excel myinterest untuk tahap 1 LRA (slot berjenis xlsx). Dibaca dan
-   * diperiksa penuh SEBELUM transaksi; disegel seperti lampiran lain.
-   */
-  async function readMyinterestFile(req) {
-    const up = await readSingleFile(req, { fieldName: 'file', maxBodyBytes: MAX_XLSX + 65536, maxFileBytes: MAX_XLSX, maxFiles: 2 })
-    if (up.bodyExceeded || up.error === 'too_large') throw new HttpError(413, 'file_too_large')
-    if (up.fileCount !== 1 || !up.file) throw new HttpError(400, 'one_file_required')
-    const blob = up.file.buffer
-    const filename = up.file.filename.trim()
-    if (!/^[\p{L}\p{N} ._()\-,]{1,150}\.xlsx$/iu.test(filename)) throw new HttpError(400, 'invalid_file_type')
-    let data
-    try { data = parseMyinterest(blob) } catch (e) { throw new HttpError(400, e instanceof FormatError ? e.code : 'bukan_xlsx') }
-    let sealed
-    try { sealed = sealEvidence(evidenceKey, blob) } catch { throw new HttpError(503, 'evidence_encryption_unavailable') }
-    return { blob, filename, sealed, digest: createHash('sha256').update(blob).digest('hex'), data }
-  }
-  /** Data myinterest harus kumulatif sejak 1 Januari dan bertanggal di bulan laporan LRA. */
-  function cekBulanLra(d, data) {
-    if (d.jenis !== 'lap_lra' || !/^B(0[1-9]|1[0-2])$/.test(d.periode)) throw new HttpError(409, 'periode_tidak_sesuai')
-    const mm = d.periode.slice(1)
-    if (data.tanggalAwal !== `${d.tahun}-01-01`) throw new HttpError(400, 'rentang_tidak_didukung')
-    if (!data.tanggalAkhir.startsWith(`${d.tahun}-${mm}-`)) throw new HttpError(400, 'myinterest_bulan_tidak_cocok')
-  }
-
   router.get('/dokumen/:id/berkas', handle(async (req, res) => {
     await need(req, 'subbagren.progar.read')
     const did = id(req.params.id)
@@ -465,12 +456,13 @@ export function createPerencanaanRouter({ pool, config }) {
   /** Tahap milik dokumen ini (404 bila milik dokumen lain: cegah IDOR). */
   async function tahapOf(c, did, tid, lock = false) {
     const r = await c.query(
-      `SELECT pekerjaan,version,cek_status,updated_by::text FROM sdl_ren_dokumen_tahap WHERE id=$1::uuid AND dokumen_id=$2::uuid${lock ? ' FOR UPDATE' : ''}`, [tid, did])
+      `SELECT t.pekerjaan,t.version,t.cek_status,t.updated_by::text,d.jenis FROM sdl_ren_dokumen_tahap t JOIN sdl_ren_dokumen d ON d.id=t.dokumen_id
+        WHERE t.id=$1::uuid AND t.dokumen_id=$2::uuid${lock ? ' FOR UPDATE OF t' : ''}`, [tid, did])
     if (r.rowCount !== 1) throw new HttpError(404, 'not_found')
     return r.rows[0]
   }
-  /** Tahap yang sudah diterima tidak boleh DIHAPUS (bukti yang sudah diperiksa); mengubahnya boleh. */
-  function notAccepted(t) { if (t.cek_status === 'diterima') throw new HttpError(409, 'tahap_sudah_diterima') }
+  /** Tahap DALGAR yang sudah diterima tidak boleh DIHAPUS (bukti yang sudah diperiksa); mengubahnya boleh. */
+  function notAccepted(t) { if (tahapPerluCek(t.jenis) && t.cek_status === 'diterima') throw new HttpError(409, 'tahap_sudah_diterima') }
 
   router.post('/dokumen/:id/final', json, handle(async (req, res) => {
     await need(req, 'subbagren.progar.manage')
@@ -492,7 +484,7 @@ export function createPerencanaanRouter({ pool, config }) {
         throw new HttpError(409, 'tahap_kosong')
       }
       if (v.final === (o.final_at !== null)) throw new HttpError(409, v.final ? 'sudah_final' : 'belum_final')
-      if (v.final && (await c.query("SELECT 1 FROM sdl_ren_dokumen_tahap WHERE dokumen_id=$1::uuid AND cek_status<>'diterima' LIMIT 1", [did])).rowCount) {
+      if (v.final && tahapPerluCek(o.jenis) && (await c.query("SELECT 1 FROM sdl_ren_dokumen_tahap WHERE dokumen_id=$1::uuid AND cek_status<>'diterima' LIMIT 1", [did])).rowCount) {
         throw new HttpError(409, 'tahap_belum_diterima')
       }
       // R5H19: revisi yang sudah mengubah anggaran/RPD tidak bisa dibuka kembali;
@@ -633,6 +625,93 @@ export function createPerencanaanRouter({ pool, config }) {
     respond(res, 200, { ok: true })
   }))
 
+  // ================= Lampiran dokumen (migrasi 063) =================
+  /** PDF, .xlsx, atau .docx (<= 20 MB) dari multipart `file`; isi diperiksa, lalu disegel. */
+  async function readLampiranDokumen(req) {
+    const up = await readSingleFile(req, { fieldName: 'file', maxBodyBytes: MAX_DOC + 65536, maxFileBytes: MAX_DOC, maxFiles: 2 })
+    if (up.bodyExceeded || up.error === 'too_large') throw new HttpError(413, 'file_too_large')
+    if (up.fileCount !== 1 || !up.file) throw new HttpError(400, 'one_file_required')
+    const blob = up.file.buffer
+    const filename = up.file.filename.trim()
+    const m = SAFE_LAMPIRAN_NAME.exec(filename)
+    if (!m || blob.length === 0) throw new HttpError(400, 'invalid_file_type')
+    const jenis = m[1].toLowerCase()
+    let ok
+    if (jenis === 'pdf') {
+      const tail = blob.subarray(Math.max(0, blob.length - 2048))
+      ok = detectFileType(blob) === 'application/pdf' && blob.subarray(0, 5).toString('latin1') === '%PDF-' && tail.includes('%%EOF')
+    } else {
+      // Office Open XML: zip utuh dengan bagian inti sesuai jenisnya; berkas bermakro ditolak.
+      const names = zipNames(blob)
+      ok = Boolean(names) && names.has('[Content_Types].xml') && names.has(jenis === 'xlsx' ? 'xl/workbook.xml' : 'word/document.xml') &&
+        ![...names].some((n) => /vbaProject\.bin$/i.test(n))
+    }
+    if (!ok) throw new HttpError(400, 'invalid_file_type')
+    let sealed
+    try { sealed = sealEvidence(evidenceKey, blob) } catch { throw new HttpError(503, 'evidence_encryption_unavailable') }
+    return { blob, filename, jenis, sealed, digest: createHash('sha256').update(blob).digest('hex') }
+  }
+  /** Lampiran dokumen hanya bisa diubah selama dokumen belum final (keputusan 2026-11-18: terkunci setelah Final). */
+  async function lockLampiranDokumen(c, did) {
+    const r = await c.query(
+      `SELECT d.status,d.final_at,EXISTS(SELECT 1 FROM sdl_ren_dokumen x WHERE x.pengganti_dari=d.id AND x.status='disahkan') AS digantikan
+         FROM sdl_ren_dokumen d WHERE d.id=$1::uuid FOR UPDATE`, [did])
+    if (r.rowCount !== 1) throw new HttpError(404, 'not_found')
+    const d = r.rows[0]
+    if (d.final_at !== null || !(d.status === 'draft' || (d.status === 'disahkan' && !d.digantikan))) throw new HttpError(409, 'dokumen_terkunci')
+  }
+
+  router.post('/dokumen/:id/lampiran', handle(async (req, res) => {
+    await need(req, 'subbagren.progar.manage')
+    const did = id(req.params.id)
+    // Periksa keberadaan dan kunci SEBELUM membaca berkas besar.
+    await withTransaction(pool, (c) => lockLampiranDokumen(c, did))
+    const { blob, filename, jenis, sealed, digest } = await readLampiranDokumen(req)
+    const row = await withTransaction(pool, async (c) => {
+      await lockLampiranDokumen(c, did)
+      const n = await c.query('SELECT count(*)::int AS n FROM sdl_ren_dokumen_lampiran WHERE dokumen_id=$1::uuid', [did])
+      if (n.rows[0].n >= MAX_LAMPIRAN_DOKUMEN) throw new HttpError(409, 'batas_lampiran')
+      const r = (await c.query(
+        `INSERT INTO sdl_ren_dokumen_lampiran(dokumen_id,jenis,filename,size_bytes,sha256,body,uploaded_by)
+         VALUES($1::uuid,$2,$3,$4,$5,$6,$7) RETURNING id::text`, [did, jenis, filename, blob.length, digest, sealed, req.actor])).rows[0]
+      await bumpDokumen(c, did)
+      await audit(c, req.actor, 'dokumen.lampiran.upload', 'dokumen', did)
+      return r
+    })
+    respond(res, 201, { id: row.id, sha256: digest })
+  }))
+
+  router.delete('/dokumen/:id/lampiran/:lid', handle(async (req, res) => {
+    await need(req, 'subbagren.progar.manage')
+    const did = id(req.params.id); const lid = id(req.params.lid)
+    await withTransaction(pool, async (c) => {
+      await lockLampiranDokumen(c, did)
+      const r = await c.query('DELETE FROM sdl_ren_dokumen_lampiran WHERE id=$1::uuid AND dokumen_id=$2::uuid', [lid, did])
+      if (r.rowCount !== 1) throw new HttpError(404, 'not_found')
+      await bumpDokumen(c, did)
+      await audit(c, req.actor, 'dokumen.lampiran.delete', 'dokumen', did)
+    })
+    respond(res, 200, { ok: true })
+  }))
+
+  // Lampiran selalu dicari bersama dokumen_id-nya (id milik dokumen lain -> 404, cegah IDOR).
+  router.get('/dokumen/:id/lampiran/:lid', handle(async (req, res) => {
+    await need(req, 'subbagren.progar.read')
+    const did = id(req.params.id); const lid = id(req.params.lid)
+    const r = await pool.query('SELECT filename,sha256,body FROM sdl_ren_dokumen_lampiran WHERE id=$1::uuid AND dokumen_id=$2::uuid', [lid, did])
+    if (r.rowCount !== 1) throw new HttpError(404, 'not_found')
+    let plain
+    try { plain = openEvidence(evidenceKey, r.rows[0].body) } catch { throw new HttpError(503, 'evidence_integrity_failure') }
+    if (createHash('sha256').update(plain).digest('hex') !== r.rows[0].sha256) throw new HttpError(503, 'evidence_integrity_failure')
+    await withTransaction(pool, (c) => audit(c, req.actor, 'dokumen.lampiran.download', 'dokumen', did))
+    res.set('Content-Type', 'application/octet-stream')
+    res.set('Content-Disposition', contentDisposition('attachment', r.rows[0].filename))
+    res.set('X-Content-Type-Options', 'nosniff')
+    res.set('Content-Security-Policy', 'sandbox')
+    res.set('Cache-Control', 'no-store')
+    res.status(200).end(plain)
+  }))
+
   router.post('/dokumen/:id/tahap/:tid/cek', json, handle(async (req, res) => {
     await need(req, 'subbagren.dokumen.sahkan')
     const did = id(req.params.id); const tid = id(req.params.tid)
@@ -645,6 +724,7 @@ export function createPerencanaanRouter({ pool, config }) {
       const t = await tahapOf(c, did, tid, true)
       await lockForTahap(c, did, t.pekerjaan)
       if (t.version !== ver) throw new HttpError(409, 'version_conflict')
+      if (!tahapPerluCek(t.jenis)) throw new HttpError(409, 'tahap_tanpa_cek')
       if (t.cek_status !== 'menunggu') throw new HttpError(409, 'tahap_bukan_menunggu')
       // Pengubah terakhir tidak boleh mengecek entrinya sendiri (maker-checker).
       if (t.updated_by === req.actor) throw new HttpError(403, 'self_review_forbidden')
@@ -690,9 +770,6 @@ export function createPerencanaanRouter({ pool, config }) {
       if (t.version !== ver) throw new HttpError(409, 'version_conflict')
       const isian = cleanIsian(t.pekerjaan, v.isian)
       if (!isian) throw new HttpError(400, 'invalid_input')
-      // Isian otomatis (mis. tanggal/jam unduh dari file myinterest) dipertahankan.
-      const lama = (await c.query('SELECT isian FROM sdl_ren_dokumen_tahap WHERE id=$1::uuid', [tid])).rows[0].isian ?? {}
-      for (const k of autoKeys(t.pekerjaan)) if (typeof lama[k] === 'string') isian[k] = lama[k]
       await c.query(
         `UPDATE sdl_ren_dokumen_tahap SET isian=$2::jsonb,cek_status='menunggu',cek_by=NULL,cek_at=NULL,version=version+1,updated_by=$3,updated_at=now() WHERE id=$1::uuid`,
         [tid, JSON.stringify(isian), req.actor])
@@ -725,33 +802,18 @@ export function createPerencanaanRouter({ pool, config }) {
     const t0 = await tahapOf(pool, did, tid)
     const s0 = slotOf(t0.pekerjaan, slot)
     if (!s0) throw new HttpError(400, 'invalid_input')
-    const xlsx = s0.jenis === 'xlsx'
-    const { blob, filename, sealed, digest, data } = xlsx ? await readMyinterestFile(req) : await readPdf(req)
+    // Slot berjenis 'office' (mis. hasil unduhan myinterest): PDF, .xlsx, atau .docx sebagai lampiran biasa.
+    const { blob, filename, sealed, digest } = s0.jenis === 'office' ? await readLampiranDokumen(req) : await readPdf(req)
     const row = await withTransaction(pool, async (c) => {
-      const d = (await c.query('SELECT tahun,jenis,periode FROM sdl_ren_dokumen WHERE id=$1::uuid FOR UPDATE', [did])).rows[0]
-      if (!d) throw new HttpError(404, 'not_found')
+      await c.query('SELECT 1 FROM sdl_ren_dokumen WHERE id=$1::uuid FOR UPDATE', [did])
       const t = await tahapOf(c, did, tid, true)
       await lockForTahap(c, did, t.pekerjaan)
-      if (xlsx) {
-        cekBulanLra(d, data)
-        // Satu berkas per slot: unggahan baru menggantikan yang lama beserta potretnya.
-        const old = (await c.query('DELETE FROM sdl_ren_dokumen_tahap_lampiran WHERE tahap_id=$1::uuid AND slot=$2 RETURNING sha256', [tid, slot])).rows
-        for (const o of old) await hapusPotretLampiran(c, o.sha256, req.actor, audit)
-      } else {
-        const n = await c.query('SELECT count(*)::int AS n FROM sdl_ren_dokumen_tahap_lampiran WHERE tahap_id=$1::uuid AND slot=$2', [tid, slot])
-        if (n.rows[0].n >= MAX_LAMPIRAN_PER_SLOT) throw new HttpError(409, 'batas_lampiran')
-      }
+      const n = await c.query('SELECT count(*)::int AS n FROM sdl_ren_dokumen_tahap_lampiran WHERE tahap_id=$1::uuid AND slot=$2', [tid, slot])
+      if (n.rows[0].n >= MAX_LAMPIRAN_PER_SLOT) throw new HttpError(409, 'batas_lampiran')
       const r = (await c.query(
         `INSERT INTO sdl_ren_dokumen_tahap_lampiran(tahap_id,slot,filename,size_bytes,sha256,body,uploaded_by)
          VALUES($1::uuid,$2,$3,$4,$5,$6,$7) RETURNING id::text`,
         [tid, slot, filename, blob.length, digest, sealed, req.actor])).rows[0]
-      // Angka myinterest langsung berlaku (keputusan 2026-11-18); tahapnya tetap diperiksa Kasubbagren.
-      if (xlsx) {
-        await simpanPotret(c, data, { filename, digest, actor: req.actor, audit })
-        // Tanggal & jam unduh tahap diambil dari file, bukan diketik.
-        await c.query(`UPDATE sdl_ren_dokumen_tahap SET isian=(isian - 'tanggal' - 'jamUnduh') || $2::jsonb WHERE id=$1::uuid`,
-          [tid, JSON.stringify({ ...(data.unduhTanggal ? { tanggal: data.unduhTanggal } : {}), ...(data.unduhJam ? { jamUnduh: data.unduhJam } : {}) })])
-      }
       await c.query(`UPDATE sdl_ren_dokumen_tahap SET cek_status='menunggu',cek_by=NULL,cek_at=NULL,version=version+1,updated_by=$2,updated_at=now() WHERE id=$1::uuid`, [tid, req.actor])
       await bumpDokumen(c, did)
       await audit(c, req.actor, 'dokumen.tahap.lampiran.upload', 'dokumen', did)
@@ -769,12 +831,8 @@ export function createPerencanaanRouter({ pool, config }) {
       await c.query('SELECT 1 FROM sdl_ren_dokumen WHERE id=$1::uuid FOR UPDATE', [did])
       const t = await tahapOf(c, did, tid, true)
       await lockForTahap(c, did, t.pekerjaan)
-      const r = await c.query('DELETE FROM sdl_ren_dokumen_tahap_lampiran WHERE id=$1::uuid AND tahap_id=$2::uuid RETURNING slot,sha256', [lid, tid])
+      const r = await c.query('DELETE FROM sdl_ren_dokumen_tahap_lampiran WHERE id=$1::uuid AND tahap_id=$2::uuid', [lid, tid])
       if (r.rowCount !== 1) throw new HttpError(404, 'not_found')
-      if (slotOf(t.pekerjaan, r.rows[0].slot)?.jenis === 'xlsx') {
-        await hapusPotretLampiran(c, r.rows[0].sha256, req.actor, audit)
-        await c.query(`UPDATE sdl_ren_dokumen_tahap SET isian=isian - 'tanggal' - 'jamUnduh' WHERE id=$1::uuid`, [tid])
-      }
       await keepSignedPdf(c, did)
       await c.query(`UPDATE sdl_ren_dokumen_tahap SET cek_status='menunggu',cek_by=NULL,cek_at=NULL,version=version+1,updated_by=$2,updated_at=now() WHERE id=$1::uuid`, [tid, req.actor])
       await bumpDokumen(c, did)

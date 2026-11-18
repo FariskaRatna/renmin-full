@@ -46,6 +46,30 @@ function readZip(buf, wanted) {
   return out
 }
 
+/**
+ * Nama entri zip dari central directory (tanpa membuka isinya), atau null bila
+ * bukan zip yang utuh. Dipakai memeriksa lampiran .xlsx/.docx dokumen.
+ */
+export function zipNames(buf) {
+  try {
+    if (buf.length < 22 || buf.readUInt32LE(0) !== 0x04034b50) return null
+    let eocd = -1
+    for (let i = buf.length - 22; i >= Math.max(0, buf.length - 65557); i--) if (buf.readUInt32LE(i) === 0x06054b50) { eocd = i; break }
+    if (eocd < 0) return null
+    const count = buf.readUInt16LE(eocd + 10)
+    let p = buf.readUInt32LE(eocd + 16)
+    const names = new Set()
+    for (let n = 0; n < count; n++) {
+      if (p + 46 > buf.length || buf.readUInt32LE(p) !== 0x02014b50) return null
+      const nlen = buf.readUInt16LE(p + 28); const xlen = buf.readUInt16LE(p + 30); const clen = buf.readUInt16LE(p + 32)
+      if (p + 46 + nlen > buf.length) return null
+      names.add(buf.toString('utf8', p + 46, p + 46 + nlen))
+      p += 46 + nlen + xlen + clen
+    }
+    return names
+  } catch { return null }
+}
+
 const ENT = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }
 const unxml = (s) => s.replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos);/gi, (_, e) =>
   e[0] === '#' ? String.fromCodePoint(e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : Number(e.slice(1))) : ENT[e.toLowerCase()])
@@ -88,19 +112,6 @@ function readSheet(buf) {
   return rows
 }
 
-/**
- * "16-11-2026 12:34:02 WIB (+0700 GMT)" (format myinterest) atau "2026-11-16 12:34:02 WIB"
- * -> { unduhTanggal: '2026-11-16', unduhJam: '12:34:02 WIB' }; null bila tidak terbaca.
- */
-export function waktuUnduhOf(s) {
-  const m = String(s ?? '').match(/^(?:(\d{2})-(\d{2})-(\d{4})|(\d{4})-(\d{2})-(\d{2}))\s+(\d{2}:\d{2}(?::\d{2})?)(?:\s+([A-Z]{3,4}))?/)
-  if (!m) return { unduhTanggal: null, unduhJam: null }
-  const iso = m[1] ? `${m[3]}-${m[2]}-${m[1]}` : `${m[4]}-${m[5]}-${m[6]}`
-  const d = new Date(`${iso}T00:00:00Z`)
-  if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== iso) return { unduhTanggal: null, unduhJam: null }
-  return { unduhTanggal: iso, unduhJam: `${m[7]}${m[8] ? ` ${m[8]}` : ''}` }
-}
-
 const JENIS = { pegawai: 'pegawai', barang: 'barang', modal: 'modal', 'beban bunga': 'bunga', bunga: 'bunga', subsidi: 'subsidi', hibah: 'hibah', bansos: 'bansos', 'lain-lain': 'lain', lainnya: 'lain', transfer: 'transfer' }
 
 /** "220.556.769.000" / 220556769000 / "1.234,56" -> BigInt rupiah bulat. */
@@ -139,7 +150,6 @@ export function parseMyinterest(buf) {
     if (w && !waktuUnduh) waktuUnduh = w[1].slice(0, 80)
   }
   if (!tanggalAwal) fail('tanggal_tidak_ditemukan')
-  const { unduhTanggal, unduhJam } = waktuUnduhOf(waktuUnduh)
   // Header: baris dengan "Keterangan" dan baris berikutnya berisi nama jenis belanja.
   const hdr = nums.find((r) => all(r).some((v) => /^keterangan$/i.test(v)))
   if (!hdr) fail('format_tidak_dikenali')
@@ -180,7 +190,7 @@ export function parseMyinterest(buf) {
   const totalRealisasi = kegiatan.reduce((n, k) => n + Object.values(k.realisasi).reduce((a, b) => a + b, 0n), 0n)
   if (grand && (grand.pagu !== totalPagu || grand.realisasi !== totalRealisasi)) fail('total_tidak_cocok')
   return {
-    tanggalAwal, tanggalAkhir, waktuUnduh, unduhTanggal, unduhJam, totalPagu, totalRealisasi,
+    tanggalAwal, tanggalAkhir, waktuUnduh, totalPagu, totalRealisasi,
     kegiatan: kegiatan.map((k) => ({
       kode: k.kode, nama: k.nama,
       jenis: Object.fromEntries(jenisCols.map(([, j]) => [j, { pagu: k.pagu[j], realisasi: k.realisasi[j] }])),
