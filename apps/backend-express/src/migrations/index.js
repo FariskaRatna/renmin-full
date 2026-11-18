@@ -105,6 +105,9 @@ export const MANIFEST = [
   'sql/054_dokumen_final.sql',
   'sql/055_tahap_lampiran_banyak.sql',
   'sql/056_tahap_cek.sql',
+  'sql/057_dokumen_anggaran.sql',
+  'sql/058_dokumen_laporan.sql',
+  'sql/059_realisasi_dokumen.sql',
 ]
 
 /**

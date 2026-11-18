@@ -16,13 +16,10 @@ import RoleManagement from './RoleManagement'
 import MasterData from './MasterDataR5G12'
 import UserManagement from './UserManagement'
 import SuratMasuk from './SuratMasuk'
-import UsulanR4A from './UsulanR4A'
 import { InboxDistribusi } from './InboxDistribusiR5F2'
 import { InboxSaya } from './InboxSayaR5H10'
-import ProgarR5H11 from './ProgarR5H11'
 import RealisasiR5H12 from './RealisasiR5H12'
 import DokumenR5H13 from './DokumenR5H13'
-import KinerjaR5H13 from './KinerjaR5H13'
 import TugasDisposisi from './TugasDisposisiR5F3'
 import SeluruhDisposisi from './SeluruhDisposisiR5H5'
 import LocalCaptcha, { solveCaptcha, type CaptchaProof } from './LocalCaptcha'
@@ -45,8 +42,8 @@ type UnitKey = 'urmin' | 'ren' | 'sumda' | 'binfung'
 // Ini pengelompokan NAVIGASI saja, otorisasi tetap sepenuhnya di backend.
 type RenSub = 'progar' | 'pagu'
 const renSubs: {id:RenSub;title:string;name:string;description:string;icon:IconName;modules:string[]}[] = [
-  {id:'progar',title:'PROGAR',name:'Program & Perencanaan',description:'Dokumen perencanaan, monitoring kinerja & LKIP, serta usulan kebutuhan.',icon:'file',modules:['perencanaan','dokumen-final','program','kinerja','usulan']},
-  {id:'pagu',title:'PAGU ANGGARAN',name:'Pagu Anggaran',description:'Pagu per kegiatan dari Program Anggaran, serta realisasi anggaran (LRA).',icon:'layers',modules:['pagu','realisasi']}
+  {id:'progar',title:'PROGAR',name:'Program & Perencanaan',description:'Dokumen perancangan dan dokumen final beserta tahap pekerjaan dan estimasi anggarannya.',icon:'file',modules:['perencanaan','dokumen-final']},
+  {id:'pagu',title:'DALGAR',name:'Pengendalian Anggaran',description:'Realisasi anggaran dokumen final, laporan anggaran dan kinerja, serta revisi anggaran.',icon:'layers',modules:['realisasi','laporan','revisi-anggaran']}
 ]
 function renSubOf(s:Screen):RenSub|undefined{
   if(s.unit!=='ren')return undefined
@@ -138,14 +135,12 @@ const units: Unit[] = [
     {id:'agenda',title:'Agenda & Rapat',icon:'calendar',description:'Rapat, undangan, notulen dan tindak lanjut.',columns:['Agenda','Tanggal','Waktu','Lokasi','Status']},
     {id:'arsip',title:'Arsip & Dokumentasi',icon:'archive',description:'Register arsip, retensi dan lokasi penyimpanan.',columns:['Kode Arsip','Jenis','Lokasi','Tanggal','Akses']}
   ]},
-  {id:'ren',title:'SUBBAGREN',name:'Subbagian Perencanaan',subtitle:'Perencanaan, program dan pengendalian kinerja',description:'Renstra/Renja/RKA-KL, pengelolaan usulan, anggaran dan laporan kinerja.',icon:'chart',accent:'#4b78ba',soft:'#edf3ff',modules:[
+  {id:'ren',title:'SUBBAGREN',name:'Subbagian Perencanaan',subtitle:'Perencanaan, pagu dan realisasi anggaran',description:'Dokumen perencanaan Renstra/Renja/RKKS, pagu dan realisasi anggaran.',icon:'chart',accent:'#4b78ba',soft:'#edf3ff',modules:[
     {id:'perencanaan',title:'Dokumen Perancangan',icon:'file',description:'Dokumen yang sedang disusun: draft, menunggu pengesahan, ditolak, atau sudah sah tetapi belum ditandai final.',columns:['Dokumen','Tahun','Referensi','Koordinator','Status']},
     {id:'dokumen-final',title:'Dokumen Final',icon:'fileCheck',description:'Dokumen yang sudah disahkan dan ditandai final, beserta tahap pekerjaan dan riwayat versinya.',columns:['Dokumen','Tahun','Referensi','Koordinator','Status']},
-    {id:'program',title:'Program Anggaran',icon:'layers',description:'Program dan kegiatan per tahun anggaran; dasar pencatatan pagu.',columns:['Kode','Program','Kegiatan','Pagu','Status']},
-    {id:'pagu',title:'Pagu Anggaran',icon:'target',description:'Pagu per kegiatan dari Program Anggaran, disetujui Kasubbagren.',columns:['Kode','Kegiatan','Pagu','Dasar','Status']},
-    {id:'realisasi',title:'Realisasi Anggaran (LRA)',icon:'chart',description:'Realisasi per kegiatan yang memotong pagu disetujui, dengan bukti bayar dan verifikasi.',columns:['Program','Periode','Pagu','Realisasi','Status']},
-    {id:'kinerja',title:'Monitoring Kinerja & LKIP',icon:'target',description:'Indikator, target, capaian dan evaluasi program.',columns:['Indikator','Periode','Target','Realisasi','Status']},
-    {id:'usulan',title:'Usulan Kebutuhan',icon:'clipboard',description:'Kompilasi usulan kebutuhan dan anggaran.',columns:['Nomor','Unit Pengusul','Tahun','Estimasi','Status']}
+    {id:'laporan',title:'Laporan',icon:'clipboard',description:'LRA, Penggunaan Anggaran, EKA PN, Capaian Kinerja, LKIP dan Hibah: langkah, bukti, dan status selesai.',columns:['Jenis','Laporan','Tahap','Status']},
+    {id:'revisi-anggaran',title:'Revisi Anggaran (POK/RPD)',icon:'refresh',description:'Revisi POK dan RPD dari permintaan subsatker sampai DIPA baru terbit.',columns:['Jenis','Revisi','Tahap','Status']},
+    {id:'realisasi',title:'Realisasi Anggaran (LRA)',icon:'chart',description:'Realisasi yang memotong anggaran dokumen final, dengan bukti bayar dan verifikasi.',columns:['Program','Periode','Pagu','Realisasi','Status']}
   ]},
   {id:'sumda',title:'SUBBAGSUMDA',name:'Subbagian Sumber Daya',subtitle:'Administrasi personel dan pengelolaan logistik',description:'Administrasi SDM, layanan kepegawaian, pendidikan, BMN dan pemeliharaan.',icon:'users',accent:'#956db9',soft:'#f3effd',modules:[
     {id:'personel',title:'Data Administrasi Personel',icon:'users',description:'Register administrasi personel.',columns:['ID Internal','Personel','Kategori','Unit','Status']},
@@ -539,11 +534,9 @@ function App() {
           : workMenu==='__distribution-inbox' ? <InboxSaya me={{id:account.id,isKabagrenmin}} initialID={effectiveScreen.recordID} onOpen={t=>t.view==='surat-keluar'?navigate({view:'workspace',unit:'urmin',menu:'surat-keluar',recordID:t.recordID}):navigate({view:t.view,recordID:t.recordID})}/>
           : workMenu==='__tasks' ? <TugasDisposisi currentUserId={account.id} initialID={effectiveScreen.recordID} onOpenDirective={id=>navigate({view:'arahan',recordID:id})}/>
           : chosenModule?.id==='surat-masuk' && unit.id==='urmin' ? <SuratMasuk initialID={effectiveScreen.recordID} initialCreate={effectiveScreen.create} isKabagrenmin={isKabagrenmin}/>
-          : chosenModule?.id==='usulan' && unit.id==='ren' ? <UsulanR4A/>
-          : chosenModule?.id==='realisasi' && unit.id==='ren' ? <RealisasiR5H12 userId={account.id} onOpenPagu={()=>navigate({view:'workspace',unit:'ren',menu:'pagu',sub:'pagu'})}/>
+          : chosenModule?.id==='realisasi' && unit.id==='ren' ? <RealisasiR5H12 userId={account.id} onOpenDokumen={()=>navigate({view:'workspace',unit:'ren',menu:'perencanaan',sub:'progar'})}/>
+          : (chosenModule?.id==='laporan'||chosenModule?.id==='revisi-anggaran') && unit.id==='ren' ? <DokumenR5H13 key={chosenModule.id} mode={chosenModule.id==='laporan'?'laporan':'revisi'} userId={account.id}/>
           : (chosenModule?.id==='perencanaan'||chosenModule?.id==='dokumen-final') && unit.id==='ren' ? <DokumenR5H13 key={chosenModule.id} mode={chosenModule.id==='perencanaan'?'rancang':'final'} userId={account.id} onOpenRancang={()=>navigate({view:'workspace',unit:'ren',menu:'perencanaan',sub:'progar'})} onOpenFinal={()=>navigate({view:'workspace',unit:'ren',menu:'dokumen-final',sub:'progar'})}/>
-          : chosenModule?.id==='kinerja' && unit.id==='ren' ? <KinerjaR5H13/>
-          : (chosenModule?.id==='program'||chosenModule?.id==='pagu') && unit.id==='ren' ? <ProgarR5H11 key={chosenModule.id} mode={chosenModule.id} userId={account.id} onOpenProgram={()=>navigate({view:'workspace',unit:'ren',menu:'program',sub:'progar'})} onOpenDokumen={()=>navigate({view:'workspace',unit:'ren',menu:'perencanaan',sub:'progar'})}/>
           : chosenModule?.id==='disposisi' && unit.id==='urmin' && activeTab==='semua' ? <SeluruhDisposisi onOpenLetter={incomingID=>navigate({view:'workspace',unit:'urmin',menu:'surat-masuk',tab:'daftar',recordID:incomingID})}/>
           : chosenModule?.id==='disposisi' && unit.id==='urmin' ? <TugasDisposisi key={activeTab||'mine'} currentUserId={account.id} initialID={effectiveScreen.recordID} onOpenDirective={id=>navigate({view:'arahan',recordID:id})} workspaceTab={(activeTab||'mine') as 'mine'|'review'} onOpenLetter={incomingID=>navigate({view:'workspace',unit:'urmin',menu:'surat-masuk',tab:'daftar',recordID:incomingID})}/>
           : chosenModule ? <><div className="panel table-panel"><div className="table-toolbar"><label className="search-box"><Icon name="search" size={17}/><input disabled placeholder="Cari data (tersedia setelah API aktif)" aria-label="Cari data" /></label><Label>0 data tersambung</Label><button className="btn primary" disabled title="Fitur tambah data memerlukan backend dan autentikasi"><Icon name="plus" size={15}/> Tambah Data</button></div><div className="table-scroll"><table className="data-table"><thead><tr>{chosenModule.columns.map(col=><th key={col}>{col}</th>)}</tr></thead></table></div><EmptyState title="Belum ada data operasional" description={`${chosenModule.title} sedang dipersiapkan. Pencarian, tambah/edit dan ekspor baru akan aktif setelah API, permission, dan modul ini selesai.`} icon={chosenModule.icon}/></div><div className="info-strip"><Icon name="info" size={18}/>  </div></>

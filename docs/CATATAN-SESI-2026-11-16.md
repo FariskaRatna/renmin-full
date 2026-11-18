@@ -354,6 +354,44 @@ sebelumnya".
   - Tautan undangan/disposisi Urmin.
   - Isian capaian dan ekspor LKIP (menu Kinerja masih disembunyikan).
 
+### 7k. R5H18: Realisasi memotong anggaran dokumen Final; menu Pagu disembunyikan (2026-11-17)
+
+- **Keputusan pemilik:**
+  - Acuan anggaran adalah "Anggaran (estimasi)" pada **setiap dokumen Final/Selesai**.
+    Setiap dokumen itu menjadi satu pos.
+  - Menu Pagu Anggaran disembunyikan.
+  - Data pagu dan realisasi lama **tidak ditampilkan lagi**, tetapi tetap ada di
+    database.
+- **Migrasi 059** `059_realisasi_dokumen.sql` membuat dua tabel:
+  `sdl_ren_realisasi_dok` (FK dokumen) dan `sdl_ren_realisasi_dok_bukti`.
+  - Bentuk dan aturannya sama dengan 050: pembuat ≠ pemeriksa, bukti terenkripsi
+    wajib sebelum verifikasi.
+  - Permission yang dipakai tetap milik 050.
+  - Tabel baru diperlukan karena `sdl_ren_realisasi.pagu_id` NOT NULL.
+  - R5H15 bergeser ke **060**.
+- **Endpoint** `progar.js` `/realisasi-dokumen` (GET, POST, PUT, bukti POST/GET, review).
+  - Pos aktif = dokumen final, punya anggaran, dan belum digantikan revisi. Pos
+    yang sudah punya realisasi tetap tampil walau tidak aktif.
+  - Galat: `pos_tidak_aktif`, `melebihi_sisa_anggaran`, `tahun_tidak_cocok`.
+  - `PUT /dokumen/:id/anggaran` menolak nilai di bawah realisasi terverifikasi
+    (`anggaran_di_bawah_realisasi`).
+- **Frontend.**
+  - `RealisasiR5H12`: pos dokumen menggantikan pos kegiatan; arsip LRA lama
+    dihapus dari layar.
+  - `App.tsx`: DALGAR berisi Realisasi, Laporan, dan Revisi Anggaran. Rute dan
+    import `ProgarR5H11` (Pagu) dihapus.
+- **Uji di browser dengan dua akun.**
+  - [UJI SELESAI] dibuka kembali, diberi anggaran Rp 500.000.000, lalu ditandai
+    Selesai, dan tampil sebagai pos.
+  - OP mencatat Rp 120.000.000 dan mengunggah bukti; KS memverifikasi. Hasilnya:
+    terserap 24%, sisa Rp 380.000.000.
+  - Pencatatan Rp 400.000.000 ditolak dengan pesan "melebihi sisa anggaran".
+  - Tidak ada error.
+  - Belum diuji: penjaga anggaran di bawah realisasi.
+- **Risiko yang perlu diingat:** anggaran di Renja, RKKS, dan DIPA bisa mencakup
+  uang yang sama, jadi bisa terhitung ganda kalau semuanya diisi. Pemilik memilih
+  "tiap dokumen Final" dengan konsekuensi ini.
+
 ## Keputusan terbuka (menunggu pemilik)
 
 1. **Nama menu:** usulan *Penyusunan Dokumen* + *Dokumen Sah* (sesuai istilah

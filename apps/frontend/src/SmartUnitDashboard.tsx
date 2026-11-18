@@ -18,7 +18,6 @@ const sources:Record<UnitKey,Source[]> = {
     {id:'berkas',title:'Berkas & Tugas',route:'__unitwork',endpoint:'/api/v1/unit-work/urmin/records'}
   ],
   ren:[
-    {id:'usulan',title:'Usulan Kebutuhan',route:'usulan',endpoint:'/api/v1/subbagren/usulan/'},
     {id:'berkas',title:'Berkas & Tugas',route:'__unitwork',endpoint:'/api/v1/unit-work/subbagren/records'}
   ],
   sumda:[

@@ -1,26 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import BudgetR4A3 from './BudgetR4A3'
+import { JENIS } from './DokumenR5H13'
 import { LampiranPreviewR5F15 } from './LampiranPreviewR5F15'
 import { FormDialog, rupiah, type Dialog } from './ProgarR5H11'
 import { confirmDialog, showToast } from './UIFeedback'
 import './ProgarR5H11.css'
 
 /**
- * R5H12: Realisasi Anggaran per kegiatan, memotong Pagu Anggaran (R5H11).
+ * R5H18 (2026-11-17): Realisasi Anggaran memotong "Anggaran (estimasi)" setiap
+ * DOKUMEN FINAL (pos anggaran), bukan lagi pagu kegiatan R5H11/R5H12.
  *
- * Alur: Operator mencatat realisasi pada kegiatan yang pagunya DISETUJUI,
- * mengunggah satu bukti bayar (PDF/JPG/PNG <= 5 MB, disimpan terenkripsi), lalu
- * Kasubbagren memverifikasi atau menolak. Hanya realisasi terverifikasi yang
- * mengurangi sisa pagu; server menolak verifikasi yang melampaui pagu.
- *
- * LRA lama (pagu berbasis Usulan, R4A3) tetap bisa dibaca lewat tombol di
- * bawah, tanpa formulir input.
+ * Alur tetap: Operator mencatat realisasi pada pos, mengunggah satu bukti bayar
+ * (PDF/JPG/PNG <= 5 MB, terenkripsi), lalu Kasubbagren memverifikasi atau
+ * menolak. Hanya realisasi terverifikasi yang mengurangi sisa; server menolak
+ * verifikasi yang melampaui anggaran dokumen. Data pagu/realisasi lama tidak
+ * ditampilkan lagi (keputusan pemilik), tetapi tetap tersimpan.
  */
 
 type Bukti = { filename: string; mimeType: string; size: number }
 type Real = { id: string; tanggal: string; uraian: string; nomorBukti: string; jumlah: string; status: 'draft' | 'terverifikasi' | 'ditolak'; version: number; createdBy: string; createdByName: string; createdAt: string; reviewedByName: string | null; reviewedAt: string | null; reviewNote: string; bukti: Bukti | null }
-type Item = { paguId: string; pagu: string; terverifikasi: string; menunggu: string; sisa: string; program: { kode: string; nama: string }; kegiatan: { id: string; kode: string; nama: string }; realisasi: Real[] }
-type Data = { tahun: number; items: Item[]; totals: { pagu: string; terverifikasi: string; menunggu: string; sisa: string } }
+type Item = { dokumenId: string; anggaran: string; terverifikasi: string; menunggu: string; sisa: string; aktif: boolean; digantikan: boolean; dokumen: { jenis: string; judul: string; nomor: string }; realisasi: Real[] }
+type Data = { tahun: number; items: Item[]; totals: { anggaran: string; terverifikasi: string; menunggu: string; sisa: string } }
+const jenisLabel = (j: string) => JENIS.find(([k]) => k === j)?.[1] ?? j
 type Caps = { canRead: boolean; canRecordRealisasi: boolean; canVerifyRealisasi: boolean }
 
 const BASE = '/api/v1/subbagren/progar'
@@ -28,9 +28,9 @@ const ERRORS: Record<string, string> = {
   access_denied: 'Akun ini tidak berwenang melakukan tindakan tersebut.',
   invalid_input: 'Isian belum lengkap atau tidak sesuai. Periksa kembali.',
   invalid_body: 'Isian tidak dapat diproses.',
-  tahun_tidak_cocok: 'Tanggal realisasi harus berada di tahun anggaran pagunya.',
-  melebihi_sisa_pagu: 'Jumlah melebihi sisa pagu kegiatan ini.',
-  pagu_not_approved: 'Pagu kegiatan ini belum disetujui.',
+  tahun_tidak_cocok: 'Tanggal realisasi harus berada di tahun anggaran dokumennya.',
+  melebihi_sisa_anggaran: 'Jumlah melebihi sisa anggaran dokumen ini.',
+  pos_tidak_aktif: 'Dokumen ini tidak lagi final atau sudah digantikan revisi; realisasi baru tidak bisa dicatat.',
   realisasi_not_draft: 'Realisasi ini sudah diputuskan dan tidak dapat diubah lagi.',
   version_conflict: 'Data sudah diubah (mungkin bukti baru diunggah). Muat ulang lalu coba lagi.',
   bukti_required: 'Unggah bukti bayar terlebih dahulu sebelum diverifikasi.',
@@ -78,7 +78,7 @@ const fields = (year: number): Dialog['fields'] => [
   { key: 'uraian', label: 'Uraian', required: true, max: 240, placeholder: 'mis. Belanja ATK triwulan I' },
 ]
 
-export default function RealisasiR5H12({ userId, onOpenPagu }: { userId: string; onOpenPagu?: () => void }) {
+export default function RealisasiR5H12({ userId, onOpenDokumen }: { userId: string; onOpenDokumen?: () => void }) {
   const thisYear = new Date().getFullYear()
   const [tahun, setTahun] = useState(thisYear)
   const [data, setData] = useState<Data | null>(null)
@@ -86,7 +86,6 @@ export default function RealisasiR5H12({ userId, onOpenPagu }: { userId: string;
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   const [dialog, setDialog] = useState<Dialog | null>(null)
-  const [legacy, setLegacy] = useState(false)
   const [uploading, setUploading] = useState('')
   // Bukti dibuka di jendela pratinjau (bukan diunduh) supaya pemeriksa cukup melihat.
   const [preview, setPreview] = useState<{ url: string; name: string; mime: string } | null>(null)
@@ -98,7 +97,7 @@ export default function RealisasiR5H12({ userId, onOpenPagu }: { userId: string;
     try {
       const c = caps ?? await api<Caps>('/capabilities')
       setCaps(c)
-      if (c.canRead) setData(await api<Data>(`/realisasi?tahun=${tahun}`))
+      if (c.canRead) setData(await api<Data>(`/realisasi-dokumen?tahun=${tahun}`))
     } catch (e) { setError(e instanceof Error ? e.message : 'Data tidak dapat dimuat.') } finally { setLoading(false) }
   }, [tahun]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { void load() }, [load])
@@ -110,24 +109,24 @@ export default function RealisasiR5H12({ userId, onOpenPagu }: { userId: string;
   const guard = async (fn: () => Promise<void>) => { try { await fn() } catch (e) { showToast(e instanceof Error ? e.message : 'Gagal.', 'error') } }
 
   const record = (it: Item) => setDialog({
-    title: 'Catat Realisasi', eyebrow: `REALISASI ${tahun}`, context: `${it.kegiatan.kode} — ${it.kegiatan.nama} · sisa ${rupiah(it.sisa)}`,
+    title: 'Catat Realisasi', eyebrow: `REALISASI ${tahun}`, context: `${jenisLabel(it.dokumen.jenis)} — ${it.dokumen.judul} · sisa ${rupiah(it.sisa)}`,
     fields: fields(tahun), values: { tanggal: '', jumlah: '', nomorBukti: '', uraian: '' }, submitLabel: 'Simpan Realisasi',
-    onSubmit: v => run(() => api('/realisasi', 'POST', { paguId: it.paguId, ...v }), 'Realisasi dicatat. Unggah bukti bayarnya agar bisa diverifikasi.'),
+    onSubmit: v => run(() => api('/realisasi-dokumen', 'POST', { dokumenId: it.dokumenId, ...v }), 'Realisasi dicatat. Unggah bukti bayarnya agar bisa diverifikasi.'),
   })
   const edit = (it: Item, r: Real) => setDialog({
-    title: 'Ubah Realisasi', eyebrow: `REALISASI ${tahun}`, context: `${it.kegiatan.kode} — ${it.kegiatan.nama}`,
+    title: 'Ubah Realisasi', eyebrow: `REALISASI ${tahun}`, context: `${jenisLabel(it.dokumen.jenis)} — ${it.dokumen.judul}`,
     fields: fields(tahun), values: { tanggal: r.tanggal, jumlah: r.jumlah, nomorBukti: r.nomorBukti, uraian: r.uraian }, submitLabel: 'Simpan Perubahan',
-    onSubmit: v => run(() => api(`/realisasi/${r.id}`, 'PUT', { ...v, version: r.version }), 'Realisasi diperbarui.'),
+    onSubmit: v => run(() => api(`/realisasi-dokumen/${r.id}`, 'PUT', { ...v, version: r.version }), 'Realisasi diperbarui.'),
   })
   const reject = (it: Item, r: Real) => setDialog({
-    title: 'Tolak Realisasi', eyebrow: 'VERIFIKASI REALISASI', danger: true, context: `${it.kegiatan.kode} · ${r.nomorBukti} · ${rupiah(r.jumlah)}`,
+    title: 'Tolak Realisasi', eyebrow: 'VERIFIKASI REALISASI', danger: true, context: `${it.dokumen.judul} · ${r.nomorBukti} · ${rupiah(r.jumlah)}`,
     fields: [{ key: 'catatan', label: 'Alasan penolakan', type: 'textarea', required: true, max: 500, hint: 'Minimal 8 karakter. Akan dibaca oleh pencatat.' }],
     values: { catatan: '' }, submitLabel: 'Tolak Realisasi',
-    onSubmit: v => run(() => api(`/realisasi/${r.id}/review`, 'POST', { keputusan: 'ditolak', catatan: v.catatan, version: r.version }), 'Realisasi ditolak.'),
+    onSubmit: v => run(() => api(`/realisasi-dokumen/${r.id}/review`, 'POST', { keputusan: 'ditolak', catatan: v.catatan, version: r.version }), 'Realisasi ditolak.'),
   })
   async function verify(it: Item, r: Real) {
-    if (!await confirmDialog(`Verifikasi realisasi ${rupiah(r.jumlah)} (${r.nomorBukti}) untuk kegiatan ${it.kegiatan.kode}? Pastikan bukti bayar sudah diperiksa.`, { confirmLabel: 'Verifikasi' })) return
-    await guard(() => run(() => api(`/realisasi/${r.id}/review`, 'POST', { keputusan: 'terverifikasi', catatan: '', version: r.version }), 'Realisasi terverifikasi.'))
+    if (!await confirmDialog(`Verifikasi realisasi ${rupiah(r.jumlah)} (${r.nomorBukti}) untuk ${it.dokumen.judul}? Pastikan bukti bayar sudah diperiksa.`, { confirmLabel: 'Verifikasi' })) return
+    await guard(() => run(() => api(`/realisasi-dokumen/${r.id}/review`, 'POST', { keputusan: 'terverifikasi', catatan: '', version: r.version }), 'Realisasi terverifikasi.'))
   }
   function pickBukti(r: Real) { uploadTarget.current = r; fileRef.current?.click() }
   async function onFile(file: File | undefined) {
@@ -137,7 +136,7 @@ export default function RealisasiR5H12({ userId, onOpenPagu }: { userId: string;
     if (file.size > 5 * 1024 * 1024) { showToast(ERRORS.file_too_large, 'error'); return }
     const form = new FormData(); form.append('file', file)
     setUploading(r.id)
-    await guard(() => run(() => api(`/realisasi/${r.id}/bukti`, 'POST', form), 'Bukti bayar diunggah.'))
+    await guard(() => run(() => api(`/realisasi-dokumen/${r.id}/bukti`, 'POST', form), 'Bukti bayar diunggah.'))
     setUploading('')
   }
 
@@ -156,39 +155,39 @@ export default function RealisasiR5H12({ userId, onOpenPagu }: { userId: string;
     {error && <p className="sdl-progar__error" role="alert">{error}</p>}
 
     {t && <div className="sdl-progar__stats sdl-progar__stats--4" aria-label="Ringkasan realisasi">
-      <div><span>Pagu disetujui</span><strong>{rupiah(t.pagu)}</strong></div>
-      <div><span>Realisasi terverifikasi</span><strong>{rupiah(t.terverifikasi)}</strong><small>serapan {persen(t.terverifikasi, t.pagu).toLocaleString('id-ID')}%</small></div>
-      <div><span>Sisa pagu</span><strong>{rupiah(t.sisa)}</strong></div>
+      <div><span>Anggaran dokumen final</span><strong>{rupiah(t.anggaran)}</strong></div>
+      <div><span>Realisasi terverifikasi</span><strong>{rupiah(t.terverifikasi)}</strong><small>serapan {persen(t.terverifikasi, t.anggaran).toLocaleString('id-ID')}%</small></div>
+      <div><span>Sisa anggaran</span><strong>{rupiah(t.sisa)}</strong></div>
       <div><span>Menunggu verifikasi</span><strong>{rupiah(t.menunggu)}</strong></div>
     </div>}
 
     {loading && !data ? <div className="panel sdl-progar__empty"><p>Memuat…</p></div>
       : data && data.items.length === 0 ? <div className="panel sdl-progar__empty">
-          <strong>Belum ada pagu yang disetujui untuk tahun {tahun}</strong>
-          <p>Realisasi dicatat pada kegiatan yang pagunya sudah disetujui Kasubbagren di menu Pagu Anggaran.</p>
-          {onOpenPagu && <button type="button" className="btn primary" onClick={onOpenPagu}>Buka Pagu Anggaran</button>}
+          <strong>Belum ada dokumen final beranggaran untuk tahun {tahun}</strong>
+          <p>Realisasi dicatat pada dokumen yang sudah Final/Selesai dan punya Anggaran (estimasi). Isi anggarannya di Detail dokumen, lalu tandai Final.</p>
+          {onOpenDokumen && <button type="button" className="btn primary" onClick={onOpenDokumen}>Buka Dokumen Perancangan</button>}
         </div>
       : data?.items.map(it => {
-          const pct = persen(it.terverifikasi, it.pagu)
-          return <section key={it.paguId} className="panel sdl-progar__program" aria-label={`Realisasi kegiatan ${it.kegiatan.kode}`}>
+          const pct = persen(it.terverifikasi, it.anggaran)
+          return <section key={it.dokumenId} className="panel sdl-progar__program" aria-label={`Realisasi ${it.dokumen.judul}`}>
             <header className="sdl-progar__program-head">
               <div>
-                <span className="sdl-progar__code">{it.program.kode}</span> <span className="sdl-progar__code">{it.kegiatan.kode}</span>
-                <h3>{it.kegiatan.nama}</h3>
-                <p>{it.program.nama}</p>
+                <span className="sdl-progar__code">{jenisLabel(it.dokumen.jenis)}</span>{it.dokumen.nomor && <> <span className="sdl-progar__code">{it.dokumen.nomor}</span></>}
+                <h3>{it.dokumen.judul}</h3>
+                {!it.aktif && <p className="sdl-progar__rejected">{it.digantikan ? 'Sudah digantikan revisi' : 'Tidak lagi final'} — realisasi baru tidak bisa dicatat di pos ini.</p>}
               </div>
               <div className="sdl-progar__program-meta">
-                <span>Pagu {rupiah(it.pagu)}</span>
+                <span>Anggaran {rupiah(it.anggaran)}</span>
                 <strong>{rupiah(it.sisa)}</strong>
-                <small>sisa pagu</small>
+                <small>sisa anggaran</small>
               </div>
               <div className="sdl-progar__meter" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} aria-label="Serapan terverifikasi">
                 <span style={{ width: `${Math.min(100, pct)}%` }} />
                 <em>Terserap {rupiah(it.terverifikasi)} · {pct.toLocaleString('id-ID')}%{it.menunggu !== '0' ? ` · menunggu ${rupiah(it.menunggu)}` : ''}</em>
               </div>
-              {canRecord && <div className="sdl-progar__actions"><button type="button" className="btn primary" disabled={it.sisa === '0'} title={it.sisa === '0' ? 'Pagu sudah terserap penuh' : undefined} onClick={() => record(it)}>＋ Catat Realisasi</button></div>}
+              {canRecord && <div className="sdl-progar__actions"><button type="button" className="btn primary" disabled={it.sisa === '0' || !it.aktif} title={!it.aktif ? 'Pos tidak aktif' : it.sisa === '0' ? 'Anggaran sudah terserap penuh' : undefined} onClick={() => record(it)}>＋ Catat Realisasi</button></div>}
             </header>
-            {it.realisasi.length === 0 ? <p className="sdl-progar__hint">Belum ada realisasi untuk kegiatan ini.</p>
+            {it.realisasi.length === 0 ? <p className="sdl-progar__hint">Belum ada realisasi untuk dokumen ini.</p>
               : <div className="table-scroll"><table className="data-table sdl-progar__table">
                 <thead><tr><th>Tanggal</th><th>Uraian</th><th className="is-num">Jumlah</th><th>Bukti</th><th>Status</th>{(canRecord || canVerify) && <th><span className="sdl-progar__sr">Aksi</span></th>}</tr></thead>
                 <tbody>{it.realisasi.map(r => {
@@ -199,7 +198,7 @@ export default function RealisasiR5H12({ userId, onOpenPagu }: { userId: string;
                       {r.status === 'ditolak' && <small className="sdl-progar__rejected">Ditolak {r.reviewedByName}: “{r.reviewNote}”</small>}</td>
                     <td className="is-num">{rupiah(r.jumlah)}</td>
                     <td>{r.bukti
-                      ? <button type="button" className="sdl-progar__file" onClick={() => setPreview({ url: `${BASE}/realisasi/${r.id}/bukti`, name: r.bukti!.filename, mime: r.bukti!.mimeType })} title={`Lihat ${r.bukti.filename} · ${Math.ceil(r.bukti.size / 1024)} KB`}>👁 {r.bukti.filename}</button>
+                      ? <button type="button" className="sdl-progar__file" onClick={() => setPreview({ url: `${BASE}/realisasi-dokumen/${r.id}/bukti`, name: r.bukti!.filename, mime: r.bukti!.mimeType })} title={`Lihat ${r.bukti.filename} · ${Math.ceil(r.bukti.size / 1024)} KB`}>👁 {r.bukti.filename}</button>
                       : <span className="sdl-progar__muted">Belum ada</span>}</td>
                     <td><span className={`sdl-progar__badge ${STATUS[r.status].cls}`}>{STATUS[r.status].label}</span></td>
                     {(canRecord || canVerify) && <td><div className="sdl-progar__row-actions">
@@ -216,11 +215,6 @@ export default function RealisasiR5H12({ userId, onOpenPagu }: { userId: string;
               </table></div>}
           </section>
         })}
-
-    <div className="sdl-progar__legacy">
-      <button type="button" className="btn" aria-expanded={legacy} onClick={() => setLegacy(v => !v)}>{legacy ? 'Sembunyikan' : 'Lihat'} LRA lama (pagu berbasis Usulan)</button>
-      {legacy && <div className="sdl-progar__legacy-body"><p className="sdl-progar__hint">Arsip baca. Pagu dan realisasi baru dicatat per kegiatan di atas.</p><BudgetR4A3 legacy /></div>}
-    </div>
 
     {dialog && <FormDialog dialog={dialog} onClose={() => setDialog(null)} />}
     {preview && <LampiranPreviewR5F15 stored={preview} title="Bukti Bayar" note="Periksa kesesuaian nomor dan jumlah pada bukti sebelum memverifikasi." onClose={() => setPreview(null)} />}

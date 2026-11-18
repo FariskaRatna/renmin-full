@@ -136,6 +136,78 @@ export const FORMS = {
     ],
     berkas: [{ slot: 'draf', label: 'Draf dokumen', utama: true }],
   },
+  // ---- R5H17: laporan DALGAR (alur no. 14-19) dan revisi anggaran (no. 20) ----
+  laporan: {
+    fields: [
+      f('tanggal', 'Tanggal selesai disusun', 'date', 10, { required: true, half: true }),
+      f('pengantarNomor', 'Nomor surat pengantar', 'text', 120, { half: true }),
+      f('koordinasi', 'Berkoordinasi dengan', 'text', 240, { hint: 'mis. Subsatker pelaksana PN, Paur Log, Direktorat.' }),
+      f('sumberData', 'Sumber data', 'text', 240, { hint: 'mis. myinterest, SAKTI, laporan Direktorat.' }),
+      f('catatan', 'Catatan', 'textarea', 1000),
+    ],
+    berkas: [
+      { slot: 'laporan', label: 'Draf laporan', utama: true },
+      { slot: 'pengantar', label: 'Draf surat pengantar', utama: true },
+      { slot: 'data_dukung', label: 'Data dukung' },
+    ],
+  },
+  ttd: {
+    fields: [
+      f('ajuTanggal', 'Tanggal diajukan', 'date', 10, { half: true }),
+      f('ttdTanggal', 'Tanggal ditandatangani', 'date', 10, { required: true, half: true }),
+      f('penandatangan', 'Penandatangan', 'text', 120, { default: 'Kadensus' }),
+      f('pengantarNomor', 'Nomor surat pengantar', 'text', 120),
+      f('catatan', 'Catatan / koreksi pimpinan', 'textarea', 1000),
+    ],
+    berkas: [{ slot: 'ditandatangani', label: 'Surat pengantar dan laporan yang ditandatangani', utama: true }],
+  },
+  kirim: {
+    fields: [
+      f('tanggal', 'Tanggal kirim', 'date', 10, { required: true, half: true }),
+      f('cara', 'Cara kirim', 'select', 40, { options: ['Surat dinas (fisik)', 'Elektronik / e-mail', 'Aplikasi', 'Diantar langsung'], half: true }),
+      f('tujuan', 'Tujuan', 'text', 240, { default: 'Astamarena Kapolri' }),
+      f('nomor', 'Nomor surat', 'text', 120),
+    ],
+    berkas: [
+      { slot: 'surat', label: 'Surat dan laporan yang dikirim', utama: true },
+      { slot: 'bukti_kirim', label: 'Bukti pengiriman / tanda terima', utama: true },
+    ],
+  },
+  data_dukung: {
+    fields: [
+      f('tanggal', 'Tanggal', 'date', 10, { required: true, half: true }),
+      f('pengantarNomor', 'Nomor surat pengantar', 'text', 120, { half: true }),
+      f('uraian', 'Uraian revisi', 'textarea', 2000, { required: true, hint: 'Pos yang direvisi, nilai semula dan menjadi.' }),
+      f('sakti', 'Sudah disesuaikan di SAKTI', 'select', 10, { options: ['Sudah', 'Belum'], half: true }),
+    ],
+    berkas: [
+      { slot: 'data_dukung', label: 'Data dukung revisi', utama: true },
+      { slot: 'pengantar', label: 'Draf surat pengantar', utama: true },
+      { slot: 'sakti', label: 'Tangkapan layar / cetakan SAKTI' },
+    ],
+  },
+  unggah_aplikasi: {
+    fields: [
+      f('tanggal', 'Tanggal unggah', 'date', 10, { required: true, half: true }),
+      f('aplikasi', 'Aplikasi', 'select', 40, { options: ['SAKTI', 'SatuDJA', 'Lainnya'], half: true, default: 'SAKTI' }),
+      f('pihak', 'Diajukan kepada', 'text', 160),
+      f('status', 'Status / nomor tiket', 'text', 160),
+      f('catatan', 'Catatan koordinasi', 'textarea', 1000),
+    ],
+    berkas: [{ slot: 'bukti', label: 'Bukti unggah / approval', utama: true }],
+  },
+  dipa_baru: {
+    fields: [
+      f('nomor', 'Nomor DIPA', 'text', 120, { required: true, half: true }),
+      f('tanggal', 'Tanggal DIPA', 'date', 10, { required: true, half: true }),
+      f('revisiKe', 'Revisi ke-', 'number', 3, { half: true }),
+      f('catatan', 'Catatan', 'textarea', 1000),
+    ],
+    berkas: [
+      { slot: 'dipa', label: 'DIPA baru (unduhan SatuDJA)', utama: true },
+      { slot: 'rka', label: 'RKA baru' },
+    ],
+  },
 }
 
 /** label: teks di dropdown; form: kunci FORMS; defaults: menimpa default isian. */
@@ -160,6 +232,22 @@ export const PEKERJAAN = {
   reviu_apip: { label: 'Reviu bersama Tim APIP Itwasum', form: 'pemeriksaan', defaults: { pihak: 'APIP Itwasum Polri' } },
   penjabaran: { label: 'Surat penjabaran kepada Astamarena Kapolri', form: 'surat_keluar' },
   terima_dipa_petikan: { label: 'Menerima DIPA Petikan dari Kemenkeu', form: 'surat_masuk', defaults: { dari: 'Kementerian Keuangan' } },
+  // R5H17: laporan DALGAR dan revisi anggaran.
+  terima_undangan_rapat: { label: 'Menerima undangan rapat penyusunan', form: 'surat_masuk' },
+  terima_permintaan_laporan: { label: 'Menerima surat permintaan / undangan penyusunan laporan', form: 'surat_masuk' },
+  permintaan_direktorat: { label: 'Surat permintaan laporan kepada subsatker / Direktorat', form: 'surat_keluar' },
+  kompilasi_laporan: { label: 'Mengompilasi laporan subsatker / Direktorat', form: 'kompilasi' },
+  susun_laporan: { label: 'Menyusun laporan dan surat pengantar', form: 'laporan' },
+  ttd_kadensus: { label: 'Mengajukan persetujuan dan tanda tangan Kadensus', form: 'ttd' },
+  rapat_pemeriksaan: { label: 'Rapat dan pemeriksaan bersama Stamarena Polri', form: 'pemeriksaan', defaults: { pihak: 'Stamarena Polri' } },
+  kirim_laporan: { label: 'Mengirim surat dan laporan kepada Astamarena Kapolri', form: 'kirim' },
+  rapat_bahan: { label: 'Menghadiri rapat penyusunan tingkat Polri (membawa laporan satker)', form: 'rapat' },
+  terima_permintaan_revisi: { label: 'Menerima disposisi Kadensus atas permintaan revisi dari subsatker', form: 'surat_masuk', defaults: { dari: 'Sub Satker' } },
+  data_dukung_revisi: { label: 'Menyusun data dukung revisi dan menyesuaikan di SAKTI', form: 'data_dukung' },
+  approval_eselon1: { label: 'Unggah ke SAKTI dan approval Eselon 1 Stamarena (kode satker 654691)', form: 'unggah_aplikasi', defaults: { pihak: 'Eselon 1 Stamarena Polri' } },
+  unggah_kanwil: { label: 'Unggah surat dan data dukung ke Kanwil DJPB', form: 'unggah_aplikasi', defaults: { pihak: 'Kanwil DJPB' } },
+  penelaahan_djpb: { label: 'Penelitian, penelaahan dan penetapan Kanwil DJPB', form: 'pemeriksaan', defaults: { pihak: 'Kanwil DJPB' } },
+  dipa_baru: { label: 'DIPA baru terbit (unduh DIPA dan RKA dari SatuDJA)', form: 'dipa_baru' },
 }
 
 /** Urutan tahap per jenis dokumen, mengikuti dokumen alur. Jenis lain: tanpa tahap. */
@@ -177,6 +265,28 @@ export const JENIS_TAHAP = {
   rengiat: ['terima_dipa', 'penyusunan_draf', 'pengesahan', 'distribusi'],
   renaksi: ['terima_dipa', 'permintaan_subsatker', 'kompilasi', 'pengesahan', 'distribusi'],
   perjanjian_kinerja: ['terima_permintaan', 'penyusunan_draf', 'pengiriman', 'pengesahan_kapolri', 'distribusi'],
+  // R5H17 -- DALGAR: Laporan (no. 14-19) dan Revisi Anggaran (no. 20).
+  lap_lra: ['terima_permintaan_laporan', 'susun_laporan', 'ttd_kadensus', 'kirim_laporan'],
+  lap_penggunaan_anggaran: ['terima_undangan_rapat', 'susun_laporan', 'ttd_kadensus', 'rapat_pemeriksaan', 'kirim_laporan'],
+  lap_eka_pn: ['terima_undangan_rapat', 'susun_laporan', 'rapat_pemeriksaan'],
+  lap_capaian_kinerja: ['terima_permintaan_laporan', 'permintaan_direktorat', 'kompilasi_laporan', 'susun_laporan', 'ttd_kadensus', 'kirim_laporan', 'rapat_bahan'],
+  lap_lkip: ['terima_permintaan_laporan', 'susun_laporan', 'ttd_kadensus', 'kirim_laporan', 'rapat_bahan'],
+  lap_hibah: ['terima_undangan_rapat', 'susun_laporan', 'ttd_kadensus', 'rapat_pemeriksaan', 'kirim_laporan'],
+  // Revisi POK selesai setelah TTD Kadensus; revisi RPD berlanjut sampai DIPA baru.
+  revisi_pok: ['terima_permintaan_revisi', 'data_dukung_revisi', 'ttd_kadensus'],
+  revisi_rpd: ['terima_permintaan_revisi', 'data_dukung_revisi', 'ttd_kadensus', 'approval_eselon1', 'unggah_kanwil', 'penelaahan_djpb', 'dipa_baru'],
+}
+
+/** Jenis berperiode di bawah tahun anggaran (R5H17): LRA bulanan, Capaian Kinerja triwulanan. */
+export const PERIODE = { lap_lra: 'bulan', lap_capaian_kinerja: 'triwulan' }
+const PERIODE_RE = { bulan: /^B(0[1-9]|1[0-2])$/, triwulan: /^TW[1-4]$/ }
+/** periode sah untuk jenis ini: wajib sesuai pola bila jenisnya berperiode, selain itu kosong. */
+export function cleanPeriode(jenis, v) {
+  const kind = PERIODE[jenis]
+  const s = v === undefined || v === null ? '' : v
+  if (typeof s !== 'string') return null
+  if (!kind) return s === '' ? '' : null
+  return PERIODE_RE[kind].test(s) ? s : null
 }
 
 /** Katalog siap kirim ke frontend: field sudah digabung dengan default per pekerjaan. */
@@ -186,7 +296,9 @@ export const JENIS_TAHAP = {
  * pengesahan internal. Dokumen ini langsung ditandai SELESAI setelah semua tahap
  * diterima Kasubbagren.
  */
-export const TANPA_SAH = new Set(['rkks_renbut', 'rkks_pagu_indikatif', 'rkks_pagu_anggaran', 'rkks_pagu_alokasi'])
+export const TANPA_SAH = new Set(['rkks_renbut', 'rkks_pagu_indikatif', 'rkks_pagu_anggaran', 'rkks_pagu_alokasi',
+  // R5H17: laporan dan revisi anggaran DALGAR juga berakhir "Selesai".
+  'lap_lra', 'lap_penggunaan_anggaran', 'lap_eka_pn', 'lap_capaian_kinerja', 'lap_lkip', 'lap_hibah', 'revisi_pok', 'revisi_rpd'])
 
 export function katalog() {
   const pekerjaan = {}
@@ -198,7 +310,7 @@ export function katalog() {
       berkas: form.berkas,
     }
   }
-  return { jenis: JENIS_TAHAP, pekerjaan, tanpaSah: [...TANPA_SAH] }
+  return { jenis: JENIS_TAHAP, pekerjaan, tanpaSah: [...TANPA_SAH], periode: PERIODE }
 }
 
 export function slotOf(pekerjaan, slot) {

@@ -9,7 +9,7 @@ import { BODY_LIMITS, rawBody } from '../../http/payload.js'
 import { buildXlsx } from '../../http/xlsx.js'
 import { HttpError, PERMIT_SQL, audit, body, handle, id, text, version } from './progar.js'
 import { parseDateOnly, parseGoInt, respond } from './shared.js'
-import { JENIS_TAHAP, PEKERJAAN, TANPA_SAH, cleanIsian, katalog, slotOf } from './tahap-katalog.js'
+import { JENIS_TAHAP, PEKERJAAN, TANPA_SAH, cleanIsian, cleanPeriode, katalog, slotOf } from './tahap-katalog.js'
 
 /**
  * R5H13: Dokumen Perencanaan + Monitoring Kinerja & LKIP (migrasi 051).
@@ -38,6 +38,8 @@ import { JENIS_TAHAP, PEKERJAAN, TANPA_SAH, cleanIsian, katalog, slotOf } from '
  *   setiap perubahan mengembalikannya ke MENUNGGU dicek (keputusan 2026-11-17).
  *   Yang dikunci: menghapus tahap yang sudah diterima, dan menghapus PDF bertanda tangan
  *   terakhir dari dokumen yang sudah sah (pdf_sah_wajib_ada).
+ *   PUT    /dokumen/:id/anggaran                   {anggaran:"digit"|"",catatan,version} estimasi (migrasi 057);
+ *          boleh selama belum final/selesai dan belum digantikan revisi.
  *   Jenis RKKS/pagu (TANPA_SAH) tidak disahkan: /final dari draft = SELESAI (min. 1 tahap).
  *   Tandai final hanya bila semua tahap diterima. Dokumen berjenis tahap disahkan
  *   dengan PDF bertanda tangan dari tahap pengesahan (slot dokumen_sah) sebagai PDF utama.
@@ -65,6 +67,9 @@ const JENIS_LABEL = {
   rkks_renbut: 'RKKS Renbut', rkks_pagu_indikatif: 'RKKS Pagu Indikatif', rkks_pagu_anggaran: 'RKKS Pagu Anggaran', rkks_pagu_alokasi: 'RKKS Pagu Alokasi',
   rka_kl: 'RKA-K/L', dipa: 'DIPA', revisi_dipa: 'Revisi DIPA', pok: 'POK',
   rendisgar: 'Rendisgar', rengiat: 'Rengiat', renaksi: 'Renaksi', perjanjian_kinerja: 'Perjanjian Kinerja',
+  lap_lra: 'LRA', lap_penggunaan_anggaran: 'Laporan Penggunaan Anggaran', lap_eka_pn: 'Laporan EKA PN',
+  lap_capaian_kinerja: 'Laporan Capaian Kinerja', lap_lkip: 'LKIP', lap_hibah: 'Laporan Hibah',
+  revisi_pok: 'Revisi POK', revisi_rpd: 'Revisi RPD',
   tor_kak: 'TOR/KAK', rab: 'RAB', lainnya: 'Lainnya',
 }
 const JENIS = Object.keys(JENIS_LABEL)
@@ -123,16 +128,18 @@ export function createPerencanaanRouter({ pool, config }) {
     await need(req, 'subbagren.progar.read')
     const tahun = tahunOrSemua(req)
     const rows = (await pool.query(
-      `SELECT d.id::text,d.tahun,d.jenis,d.judul,d.nomor,d.tanggal::text,d.keterangan,d.status,d.version,
+      `SELECT d.id::text,d.tahun,d.jenis,d.judul,d.nomor,d.tanggal::text,d.keterangan,d.status,d.version,d.periode,
               d.pengganti_dari::text,d.created_by::text,cu.display_name AS created_name,d.created_at,
               ru.display_name AS reviewed_name,d.reviewed_at,d.review_note,
               p.id::text AS program_id,p.kode AS program_kode,k.id::text AS kegiatan_id,k.kode AS kegiatan_kode,k.nama AS kegiatan_nama,
               b.filename,b.size_bytes,d.final_at,fu.display_name AS final_name,
+              d.anggaran::text AS anggaran,d.anggaran_note,d.anggaran_at,au.display_name AS anggaran_name,
               EXISTS(SELECT 1 FROM sdl_ren_dokumen x WHERE x.pengganti_dari=d.id AND x.status='disahkan') AS digantikan
          FROM sdl_ren_dokumen d
          JOIN sdl_users cu ON cu.id=d.created_by
          LEFT JOIN sdl_users ru ON ru.id=d.reviewed_by
          LEFT JOIN sdl_users fu ON fu.id=d.final_by
+         LEFT JOIN sdl_users au ON au.id=d.anggaran_by
          LEFT JOIN sdl_ren_program p ON p.id=d.program_id
          LEFT JOIN sdl_ren_kegiatan k ON k.id=d.kegiatan_id
          LEFT JOIN sdl_ren_dokumen_berkas b ON b.dokumen_id=d.id
@@ -158,7 +165,7 @@ export function createPerencanaanRouter({ pool, config }) {
     respond(res, 200, {
       tahun,
       items: rows.map((r) => ({
-        id: r.id, tahun: r.tahun, jenis: r.jenis, jenisLabel: JENIS_LABEL[r.jenis], judul: r.judul, nomor: r.nomor,
+        id: r.id, tahun: r.tahun, jenis: r.jenis, jenisLabel: JENIS_LABEL[r.jenis], periode: r.periode, judul: r.judul, nomor: r.nomor,
         tanggal: r.tanggal, keterangan: r.keterangan, status: r.status, version: r.version, penggantiDari: r.pengganti_dari,
         digantikan: r.digantikan, createdBy: r.created_by, createdByName: r.created_name, createdAt: r.created_at,
         reviewedByName: r.reviewed_name ?? null, reviewedAt: r.reviewed_at ?? null, reviewNote: r.review_note,
@@ -167,6 +174,7 @@ export function createPerencanaanRouter({ pool, config }) {
         berkas: r.filename ? { filename: r.filename, size: r.size_bytes } : null,
         tahap: tahapBy.get(r.id) ?? [],
         final: r.final_at !== null && r.final_at !== undefined, finalAt: r.final_at ?? null, finalByName: r.final_name ?? null,
+        anggaran: r.anggaran ?? null, anggaranNote: r.anggaran_note ?? '', anggaranAt: r.anggaran_at ?? null, anggaranByName: r.anggaran_name ?? null,
       })),
     })
   }))
@@ -186,15 +194,17 @@ export function createPerencanaanRouter({ pool, config }) {
   }
   function dokInput(v) {
     if (!JENIS.includes(v.jenis)) throw new HttpError(400, 'invalid_input')
+    const periode = cleanPeriode(v.jenis, v.periode)
+    if (periode === null) throw new HttpError(400, 'periode_tidak_sesuai')
     return {
-      jenis: v.jenis, judul: text(v.judul, 3, 240), nomor: text(v.nomor, 0, 120), tanggal: optDate(v.tanggal),
+      jenis: v.jenis, periode, judul: text(v.judul, 3, 240), nomor: text(v.nomor, 0, 120), tanggal: optDate(v.tanggal),
       programId: optUuid(v.programId), kegiatanId: optUuid(v.kegiatanId), keterangan: text(v.keterangan, 0, 1000),
     }
   }
 
   router.post('/dokumen', json, handle(async (req, res) => {
     await need(req, 'subbagren.progar.manage')
-    const v = body(req, ['tahun', 'jenis', 'judul', 'nomor', 'tanggal', 'programId', 'kegiatanId', 'keterangan', 'penggantiDari'])
+    const v = body(req, ['tahun', 'jenis', 'periode', 'judul', 'nomor', 'tanggal', 'programId', 'kegiatanId', 'keterangan', 'penggantiDari'])
     if (!Number.isSafeInteger(v.tahun) || v.tahun < 2000 || v.tahun > 2100) throw new HttpError(400, 'invalid_input')
     const d = dokInput(v)
     const pengganti = optUuid(v.penggantiDari)
@@ -209,9 +219,9 @@ export function createPerencanaanRouter({ pool, config }) {
       let r
       try {
         r = (await c.query(
-          `INSERT INTO sdl_ren_dokumen(tahun,jenis,judul,nomor,tanggal,program_id,kegiatan_id,keterangan,pengganti_dari,created_by)
-           VALUES($1,$2,$3,$4,$5::date,$6::uuid,$7::uuid,$8,$9::uuid,$10) RETURNING id::text`,
-          [v.tahun, d.jenis, d.judul, d.nomor, d.tanggal, d.programId, d.kegiatanId, d.keterangan, pengganti, req.actor])).rows[0]
+          `INSERT INTO sdl_ren_dokumen(tahun,jenis,judul,nomor,tanggal,program_id,kegiatan_id,keterangan,pengganti_dari,created_by,periode)
+           VALUES($1,$2,$3,$4,$5::date,$6::uuid,$7::uuid,$8,$9::uuid,$10,$11) RETURNING id::text`,
+          [v.tahun, d.jenis, d.judul, d.nomor, d.tanggal, d.programId, d.kegiatanId, d.keterangan, pengganti, req.actor, d.periode])).rows[0]
       } catch (error) {
         if (error?.code === '23505') throw new HttpError(409, 'revisi_sudah_ada')
         throw error
@@ -225,7 +235,7 @@ export function createPerencanaanRouter({ pool, config }) {
   router.put('/dokumen/:id', json, handle(async (req, res) => {
     await need(req, 'subbagren.progar.manage')
     const did = id(req.params.id)
-    const v = body(req, ['jenis', 'judul', 'nomor', 'tanggal', 'programId', 'kegiatanId', 'keterangan', 'version'])
+    const v = body(req, ['jenis', 'periode', 'judul', 'nomor', 'tanggal', 'programId', 'kegiatanId', 'keterangan', 'version'])
     const d = dokInput(v); const ver = version(v.version)
     await withTransaction(pool, async (c) => {
       const cur = await c.query('SELECT status,version,tahun,jenis,pengganti_dari,final_at FROM sdl_ren_dokumen WHERE id=$1::uuid FOR UPDATE', [did])
@@ -246,9 +256,39 @@ export function createPerencanaanRouter({ pool, config }) {
       await checkLinks(c, o.tahun, d.programId, d.kegiatanId)
       await c.query(
         `UPDATE sdl_ren_dokumen SET jenis=$2,judul=$3,nomor=$4,tanggal=$5::date,program_id=$6::uuid,kegiatan_id=$7::uuid,
-                keterangan=$8,version=version+1,updated_at=now() WHERE id=$1::uuid`,
-        [did, d.jenis, d.judul, d.nomor, d.tanggal, d.programId, d.kegiatanId, d.keterangan])
+                keterangan=$8,periode=$9,version=version+1,updated_at=now() WHERE id=$1::uuid`,
+        [did, d.jenis, d.judul, d.nomor, d.tanggal, d.programId, d.kegiatanId, d.keterangan, d.periode])
       await audit(c, req.actor, 'dokumen.update', 'dokumen', did)
+    })
+    respond(res, 200, { ok: true })
+  }))
+
+  // Estimasi anggaran (keputusan 2026-11-17): satu angka rupiah bulat + catatan.
+  // Boleh diubah selama dokumen belum final/selesai dan belum digantikan revisi.
+  router.put('/dokumen/:id/anggaran', json, handle(async (req, res) => {
+    await need(req, 'subbagren.progar.manage')
+    const did = id(req.params.id)
+    const v = body(req, ['anggaran', 'catatan', 'version'])
+    if (typeof v.anggaran !== 'string' || !/^(|0|[1-9][0-9]{0,15})$/.test(v.anggaran)) throw new HttpError(400, 'invalid_input')
+    const nilai = v.anggaran === '' ? null : v.anggaran
+    const catatan = text(v.catatan, 0, 500)
+    const ver = version(v.version)
+    await withTransaction(pool, async (c) => {
+      const r = await c.query(
+        `SELECT d.version,d.final_at,EXISTS(SELECT 1 FROM sdl_ren_dokumen x WHERE x.pengganti_dari=d.id AND x.status='disahkan') AS digantikan
+           FROM sdl_ren_dokumen d WHERE d.id=$1::uuid FOR UPDATE`, [did])
+      if (r.rowCount !== 1) throw new HttpError(404, 'not_found')
+      const o = r.rows[0]
+      if (o.version !== ver) throw new HttpError(409, 'version_conflict')
+      if (o.final_at !== null || o.digantikan) throw new HttpError(409, 'dokumen_terkunci')
+      // R5H18: anggaran adalah pos realisasi; tidak boleh turun di bawah yang sudah terverifikasi.
+      const terpakai = BigInt((await c.query(
+        `SELECT COALESCE(sum(jumlah),0)::text AS s FROM sdl_ren_realisasi_dok WHERE dokumen_id=$1::uuid AND status='terverifikasi'`, [did])).rows[0].s)
+      if (terpakai > 0n && (nilai === null || BigInt(nilai) < terpakai)) throw new HttpError(409, 'anggaran_di_bawah_realisasi')
+      await c.query(
+        `UPDATE sdl_ren_dokumen SET anggaran=$2::bigint,anggaran_note=$3,anggaran_by=$4,anggaran_at=now(),version=version+1,updated_at=now()
+          WHERE id=$1::uuid`, [did, nilai, nilai === null ? '' : catatan, req.actor])
+      await audit(c, req.actor, 'dokumen.anggaran.update', 'dokumen', did)
     })
     respond(res, 200, { ok: true })
   }))

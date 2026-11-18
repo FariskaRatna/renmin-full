@@ -206,7 +206,7 @@ export default function ProgarR5H11({ mode, userId, onOpenProgram, onOpenDokumen
           <strong>Belum ada program untuk tahun {tahun}</strong>
           {mode === 'program'
             ? <p>{canManage ? 'Mulai dengan menambahkan program, lalu isi kegiatannya. Pagu anggaran dicatat per kegiatan di menu Pagu Anggaran.' : 'Program akan tampil di sini setelah dicatat oleh Operator atau Kasubbagren.'}</p>
-            : <><p>Pagu dicatat per kegiatan yang diambil dari Program Anggaran. Susun program dan kegiatannya terlebih dahulu.</p>
+            : <><p>Pagu dicatat per kegiatan. Belum ada program dan kegiatan yang tercatat untuk tahun ini.</p>
               {onOpenProgram && <button type="button" className="btn primary" onClick={onOpenProgram}>Buka Program Anggaran</button>}</>}
         </div>
       : programs.map(p => {

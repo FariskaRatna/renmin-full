@@ -15,10 +15,10 @@ import { confirmDialog } from './UIFeedback'
 
 export type KField = { key: string; label: string; type: 'text' | 'textarea' | 'date' | 'number' | 'select'; max: number; required?: boolean; half?: boolean; hint?: string; default?: string; options?: string[] }
 export type KSlot = { slot: string; label: string; utama?: boolean }
-export type Katalog = { jenis: Record<string, string[]>; pekerjaan: Record<string, { label: string; form: string; fields: KField[]; berkas: KSlot[] }>; tanpaSah?: string[] }
+export type Katalog = { jenis: Record<string, string[]>; pekerjaan: Record<string, { label: string; form: string; fields: KField[]; berkas: KSlot[] }>; tanpaSah?: string[]; periode?: Record<string, 'bulan' | 'triwulan'> }
 export type Tahap = { id: string; pekerjaan: string; pekerjaanLabel: string; isian: Record<string, string>; version: number; createdAt: string; updatedAt: string; updatedByName: string; berkas: { id: string; slot: string; filename: string; size: number }[]
   createdBy: string; updatedBy: string; cekStatus: 'menunggu' | 'diterima' | 'dikembalikan'; cekNote: string; cekAt: string | null; cekByName: string | null }
-export type DokMeta = { id: string; jenis: string; judul: string; nomor: string; tanggal: string | null; keterangan: string; version: number; tahap: Tahap[] }
+export type DokMeta = { id: string; jenis: string; periode?: string; judul: string; nomor: string; tanggal: string | null; keterangan: string; version: number; tahap: Tahap[] }
 
 type Api = <T>(path: string, method?: 'GET' | 'POST' | 'PUT' | 'DELETE', body?: unknown) => Promise<T>
 /** files: berkas baru per slot (diunggah saat Simpan); existing: lampiran tersimpan; drop: id lampiran yang akan dihapus. */
@@ -44,14 +44,14 @@ export function isDistribusi(k: Katalog | null, pekerjaan: string) { return k?.p
  * mode 'tahap'  : SATU tahap -- ubah tahap `tahapId`, atau tambah satu tahap baru bila
  *                 tahapId kosong (2026-11-17: formulir tetap pendek walau tahap banyak).
  */
-export function DokumenDialog({ mode, tahun, doc, tahapId, katalog, jenisOptions, api, onClose, onDone }: {
-  mode: 'create' | 'edit' | 'tahap'; tahun: number; doc?: DokMeta; tahapId?: string; katalog: Katalog | null
+export function DokumenDialog({ mode, kind = 'dokumen', tahun, doc, tahapId, katalog, jenisOptions, api, onClose, onDone }: {
+  mode: 'create' | 'edit' | 'tahap'; kind?: 'dokumen' | 'laporan' | 'revisi'; tahun: number; doc?: DokMeta; tahapId?: string; katalog: Katalog | null
   jenisOptions: [string, string][]; api: Api; onClose: () => void; onDone: (message: string, ok: boolean) => void
 }) {
   const [tahunDok, setTahunDok] = useState(tahun)
   const nowYear = new Date().getFullYear()
   const tahunOptions = [...new Set([nowYear - 1, nowYear, nowYear + 1, nowYear + 2, tahun])].sort((a, b) => a - b)
-  const [meta, setMeta] = useState({ jenis: doc?.jenis ?? 'renstra', judul: doc?.judul ?? '', nomor: doc?.nomor ?? '', tanggal: doc?.tanggal ?? '', keterangan: doc?.keterangan ?? '' })
+  const [meta, setMeta] = useState({ jenis: doc?.jenis ?? jenisOptions[0]?.[0] ?? 'renstra', periode: doc?.periode ?? '', judul: doc?.judul ?? '', nomor: doc?.nomor ?? '', tanggal: doc?.tanggal ?? '', keterangan: doc?.keterangan ?? '' })
   // Nomor tahap mengikuti urutan sebenarnya di dokumen; tahap baru melanjutkan
   // setelah tahap terakhir yang tersimpan. Tahap yang sudah DITERIMA tetap bisa
   // diubah, tetapi kembali "Menunggu dicek" setelah disimpan.
@@ -112,7 +112,12 @@ export function DokumenDialog({ mode, tahun, doc, tahapId, katalog, jenisOptions
   async function submit(e: FormEvent) {
     e.preventDefault()
     if (busy) return
-    if (mode !== 'tahap' && meta.judul.trim().length < 3) { setError('Judul Dokumen wajib diisi (minimal 3 karakter).'); return }
+    const periodeKind = katalog?.periode?.[meta.jenis]
+    if (mode !== 'tahap' && periodeKind && !meta.periode) { setError(`Pilih ${periodeKind === 'bulan' ? 'bulan' : 'triwulan'} laporan.`); return }
+    // Laporan/revisi: judul boleh dikosongkan, diisi otomatis dari jenis + periode + tahun.
+    const autoJudul = `${jenisOptions.find(([v]) => v === meta.jenis)?.[1] ?? ''}${meta.periode ? ` ${periodeLabel(meta.periode)}` : ''} ${tahunDok}`.trim()
+    const judulFinal = meta.judul.trim() || (kind !== 'dokumen' ? autoJudul : '')
+    if (mode !== 'tahap' && judulFinal.length < 3) { setError('Judul Dokumen wajib diisi (minimal 3 karakter).'); return }
     const active = hasTahap ? blocks.filter(b => b.pekerjaan) : []
     for (const b of active) {
       const no = nomorTahap(b)
@@ -131,11 +136,11 @@ export function DokumenDialog({ mode, tahun, doc, tahapId, katalog, jenisOptions
     if (mode === 'tahap' && !active.length && !removed.length) { setError('Pilih pekerjaan terlebih dahulu.'); return }
     setBusy(true); setError('')
     let did = doc?.id ?? ''
-    const docPayload = { jenis: meta.jenis, judul: meta.judul.trim(), nomor: meta.nomor.trim(), tanggal: meta.tanggal, keterangan: meta.keterangan.trim(), programId: '', kegiatanId: '' }
+    const docPayload = { jenis: meta.jenis, periode: periodeKind ? meta.periode : '', judul: judulFinal, nomor: meta.nomor.trim(), tanggal: meta.tanggal, keterangan: meta.keterangan.trim(), programId: '', kegiatanId: '' }
     try {
       if (mode === 'create') did = (await api<{ id: string }>('/dokumen', 'POST', { tahun: tahunDok, ...docPayload })).id
       else if (mode === 'edit' && doc) {
-        const changed = docPayload.jenis !== doc.jenis || docPayload.judul !== doc.judul || docPayload.nomor !== doc.nomor || docPayload.tanggal !== (doc.tanggal ?? '') || docPayload.keterangan !== doc.keterangan
+        const changed = docPayload.jenis !== doc.jenis || docPayload.periode !== (doc.periode ?? '') || docPayload.judul !== doc.judul || docPayload.nomor !== doc.nomor || docPayload.tanggal !== (doc.tanggal ?? '') || docPayload.keterangan !== doc.keterangan
         // Kaitan program/kegiatan lama dipertahankan oleh pemanggil lewat doc (lihat DokumenR5H13).
         if (changed) await api(`/dokumen/${doc.id}`, 'PUT', { ...docPayload, ...linkOf(doc), version: doc.version })
       }
@@ -162,21 +167,28 @@ export function DokumenDialog({ mode, tahun, doc, tahapId, katalog, jenisOptions
     }
   }
 
-  const title = mode === 'create' ? 'Unggah Dokumen' : mode === 'edit' ? 'Ubah Dokumen' : editing ? 'Ubah Tahap Pekerjaan' : 'Tambah Tahap Pekerjaan'
+  const noun = kind === 'laporan' ? 'Laporan' : kind === 'revisi' ? 'Revisi Anggaran' : 'Dokumen'
+  const title = mode === 'create' ? (kind === 'dokumen' ? 'Unggah Dokumen' : `${noun} Baru`) : mode === 'edit' ? `Ubah ${noun}` : editing ? 'Ubah Tahap Pekerjaan' : 'Tambah Tahap Pekerjaan'
   return <div className="sdl-progar__shade" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget && !busy) onClose() }}>
     <form className="sdl-progar__dialog sdl-progar__dokdialog" role="dialog" aria-modal="true" aria-labelledby="sdl-dok-title" onSubmit={e => void submit(e)}>
-      <header><span className="sdl-progar__eyebrow">{mode === 'tahap' ? `TAHAP PEKERJAAN · TA ${tahunDok}` : `DOKUMEN PERANCANGAN · TA ${tahunDok}`}</span><h2 id="sdl-dok-title">{title}</h2>
+      <header><span className="sdl-progar__eyebrow">{mode === 'tahap' ? `TAHAP PEKERJAAN · TA ${tahunDok}` : `${kind === 'dokumen' ? 'DOKUMEN PERANCANGAN' : noun.toUpperCase()} · TA ${tahunDok}`}</span><h2 id="sdl-dok-title">{title}</h2>
         {mode === 'tahap' && doc && <p>{doc.judul}</p>}</header>
 
       {mode !== 'tahap' && <div className="sdl-progar__fields">
         <label><span>Tahun Anggaran<b aria-hidden="true"> *</b></span>
           <select value={tahunDok} disabled={mode !== 'create'} onChange={e => setTahunDok(Number(e.target.value))}>{tahunOptions.map(y => <option key={y} value={y}>{y}</option>)}</select>
           {mode !== 'create' && <small>Tahun anggaran tidak bisa diubah setelah dokumen dibuat.</small>}</label>
-        <label><span>Jenis Dokumen<b aria-hidden="true"> *</b></span>
-          <select value={meta.jenis} disabled={jenisLocked} onChange={e => { setMeta(m => ({ ...m, jenis: e.target.value })); setBlocks([emptyBlock()]) }}>
+        <label className={katalog?.periode?.[meta.jenis] ? 'is-half' : undefined}><span>Jenis {noun === 'Dokumen' ? 'Dokumen' : noun}<b aria-hidden="true"> *</b></span>
+          <select value={meta.jenis} disabled={jenisLocked} onChange={e => { setMeta(m => ({ ...m, jenis: e.target.value, periode: '' })); setBlocks([emptyBlock()]) }}>
             {jenisOptions.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
-          {jenisLocked && <small>Jenis tidak bisa diganti karena dokumen ini sudah punya tahap pekerjaan.</small>}</label>
-        <label><span>Judul Dokumen<b aria-hidden="true"> *</b></span><input maxLength={240} value={meta.judul} placeholder="mis. Renstra Densus 88 AT Polri 2025–2029" onChange={e => setMeta(m => ({ ...m, judul: e.target.value }))} /></label>
+          {jenisLocked && <small>Jenis tidak bisa diganti karena sudah punya tahap pekerjaan.</small>}</label>
+        {katalog?.periode?.[meta.jenis] && <label className="is-half"><span>{katalog.periode[meta.jenis] === 'bulan' ? 'Bulan' : 'Triwulan'}<b aria-hidden="true"> *</b></span>
+          <select value={meta.periode} onChange={e => setMeta(m => ({ ...m, periode: e.target.value }))}>
+            <option value="">— Pilih —</option>
+            {(katalog.periode[meta.jenis] === 'bulan' ? BULAN.map((_, i) => `B${String(i + 1).padStart(2, '0')}`) : ['TW1', 'TW2', 'TW3', 'TW4']).map(p => <option key={p} value={p}>{periodeLabel(p)}</option>)}</select></label>}
+        <label><span>Judul {noun === 'Dokumen' ? 'Dokumen' : noun}{kind === 'dokumen' && <b aria-hidden="true"> *</b>}</span><input maxLength={240} value={meta.judul}
+          placeholder={kind === 'dokumen' ? 'mis. Renstra Densus 88 AT Polri 2025–2029' : `Kosongkan untuk memakai nama otomatis: ${`${jenisOptions.find(([v]) => v === meta.jenis)?.[1] ?? ''}${meta.periode ? ` ${periodeLabel(meta.periode)}` : ''} ${tahunDok}`.trim()}`}
+          onChange={e => setMeta(m => ({ ...m, judul: e.target.value }))} /></label>
         <label className="is-half"><span>Nomor Dokumen</span><input maxLength={120} value={meta.nomor} onChange={e => setMeta(m => ({ ...m, nomor: e.target.value }))} /></label>
         <label className="is-half"><span>Tanggal Dokumen</span><input type="date" value={meta.tanggal} onChange={e => setMeta(m => ({ ...m, tanggal: e.target.value }))} /></label>
       </div>}
@@ -293,4 +305,14 @@ export function ringkasTahap(t: Tahap, katalog: Katalog | null) {
 export function ulangKe(all: Tahap[], t: Tahap) {
   const same = all.filter(x => x.pekerjaan === t.pekerjaan)
   return { ke: same.indexOf(t) + 1, total: same.length }
+}
+
+const BULAN = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
+const ROMAWI = ['I', 'II', 'III', 'IV']
+/** "B10" -> "Oktober", "TW3" -> "Triwulan III", "" -> "". */
+export function periodeLabel(p?: string) {
+  if (!p) return ''
+  if (p.startsWith('B')) return BULAN[Number(p.slice(1)) - 1] ?? p
+  if (p.startsWith('TW')) return `Triwulan ${ROMAWI[Number(p.slice(2)) - 1] ?? p.slice(2)}`
+  return p
 }

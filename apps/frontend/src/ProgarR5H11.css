@@ -300,3 +300,6 @@ button.sdl-kinerja__cell:focus-visible{outline:3px solid rgba(47,82,144,.35)}
 @media(max-width:640px){.sdl-progar__detail .sdl-progar__meta-list{gap:2px 12px}.sdl-progar__detail .sdl-progar__meta-list dd{margin-bottom:8px}}
 .sdl-progar__register td:nth-child(3){white-space:nowrap}
 .sdl-progar__register .sdl-progar__ringkas{max-width:300px}
+/* Estimasi anggaran di Detail dokumen (2026-11-17). */
+.sdl-progar__anggaran>span{display:inline-flex;align-items:center;gap:10px}
+.sdl-progar__anggaran small{display:block;margin-top:3px;font-size:12px}

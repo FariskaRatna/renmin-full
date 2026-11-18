@@ -66,6 +66,9 @@ func TestEmbeddedMigrationOrderAndSafety(t *testing.T) {
 		"sql/054_dokumen_final.sql",
 		"sql/055_tahap_lampiran_banyak.sql",
 		"sql/056_tahap_cek.sql",
+		"sql/057_dokumen_anggaran.sql",
+		"sql/058_dokumen_laporan.sql",
+		"sql/059_realisasi_dokumen.sql",
 	}
 	items, err := load()
 	if err != nil {
@@ -122,6 +125,12 @@ func migrationSafetyIssue(name, body string) string {
 		if name == "sql/053_dokumen_tahap.sql" && stmt == reviewedJenisDokumen {
 			continue
 		}
+		// R5H17 (2026-11-17): HANYA memperlebar lagi daftar jenis (dua puluh jenis
+		// dari 053 tetap ada, ditambah delapan jenis laporan/revisi anggaran DALGAR).
+		const reviewedJenisLaporan = "ALTER TABLE SDL_REN_DOKUMEN DROP CONSTRAINT SDL_REN_DOKUMEN_JENIS_CHECK, ADD CONSTRAINT SDL_REN_DOKUMEN_JENIS_CHECK CHECK (JENIS IN ('RENSTRA','RENJA','RKA_KL','DIPA','REVISI_DIPA','POK','TOR_KAK','RAB','LAINNYA','RANCANGAN_RENSTRA','RANCANGAN_RENJA','IKU','RKKS_RENBUT','RKKS_PAGU_INDIKATIF','RKKS_PAGU_ANGGARAN','RKKS_PAGU_ALOKASI','RENDISGAR','RENGIAT','RENAKSI','PERJANJIAN_KINERJA','LAP_LRA','LAP_PENGGUNAAN_ANGGARAN','LAP_EKA_PN','LAP_CAPAIAN_KINERJA','LAP_LKIP','LAP_HIBAH','REVISI_POK','REVISI_RPD'))"
+		if name == "sql/058_dokumen_laporan.sql" && stmt == reviewedJenisLaporan {
+			continue
+		}
 		for _, forbidden := range []string{
 			"DROP TABLE", "TRUNCATE TABLE", "DELETE FROM", "DROP COLUMN",
 			"ALTER COLUMN", "RENAME COLUMN", "RENAME TO", "SET SCHEMA",
@@ -167,6 +176,10 @@ func migrationSafetyIssue(name, body string) string {
 				// R5H16: status cek tahap oleh Kasubbagren. Empat ADD COLUMN;
 				// cek_status NOT NULL ber-DEFAULT, sisanya nullable/ber-DEFAULT.
 				"sql/056_tahap_cek.sql": {"SDL_REN_DOKUMEN_TAHAP"},
+				// R5H16: estimasi anggaran dokumen. Empat ADD COLUMN nullable/ber-DEFAULT.
+				"sql/057_dokumen_anggaran.sql": {"SDL_REN_DOKUMEN"},
+				// R5H17: periode laporan. Satu ADD COLUMN NOT NULL ber-DEFAULT, tanpa backfill.
+				"sql/058_dokumen_laporan.sql": {"SDL_REN_DOKUMEN"},
 			}
 			clauses := ""
 			for _, table := range reviewed[name] {
