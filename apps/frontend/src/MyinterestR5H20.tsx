@@ -1,20 +1,21 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { rupiah } from './ProgarR5H11'
+import { confirmDialog, showToast } from './UIFeedback'
 import './ProgarR5H11.css'
 import './MyinterestR5H20.css'
 
 /**
  * R5H20 (2026-11-18): data RESMI myinterest "Realisasi Belanja per Jenis Kegiatan".
  *
- *  - File Excel myinterest diunggah di tahap 1 LRA bulanan ("Mengunduh realisasi
- *    dari myinterest") dan langsung berlaku. Setiap unggahan = potret per tanggal
- *    data; unggahan tanggal yang sama menggantikan potret lama.
- *  - Menu DALGAR "Data myinterest": halaman lihat (grafik, rincian, riwayat).
+ *  - Menu DALGAR "Data myinterest": Operator mengimpor file Excel unduhan
+ *    myinterest (langsung berlaku). Setiap impor = potret per tanggal data;
+ *    impor ulang tanggal yang sama menggantikan potret lama. LRA di menu Laporan
+ *    membaca potret ini (keputusan pemilik 2026-11-18, kembali ke bentuk ini).
  *  - LraChart: grafik serapan per kegiatan + realisasi per bulan, dipakai di
  *    halaman ini, Beranda Subbagren, dan Dashboard pimpinan.
  */
 
-type Impor = { id: string; tanggalAwal: string; tanggalAkhir: string; waktuUnduh: string; filename: string; totalPagu: string; totalRealisasi: string; importedAt: string; importedByName: string; lra: { id: string; judul: string } | null }
+type Impor = { id: string; tanggalAwal: string; tanggalAkhir: string; waktuUnduh: string; filename: string; totalPagu: string; totalRealisasi: string; importedAt: string; importedByName: string }
 type Kegiatan = { kode: string; nama: string; pagu: string; realisasi: string; jenis: Record<string, { pagu: string; realisasi: string }> }
 type Bulanan = { bulan: number; tanggalAkhir: string; pagu: string; kumulatif: string; bulanIni: string | null }
 type Data = { tahun: number; impor: Impor[]; bulanan: Bulanan[]
@@ -37,8 +38,14 @@ const ERRORS: Record<string, string> = {
   not_found: 'Data sudah tidak ada. Muat ulang halaman.',
   database_unavailable: 'Server sedang tidak dapat diakses. Coba beberapa saat lagi.',
 }
-async function call<T>(path: string): Promise<T> {
-  const r = await fetch(`${BASE}${path}`, { credentials: 'same-origin', cache: 'no-store' })
+async function call<T>(path: string, method: 'GET' | 'POST' | 'DELETE' = 'GET', body?: FormData): Promise<T> {
+  const headers: Record<string, string> = {}
+  if (method !== 'GET') {
+    const c = await fetch('/api/v1/auth/csrf', { credentials: 'same-origin', cache: 'no-store' })
+    if (!c.ok) throw Error('Sesi keamanan tidak tersedia. Silakan login kembali.')
+    headers['X-CSRF-Token'] = ((await c.json()) as { csrfToken: string }).csrfToken
+  }
+  const r = await fetch(`${BASE}${path}`, { method, credentials: 'same-origin', cache: 'no-store', headers, ...(body ? { body } : {}) })
   if (!r.ok) {
     const e: { error?: string } = await r.json().catch(() => ({}))
     const err = Error(ERRORS[e.error || ''] || `Permintaan gagal (HTTP ${r.status}).`) as Error & { status?: number }
@@ -90,7 +97,7 @@ export function LraChart({ tahun, variant = 'page', data: given, onOpen, wrap }:
   if (hidden || (variant !== 'page' && (!data || !data.terbaru))) return null
   if (!data) return <p className="sdl-progar__muted">Memuat…</p>
   const t = data.terbaru
-  if (!t) return <div className="sdl-lra sdl-lra--empty"><strong>Belum ada data myinterest TA {data.tahun}</strong><p>Unggah file Excel myinterest di tahap pertama LRA bulanan (menu Laporan) untuk menampilkan data di sini.</p></div>
+  if (!t) return <div className="sdl-lra sdl-lra--empty"><strong>Belum ada data myinterest TA {data.tahun}</strong><p>Impor file "Realisasi Belanja per Jenis Kegiatan" dari myinterest untuk menampilkan LRA.</p></div>
   const serapan = pct(t.totalRealisasi, t.totalPagu)
   const bln = data.bulanan.filter(b => b.bulanIni !== null)
   const maxBulan = bln.reduce((m, b) => (big(b.bulanIni) > m ? big(b.bulanIni) : m), 0n)
@@ -127,31 +134,49 @@ export function LraChart({ tahun, variant = 'page', data: given, onOpen, wrap }:
   return wrap ? <>{wrap(chart)}</> : chart
 }
 
-/**
- * Menu DALGAR "Data myinterest" (halaman lihat). File myinterest diunggah di tahap 1
- * LRA bulanan (keputusan pemilik 2026-11-18), bukan di sini.
- */
+/** Menu DALGAR "Data myinterest". */
 export default function MyinterestR5H20({ onOpenLaporan }: { onOpenLaporan?: () => void }) {
+  const [canImport, setCanImport] = useState(false)
+  useEffect(() => { call<{ canRecordRealisasi: boolean }>('/capabilities').then(c => setCanImport(Boolean(c.canRecordRealisasi))).catch(() => setCanImport(false)) }, [])
   const thisYear = new Date().getFullYear()
   const [tahun, setTahun] = useState<number | null>(null)
   const [data, setData] = useState<Data | null>(null)
   const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const fileRef = useRef<HTMLInputElement | null>(null)
   const load = useCallback(async (t: number | null) => {
     setError('')
     try { const d = await call<Data>(`/myinterest?tahun=${t ?? 'terbaru'}`); setData(d); if (t === null) setTahun(d.tahun) } catch (e) { setError(e instanceof Error ? e.message : 'Data tidak dapat dimuat.') }
   }, [])
   useEffect(() => { void load(null) }, [load])
+  async function onFile(file: File | undefined) {
+    if (fileRef.current) fileRef.current.value = ''
+    if (!file) return
+    if (file.size > 2 * 1024 * 1024) { showToast(ERRORS.file_too_large, 'error'); return }
+    const form = new FormData(); form.append('file', file)
+    setBusy(true)
+    try {
+      const r = await call<{ tahun: number; tanggalAkhir: string; kegiatan: number; totalRealisasi: string; menggantikan: boolean }>('/myinterest', 'POST', form)
+      showToast(`Data myinterest s.d. ${tgl(r.tanggalAkhir)} diimpor: ${r.kegiatan} kegiatan, realisasi ${rupiah(r.totalRealisasi)}${r.menggantikan ? ' (menggantikan impor tanggal yang sama)' : ''}.`, 'success')
+      setTahun(r.tahun); await load(r.tahun)
+    } catch (e) { showToast(e instanceof Error ? e.message : 'Impor gagal.', 'error') } finally { setBusy(false) }
+  }
+  async function hapus(i: Impor) {
+    if (!await confirmDialog(`Hapus data myinterest s.d. ${tgl(i.tanggalAkhir)} (${i.filename})? LRA dan dashboard memakai potret lain yang tersisa.`, { confirmLabel: 'Hapus' })) return
+    try { await call(`/myinterest/${i.id}`, 'DELETE'); showToast('Data impor dihapus.', 'success'); await load(tahun) } catch (e) { showToast(e instanceof Error ? e.message : 'Gagal.', 'error') }
+  }
   const years = [...new Set([thisYear - 1, thisYear, thisYear + 1, ...(tahun ? [tahun] : [])])].sort((a, b) => b - a)
   const t = data?.terbaru
   return <div className="sdl-progar">
+    <input ref={fileRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden onChange={e => void onFile(e.target.files?.[0])} />
     <div className="sdl-progar__toolbar">
       <label className="sdl-progar__year">Tahun Anggaran
         <select value={tahun ?? ''} onChange={e => { const v = Number(e.target.value); setTahun(v); void load(v) }}>{years.map(y => <option key={y} value={y}>{y}</option>)}</select></label>
       <span className="sdl-progar__grow" />
       <button type="button" className="btn" onClick={() => void load(tahun)}>Muat ulang</button>
-      {onOpenLaporan && <button type="button" className="btn primary" onClick={onOpenLaporan}>Buka LRA di menu Laporan</button>}
+      {canImport && <button type="button" className="btn primary" disabled={busy} onClick={() => fileRef.current?.click()}>{busy ? 'Mengimpor…' : '⤒ Impor file myinterest'}</button>}
     </div>
-    <p className="sdl-progar__hint">Data resmi myinterest <strong>Realisasi Belanja per Jenis Kegiatan</strong>. Setiap awal bulan, operator mengunggah file Excel-nya (rentang <strong>1 Januari s.d. akhir bulan laporan</strong>) di tahap pertama <strong>LRA</strong> bulan itu; angkanya langsung tampil di sini, di LRA, dan di dashboard. Realisasi per bulan dihitung dari selisih potret akhir bulan.</p>
+    <p className="sdl-progar__hint">Unduh <strong>Realisasi Belanja per Jenis Kegiatan</strong> dari myinterest dengan rentang <strong>1 Januari s.d. akhir bulan</strong>, lalu impor di sini setiap awal bulan. Angka ini menjadi acuan resmi LRA dan dashboard; realisasi per bulan dihitung dari selisih potret akhir bulan.{onOpenLaporan && <> <button type="button" className="sdl-progar__link" onClick={onOpenLaporan}>Buka menu Laporan →</button></>}</p>
     {error && <p className="sdl-progar__error" role="alert">{error}</p>}
     <section className="panel sdl-progar__program"><LraChart variant="page" data={data} /></section>
     {t && <section className="panel sdl-progar__program" aria-label="Rincian per jenis belanja">
@@ -165,14 +190,14 @@ export default function MyinterestR5H20({ onOpenLaporan }: { onOpenLaporan?: () 
         <tfoot><tr><th colSpan={2}>Jumlah</th><th className="is-num">{rupiah(t.totalPagu)}</th><th className="is-num">{rupiah(t.totalRealisasi)}</th><th className="is-num">{pctText(pct(t.totalRealisasi, t.totalPagu))}</th><th className="is-num">{rupiah((big(t.totalPagu) - big(t.totalRealisasi)).toString())}</th></tr></tfoot>
       </table></div>
     </section>}
-    {data && data.impor.length > 0 && <section className="panel sdl-progar__program" aria-label="Riwayat data">
-      <h3 className="sdl-lra__h3">Riwayat data TA {data.tahun}</h3>
+    {data && data.impor.length > 0 && <section className="panel sdl-progar__program" aria-label="Riwayat impor">
+      <h3 className="sdl-lra__h3">Riwayat impor TA {data.tahun}</h3>
       <div className="table-scroll"><table className="data-table sdl-progar__table sdl-progar__register">
-        <thead><tr><th>Data s.d.</th><th>LRA</th><th>Berkas</th><th className="is-num">Realisasi kumulatif</th><th>Diunggah</th></tr></thead>
+        <thead><tr><th>Data s.d.</th><th>Berkas</th><th className="is-num">Realisasi kumulatif</th><th>Diimpor</th>{canImport && <th><span className="sdl-progar__sr">Aksi</span></th>}</tr></thead>
         <tbody>{data.impor.map(i => <tr key={i.id}><td className="sdl-progar__nowrap"><strong>{tgl(i.tanggalAkhir)}</strong></td>
-          <td>{i.lra ? <span>{i.lra.judul}</span> : <span className="sdl-progar__muted">–</span>}</td>
           <td>{i.filename}{i.waktuUnduh && <small className="sdl-progar__muted">diunduh {fmtUnduh(i.waktuUnduh)}</small>}</td>
-          <td className="is-num">{rupiah(i.totalRealisasi)}</td><td>{i.importedByName}<small className="sdl-progar__muted">{tgl(i.importedAt)}</small></td></tr>)}</tbody>
+          <td className="is-num">{rupiah(i.totalRealisasi)}</td><td>{i.importedByName}<small className="sdl-progar__muted">{tgl(i.importedAt)}</small></td>
+          {canImport && <td><button type="button" className="sdl-progar__mini" onClick={() => void hapus(i)}>Hapus</button></td>}</tr>)}</tbody>
       </table></div>
     </section>}
   </div>

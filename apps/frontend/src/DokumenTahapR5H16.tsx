@@ -13,9 +13,9 @@ import { confirmDialog } from './UIFeedback'
  * (GET /tahap-katalog) supaya validasi dan tampilan memakai satu sumber.
  */
 
-export type KField = { key: string; label: string; type: 'text' | 'textarea' | 'date' | 'number' | 'select'; max: number; required?: boolean; half?: boolean; hint?: string; default?: string; options?: string[]; auto?: boolean }
-/** jenis 'xlsx' (R5H20): satu file Excel myinterest, menggantikan yang lama. Selain itu PDF. */
-export type KSlot = { slot: string; label: string; utama?: boolean; jenis?: 'xlsx' }
+export type KField = { key: string; label: string; type: 'text' | 'textarea' | 'date' | 'number' | 'select'; max: number; required?: boolean; half?: boolean; hint?: string; default?: string; options?: string[] }
+/** jenis 'office': PDF, Excel (.xlsx), atau Word (.docx); selain itu PDF saja. */
+export type KSlot = { slot: string; label: string; utama?: boolean; jenis?: 'office' }
 export type Katalog = { jenis: Record<string, string[]>; pekerjaan: Record<string, { label: string; form: string; fields: KField[]; berkas: KSlot[] }>; tanpaSah?: string[]; periode?: Record<string, 'bulan' | 'triwulan'> }
 export type Tahap = { id: string; pekerjaan: string; pekerjaanLabel: string; isian: Record<string, string>; version: number; createdAt: string; updatedAt: string; updatedByName: string; berkas: { id: string; slot: string; filename: string; size: number }[]
   createdBy: string; updatedBy: string; cekStatus: 'menunggu' | 'diterima' | 'dikembalikan'; cekNote: string; cekAt: string | null; cekByName: string | null }
@@ -26,7 +26,6 @@ type Api = <T>(path: string, method?: 'GET' | 'POST' | 'PUT' | 'DELETE', body?: 
 type Block = { key: string; id?: string; version?: number; pekerjaan: string; isian: Record<string, string>; files: Record<string, File[]>; existing: Record<string, { id: string; filename: string }[]>; drop: string[]; dirty: boolean }
 
 const MAX_PDF = 20 * 1024 * 1024
-const MAX_XLSX = 2 * 1024 * 1024
 const MAX_PER_SLOT = 10
 let seq = 0
 const newKey = () => `b${++seq}`
@@ -52,6 +51,8 @@ export function DokumenDialog({ mode, kind = 'dokumen', tahun, doc, tahapId, kat
 }) {
   const [tahunDok, setTahunDok] = useState(tahun)
   const nowYear = new Date().getFullYear()
+  // Pengecekan Kasubbagren hanya untuk tahap DALGAR (laporan/revisi); PROGAR langsung berlaku (2026-11-18).
+  const cek = kind !== 'dokumen'
   const tahunOptions = [...new Set([nowYear - 1, nowYear, nowYear + 1, nowYear + 2, tahun])].sort((a, b) => a - b)
   const [meta, setMeta] = useState({ jenis: doc?.jenis ?? jenisOptions[0]?.[0] ?? 'renstra', periode: doc?.periode ?? '', judul: doc?.judul ?? '', nomor: doc?.nomor ?? '', tanggal: doc?.tanggal ?? '', keterangan: doc?.keterangan ?? '' })
   // Nomor tahap mengikuti urutan sebenarnya di dokumen; tahap baru melanjutkan
@@ -127,13 +128,13 @@ export function DokumenDialog({ mode, kind = 'dokumen', tahun, doc, tahapId, kat
       for (const f of p.fields) if (f.required && !(b.isian[f.key] ?? '').trim()) { setError(`Tahap ${no} (${p.label}): ${f.label} wajib diisi.`); return }
       for (const [slot, list] of Object.entries(b.files)) {
         const ks = p.berkas.find(s => s.slot === slot); const label = ks?.label
-        const xlsx = ks?.jenis === 'xlsx'
+        const office = ks?.jenis === 'office'
         for (const file of list) {
-          if (xlsx ? !/\.xlsx$/i.test(file.name) : !/\.pdf$/i.test(file.name)) { setError(`Tahap ${no}: "${file.name}" harus ${xlsx ? 'file Excel .xlsx unduhan myinterest' : 'PDF'}.`); return }
-          if (file.size > (xlsx ? MAX_XLSX : MAX_PDF)) { setError(`Tahap ${no}: "${file.name}" lebih dari ${xlsx ? '2' : '20'} MB.`); return }
+          if (office ? !/\.(pdf|xlsx|docx)$/i.test(file.name) : !/\.pdf$/i.test(file.name)) { setError(`Tahap ${no}: ${label} "${file.name}" harus ${office ? 'PDF, Excel (.xlsx), atau Word (.docx)' : 'PDF'}.`); return }
+          if (file.size > MAX_PDF) { setError(`Tahap ${no}: "${file.name}" lebih dari 20 MB.`); return }
         }
         const kept = (b.existing[slot] ?? []).filter(x => !b.drop.includes(x.id)).length
-        if (!xlsx && kept + list.length > MAX_PER_SLOT) { setError(`Tahap ${no}: ${label} paling banyak ${MAX_PER_SLOT} berkas.`); return }
+        if (kept + list.length > MAX_PER_SLOT) { setError(`Tahap ${no}: ${label} paling banyak ${MAX_PER_SLOT} berkas.`); return }
       }
     }
     if (mode === 'tahap' && !active.length && !removed.length) { setError('Pilih pekerjaan terlebih dahulu.'); return }
@@ -162,9 +163,7 @@ export function DokumenDialog({ mode, kind = 'dokumen', tahun, doc, tahapId, kat
             await api(`/dokumen/${did}/tahap/${tid}/lampiran/${slot}`, 'POST', form)
           }
         }
-        // Slot xlsx: unggahan baru sudah menggantikan file lama di server, jadi jangan dihapus lagi.
-        const diganti = new Set((katalog?.pekerjaan[b.pekerjaan]?.berkas ?? []).filter(s => s.jenis === 'xlsx' && (b.files[s.slot] ?? []).length > 0).flatMap(s => (b.existing[s.slot] ?? []).map(x => x.id)))
-        for (const lid of b.drop.filter(x => !diganti.has(x))) await api(`/dokumen/${did}/tahap/${tid}/lampiran/${lid}`, 'DELETE')
+        for (const lid of b.drop) await api(`/dokumen/${did}/tahap/${tid}/lampiran/${lid}`, 'DELETE')
       }
       onDone(mode === 'create' ? 'Dokumen disimpan sebagai draft.' : mode === 'tahap' ? (tahapId ? 'Tahap diperbarui.' : 'Tahap pekerjaan ditambahkan.') : 'Dokumen diperbarui.', true)
     } catch (err) {
@@ -205,15 +204,15 @@ export function DokumenDialog({ mode, kind = 'dokumen', tahun, doc, tahapId, kat
         {blocks.map(b => {
           const no = nomorTahap(b)
           const p = b.pekerjaan ? katalog?.pekerjaan[b.pekerjaan] : undefined
-          const accepted = Boolean(b.id) && doc?.tahap.find(t => t.id === b.id)?.cekStatus === 'diterima'
+          const accepted = cek && Boolean(b.id) && doc?.tahap.find(t => t.id === b.id)?.cekStatus === 'diterima'
           const touched = b.dirty || b.drop.length > 0 || Object.values(b.files).some(l => l.length > 0)
           return <div key={b.key} className="sdl-progar__tahap-block">
             <div className="sdl-progar__tahap-top">
-              <strong>Tahap {no}{!b.id && <span className="sdl-progar__cek-mini"> · baru</span>}{b.id && (() => { const t = doc!.tahap.find(x => x.id === b.id)!; const u = ulangKe(doc!.tahap, t); return <span className="sdl-progar__cek-mini">{u.total > 1 && ` · ${t.pekerjaanLabel} ke-${u.ke}`} · {cekLabel(t.cekStatus)}</span> })()}</strong>
+              <strong>Tahap {no}{!b.id && <span className="sdl-progar__cek-mini"> · baru</span>}{b.id && (() => { const t = doc!.tahap.find(x => x.id === b.id)!; const u = ulangKe(doc!.tahap, t); return <span className="sdl-progar__cek-mini">{u.total > 1 && ` · ${t.pekerjaanLabel} ke-${u.ke}`}{cek && ` · ${cekLabel(t.cekStatus)}`}</span> })()}</strong>
               {mode === 'create' && <button type="button" className="sdl-progar__tahap-x" aria-label={`Hapus tahap ${no}`} title="Hapus tahap ini" onClick={() => removeBlock(b)}>✕</button>}
             </div>
             {accepted && touched && <p className="sdl-progar__pending">Tahap ini sudah diterima. Setelah disimpan, perubahannya perlu dicek ulang Kasubbagren.</p>}
-            {b.id && doc?.tahap.find(t => t.id === b.id)?.cekStatus === 'dikembalikan' && <p className="sdl-progar__rejected">Dikembalikan: “{doc.tahap.find(t => t.id === b.id)!.cekNote}” — perbaiki lalu Simpan untuk diperiksa lagi.</p>}
+            {cek && b.id && doc?.tahap.find(t => t.id === b.id)?.cekStatus === 'dikembalikan' && <p className="sdl-progar__rejected">Dikembalikan: “{doc.tahap.find(t => t.id === b.id)!.cekNote}” — perbaiki lalu Simpan untuk diperiksa lagi.</p>}
             <div className="sdl-progar__fields">
               <label><span>Pekerjaan</span>
                 <select ref={b.key === blocks[blocks.length - 1].key ? lastRef : undefined} value={b.pekerjaan} disabled={Boolean(b.id)} onChange={e => choose(b.key, e.target.value)}>
@@ -222,26 +221,22 @@ export function DokumenDialog({ mode, kind = 'dokumen', tahun, doc, tahapId, kat
                 </select></label>
               {p && p.fields.map(f => <label key={f.key} className={f.half ? 'is-half' : undefined}>
                 <span>{f.label}{f.required && <b aria-hidden="true"> *</b>}</span>
-                {f.auto ? <output className="sdl-progar__auto">{b.isian[f.key] ? (f.type === 'date' ? new Date(`${b.isian[f.key]}T12:00:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : b.isian[f.key]) : <span className="sdl-progar__muted">Terisi otomatis saat file diunggah</span>}</output>
-                  : f.type === 'textarea' ? <textarea rows={2} maxLength={f.max} value={b.isian[f.key] ?? ''} onChange={e => { const v = e.target.value; setBlock(b.key, x => ({ ...x, isian: { ...x.isian, [f.key]: v }, dirty: true })) }} />
+                {f.type === 'textarea' ? <textarea rows={2} maxLength={f.max} value={b.isian[f.key] ?? ''} onChange={e => { const v = e.target.value; setBlock(b.key, x => ({ ...x, isian: { ...x.isian, [f.key]: v }, dirty: true })) }} />
                   : f.type === 'select' ? <select value={b.isian[f.key] ?? ''} onChange={e => { const v = e.target.value; setBlock(b.key, x => ({ ...x, isian: { ...x.isian, [f.key]: v }, dirty: true })) }}><option value="">—</option>{(f.options ?? []).map(o => <option key={o} value={o}>{o}</option>)}</select>
                   : <input type={f.type === 'date' ? 'date' : 'text'} inputMode={f.type === 'number' ? 'numeric' : undefined} maxLength={f.max} value={b.isian[f.key] ?? ''} onChange={e => { const v = f.type === 'number' ? e.target.value.replace(/\D/g, '') : e.target.value; setBlock(b.key, x => ({ ...x, isian: { ...x.isian, [f.key]: v }, dirty: true })) }} />}
-                {f.hint && !f.auto && <small>{f.hint}</small>}
+                {f.hint && <small>{f.hint}</small>}
               </label>)}
               {p && p.berkas.map(s => <div key={s.slot} className="sdl-progar__tahap-file" role="group" aria-label={s.label}>
                 <span>📎 {s.label}{s.utama && <em> · bukti utama</em>}</span>
                 <ul className="sdl-progar__lampiran">
-                  {(b.existing[s.slot] ?? []).map(x => { const ganti = s.jenis === 'xlsx' && (b.files[s.slot] ?? []).length > 0; const gone = ganti || b.drop.includes(x.id); return <li key={x.id} className={gone ? 'is-gone' : undefined}>
-                    <span>{x.filename}</span>{ganti ? <em>akan diganti</em> : gone ? <em>akan dihapus</em> : <em>tersimpan</em>}
-                    {!ganti && <button type="button" className="sdl-progar__mini" onClick={() => setBlock(b.key, y => ({ ...y, drop: gone ? y.drop.filter(z => z !== x.id) : [...y.drop, x.id] }))}>{gone ? 'Batal hapus' : 'Hapus'}</button>}</li> })}
+                  {(b.existing[s.slot] ?? []).map(x => { const gone = b.drop.includes(x.id); return <li key={x.id} className={gone ? 'is-gone' : undefined}>
+                    <span>{x.filename}</span>{gone ? <em>akan dihapus</em> : <em>tersimpan</em>}
+                    <button type="button" className="sdl-progar__mini" onClick={() => setBlock(b.key, y => ({ ...y, drop: gone ? y.drop.filter(z => z !== x.id) : [...y.drop, x.id] }))}>{gone ? 'Batal hapus' : 'Hapus'}</button></li> })}
                   {(b.files[s.slot] ?? []).map((f, fi) => <li key={`n${fi}`}><span>{f.name}</span><em>baru</em>
                     <button type="button" className="sdl-progar__mini" onClick={() => setBlock(b.key, y => ({ ...y, files: { ...y.files, [s.slot]: (y.files[s.slot] ?? []).filter((_, j) => j !== fi) } }))}>Batal</button></li>)}
                 </ul>
-                {s.jenis === 'xlsx'
-                  ? <><input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" aria-label={`Pilih ${s.label}`} onChange={e => { const picked = e.target.files?.[0]; e.target.value = ''; if (picked) setBlock(b.key, y => ({ ...y, files: { ...y.files, [s.slot]: [picked] } })) }} />
-                    <small>Satu file Excel (≤ 2 MB) tanpa diubah. Angkanya langsung diimpor ke LRA dan dashboard; file baru menggantikan yang lama.</small></>
-                  : <><input type="file" multiple accept="application/pdf,.pdf" aria-label={`Tambah berkas ${s.label}`} onChange={e => { const picked = Array.from(e.target.files ?? []); e.target.value = ''; if (picked.length) setBlock(b.key, y => ({ ...y, files: { ...y.files, [s.slot]: [...(y.files[s.slot] ?? []), ...picked] } })) }} />
-                    <small>Bisa lebih dari satu PDF (maks {MAX_PER_SLOT}, masing-masing ≤ 20 MB).</small></>}
+                <input type="file" multiple accept={s.jenis === 'office' ? '.pdf,.xlsx,.docx,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/pdf,.pdf'} aria-label={`Tambah berkas ${s.label}`} onChange={e => { const picked = Array.from(e.target.files ?? []); e.target.value = ''; if (picked.length) setBlock(b.key, y => ({ ...y, files: { ...y.files, [s.slot]: [...(y.files[s.slot] ?? []), ...picked] } })) }} />
+                <small>{s.jenis === 'office' ? `Bisa lebih dari satu berkas PDF, Excel, atau Word (maks ${MAX_PER_SLOT}, masing-masing ≤ 20 MB). Hanya disimpan sebagai lampiran.` : `Bisa lebih dari satu PDF (maks ${MAX_PER_SLOT}, masing-masing ≤ 20 MB).`}</small>
               </div>)}
             </div>
           </div>
@@ -254,7 +249,7 @@ export function DokumenDialog({ mode, kind = 'dokumen', tahun, doc, tahapId, kat
 
       {error && <p className="sdl-progar__error" role="alert">{error}</p>}
       <footer>
-        {editing && editing.cekStatus !== 'diterima' && <button type="button" className="btn sdl-progar__danger sdl-progar__footer-left" disabled={busy} onClick={() => void hapusTahap()}>Hapus Tahap</button>}
+        {editing && (!cek || editing.cekStatus !== 'diterima') && <button type="button" className="btn sdl-progar__danger sdl-progar__footer-left" disabled={busy} onClick={() => void hapusTahap()}>Hapus Tahap</button>}
         <button type="button" className="btn" disabled={busy} onClick={onClose}>Batal</button>
         <button type="submit" className="btn primary" disabled={busy}>{busy ? 'Menyimpan…' : 'Simpan'}</button>
       </footer>

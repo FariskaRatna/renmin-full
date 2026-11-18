@@ -322,4 +322,18 @@ button.sdl-kinerja__cell:focus-visible{outline:3px solid rgba(47,82,144,.35)}
 @media (max-width:640px){.sdl-progar__rpd-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .sdl-progar__ringkasan td:first-child strong,.sdl-progar__ringkasan td:first-child small{display:block;min-width:220px}
 .sdl-progar__file.is-full{max-width:none;white-space:normal;text-align:left}
-.sdl-progar__auto{display:block;padding:9px 12px;border:1px dashed var(--border);border-radius:10px;font-size:13.5px;color:var(--ink);font-variant-numeric:tabular-nums}
+
+/* Lampiran dokumen di luar tahap (migrasi 063) */
+.sdl-progar__lampdok-note{margin:0 0 8px;font-size:12px}
+.sdl-progar__lampdok{list-style:none;margin:0 0 10px;padding:0;display:grid;gap:6px}
+.sdl-progar__lampdok li{display:flex;align-items:center;gap:10px;padding:7px 10px;border:1px solid var(--line,#d9e1ec);border-radius:8px;min-width:0}
+.sdl-progar__lampdok-main{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+.sdl-progar__lampdok-main small{font-size:11.5px}
+.sdl-progar__lampdok-jenis{flex:none;width:42px;text-align:center;font-size:10px;font-weight:800;letter-spacing:.03em;padding:3px 0;border-radius:5px;background:#fbe9e9;color:#9b2c2c}
+.sdl-progar__lampdok-jenis.is-xlsx{background:#e5f4ea;color:#1f6b3a}
+.sdl-progar__lampdok-jenis.is-docx{background:#e7eefb;color:#24477e}
+:root[data-theme=dark] .sdl-progar__lampdok li{border-color:#2b3c55}
+:root[data-theme=dark] .sdl-progar__lampdok-jenis{background:#3a1f22;color:#f2b8b8}
+:root[data-theme=dark] .sdl-progar__lampdok-jenis.is-xlsx{background:#17352a;color:#9fd8b3}
+:root[data-theme=dark] .sdl-progar__lampdok-jenis.is-docx{background:#1c3152;color:#9fbdf0}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .sdl-progar__lampdok li{border-color:#2b3c55}:root:not([data-theme="light"]) .sdl-progar__lampdok-jenis{background:#3a1f22;color:#f2b8b8}:root:not([data-theme="light"]) .sdl-progar__lampdok-jenis.is-xlsx{background:#17352a;color:#9fd8b3}:root:not([data-theme="light"]) .sdl-progar__lampdok-jenis.is-docx{background:#1c3152;color:#9fbdf0}}

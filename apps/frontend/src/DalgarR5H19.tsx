@@ -280,7 +280,7 @@ function RingkasanMyinterestView({ d }: { d: RingkasanMyinterest }) {
       {d.beku ? <span className="sdl-progar__badge is-disetujui">Potret saat Selesai · {tgl(d.dibuat)}</span> : <span className="sdl-progar__badge is-draft">Angka sementara</span>}
       <span className="sdl-progar__muted">{d.potret
         ? <>Data myinterest per <span className="sdl-progar__num">{tgl(d.potret.tanggalAkhir)}</span>{d.potret.waktuUnduh ? `, diunduh ${fmtUnduh(d.potret.waktuUnduh)}` : ''}.</>
-        : <>Belum ada data myinterest bulan {bulan} {d.tahun}. Unggah file Excel myinterest (rentang 1 Januari s.d. akhir {bulan}) di tahap <strong>Mengunduh realisasi dari myinterest</strong> pada LRA ini.</>}</span>
+        : <>Belum ada data myinterest bulan {bulan} {d.tahun}. Impor di menu <strong>Data myinterest (LRA)</strong> dengan rentang 1 Januari s.d. akhir {bulan}.</>}</span>
     </p>
     {d.potret && d.bulanAwal > 1 && !d.potretSebelum && <p className="sdl-progar__pending">Potret akhir {BULAN[d.bulanAwal - 2]} belum diimpor, jadi realisasi khusus bulan {bulan} belum bisa dihitung (yang tampil hanya kumulatif).</p>}
     {d.potret && d.total && <div className="table-scroll"><table className="data-table sdl-progar__table sdl-progar__register">
