@@ -392,6 +392,195 @@ sebelumnya".
   uang yang sama, jadi bisa terhitung ganda kalau semuanya diisi. Pemilik memilih
   "tiap dokumen Final" dengan konsekuensi ini.
 
+### 7l. R5H19: Laporan dan Revisi Anggaran tersambung ke angka (2026-11-18)
+
+- **Keputusan pemilik:**
+  - LRA, Laporan Penggunaan Anggaran, EKA PN, dan Hibah otomatis mengambil
+    realisasi terverifikasi per pos.
+  - Angka laporan **sementara** selama Dalam proses, **dibekukan** (potret) saat
+    ditandai Selesai.
+  - Revisi POK = daftar dokumen Final + anggaran baru, diterapkan saat revisi Selesai.
+  - RPD bulanan per pos; Revisi RPD mengubahnya saat Selesai.
+  - Undangan/disposisi Urmin → Laporan **ditunda**.
+- **Migrasi 060** `060_laporan_revisi_rpd.sql`:
+  - `sdl_ren_dokumen` + `hibah` (BOOLEAN, default FALSE) + `ringkasan` (JSONB potret).
+  - Tabel `sdl_ren_rpd` (dokumen, bulan 1–12, jumlah) dan `sdl_ren_revisi_item`
+    (revisi → dokumen, anggaran/RPD baru, nilai lama, `diterapkan_at`).
+  - R5H15 bergeser ke **061**, lalu ke **062** (lihat §7m).
+- **Backend** (modul baru `dalgar.js`, dipakai `perencanaan.js` dan `progar.js`):
+  - `GET /dokumen/:id/ringkasan`: periode laporan (bulan/triwulan/setahun),
+    anggaran, rencana RPD, realisasi periode dan kumulatif, sisa per pos.
+    Laporan Hibah hanya pos bertanda hibah.
+  - `GET/PUT /dokumen/:id/revisi-item` (maks 40 butir, hanya sebelum Selesai).
+  - `/final` revisi: terapkan ke pos (POK: tidak di bawah realisasi terverifikasi;
+    RPD: total = anggaran pos). Revisi yang sudah diterapkan tidak bisa dibuka
+    kembali (`revisi_sudah_diterapkan`).
+  - `/final` laporan: simpan potret; dibuka kembali = potret dihapus.
+  - `PUT /progar/realisasi-dokumen/pos/:dokumenId/rpd`: RPD awal sekali saja
+    (`rpd_sudah_ada`); total harus sama dengan anggaran.
+  - `PUT /dokumen/:id/anggaran` menerima `hibah`. Pos realisasi tidak lagi bisa
+    berupa dokumen laporan/revisi DALGAR.
+- **Frontend:** `DalgarR5H19.tsx` (RingkasanRealisasi, RevisiAnggaran + editor,
+  RpdDialog). Detail laporan/revisi menampilkan panelnya; Realisasi menampilkan
+  RPD vs realisasi per bulan (dilipat) dan tanda "Dana hibah"; dialog anggaran
+  punya pilihan Sumber dana.
+- **Uji di browser dengan dua akun (tanpa error):**
+  - RPD awal [UJI SELESAI]: total salah ditolak; bagi rata Rp 500 jt disimpan;
+    isi ulang ditolak 409.
+  - LRA Oktober 2028: angka sementara (anggaran 500 jt, rencana Okt 41,67 jt,
+    realisasi s.d. Okt 120 jt, 24%), lalu Selesai → potret.
+  - [UJI] Revisi POK I 2028: 100 jt ditolak (di bawah realisasi), 600 jt
+    disimpan, Selesai → anggaran pos jadi 600 jt (sisa 480 jt); tombol Buka
+    Kembali hilang; LRA beku tetap 500 jt; Realisasi memberi tanda RPD ≠ anggaran.
+  - [UJI] Revisi RPD I 2028: bagi rata 600 jt, Selesai → RPD baru 50 jt/bulan.
+  - [UJI TAHAP] Renstra ditandai Dana hibah.
+- **Catatan:** penanda hibah hanya bisa diubah selama dokumen belum Final (ikut
+  aturan anggaran). Revisi DIPA belum tersambung ke Revisi RPD.
+
+### 7m. Revisi RPD tersambung ke dokumen DIPA (2026-11-18)
+
+- **Keputusan pemilik:**
+  - Revisi RPD **ditautkan ke dokumen DIPA yang sudah ada**. Operator mengunggah
+    DIPA/Revisi DIPA seperti biasa; sistem tidak membuatnya otomatis.
+  - Revisi RPD **wajib** sampai tahap "DIPA baru terbit" diterima Kasubbagren
+    dengan PDF DIPA terlampir sebelum bisa ditandai Selesai.
+- **Migrasi 061** `061_revisi_rpd_dipa.sql`: `sdl_ren_dokumen.dipa_id` (UUID FK,
+  nullable). R5H15 bergeser ke **062**, lalu ke **063** (lihat §7n).
+- **Backend** `perencanaan.js`:
+  - `PUT /dokumen/:id/dipa {dipaId:""|uuid,version}`: hanya Revisi RPD yang belum
+    Selesai. DIPA tujuan berjenis DIPA/Revisi DIPA, setahun, tidak ditolak, dan
+    belum digantikan (`dipa_tidak_sesuai`).
+  - `/final` Revisi RPD: `dipa_baru_belum` atau `dipa_belum_ditautkan`; DIPA
+    diperiksa ulang saat Selesai.
+  - Daftar dokumen mengirim `dipaId`.
+- **Frontend** `DokumenR5H13`:
+  - Detail Revisi RPD punya baris "DIPA terkait" dengan tombol Pilih DIPA/Ganti.
+    Dialognya memilih otomatis DIPA yang nomornya cocok dengan tahap "DIPA baru
+    terbit".
+  - Detail DIPA punya baris "Revisi RPD terkait". Tautan di kedua arah membuka
+    dokumennya.
+  - Tombol Tandai Selesai nonaktif dan menjelaskan syarat yang belum terpenuhi.
+- **Uji di browser dengan dua akun (tanpa error):** [UJI] Revisi RPD II 2028.
+  - Tautan ke dokumen non-DIPA ditolak 409; Selesai sebelum DIPA terbit ditolak 409.
+  - Setelah tahap DIPA baru + PDF diterima, dialog memilih otomatis
+    [UJI] Revisi DIPA 2028 ke-1 (cocok nomor).
+  - Selesai berhasil: RPD pos jadi Jan 100 jt, Feb–Nov 50 jt, Des 0. Detail DIPA
+    menampilkan Revisi RPD terkait.
+- **Catatan:** [UJI] Revisi RPD I 2028 sudah Selesai sebelum aturan ini, jadi
+  tanpa DIPA terkait.
+
+### 7n. R5H20: impor myinterest sebagai acuan resmi LRA dan dashboard (2026-11-18)
+
+- **Keputusan pemilik:**
+  - Angka **myinterest** ("Realisasi Belanja per Jenis Kegiatan") menjadi acuan
+    resmi untuk LRA dan dashboard. Realisasi manual per dokumen (R5H18) tetap ada
+    sebagai catatan internal; menunya berganti nama menjadi "Realisasi Anggaran Dokumen".
+  - Operator mengimpor file; langsung berlaku tanpa persetujuan.
+  - Grafik tampil di Dashboard Subbagren dan Dashboard pimpinan.
+- **Migrasi 062** `062_myinterest_impor.sql`: `sdl_ren_myinterest_impor` (potret
+  per tanggal data; hapus lunak; satu potret aktif per tanggal) dan
+  `sdl_ren_myinterest_baris` (kegiatan × jenis belanja: pagu, realisasi).
+  R5H15 bergeser ke **063**.
+- **Backend:**
+  - `myinterest-xlsx.js`: pembaca xlsx tanpa dependensi baru. Zip dibaca dengan
+    `node:zlib` dengan batas ukuran (berkas 2 MB, entri 16 MB). Angka diperiksa
+    silang dengan kolom Total dan baris GRAND TOTAL. Rentang tanggal wajib mulai
+    1 Januari (angka kumulatif).
+  - `myinterest.js`, dipasang di router progar:
+    - `GET /myinterest?tahun=|terbaru` (`progar.read`).
+    - `POST /myinterest` (`realisasi.manage`); impor ulang tanggal yang sama
+      menggantikan potret lama.
+    - `DELETE /myinterest/:id`.
+  - `dalgar.js`: ringkasan LRA kini per kegiatan dari myinterest.
+    - Kumulatif = potret terakhir di bulan laporan.
+    - Realisasi bulan itu = selisih dengan potret terakhir bulan sebelumnya.
+    - Dibekukan saat Selesai.
+- **Frontend** `MyinterestR5H20.tsx`:
+  - Menu DALGAR "Data myinterest (LRA)": impor, riwayat dan hapus, rincian per
+    kegiatan × jenis belanja.
+  - `LraChart`: angka serapan, batang serapan per kegiatan, dan realisasi per bulan
+    (grafik mulai dua bulan).
+  - Dipasang di `SmartUnitDashboard` (unit ren, menggantikan panel Budget
+    Performance lama) dan `ExecutiveDecisionR5F24` (leader).
+  - Dashboard pimpinan membaca endpoint progar, karena Kabagrenmin punya
+    `subbagren.progar.read`; API executive/v2 tidak diubah.
+- **Uji di browser, akun OP dan Kabagrenmin (tanpa error):**
+  - Berkas yang totalnya diubah ditolak (`total_tidak_cocok`).
+  - Impor uji 30 Sep 2028 dan 31 Okt 2028 berhasil; impor ulang 31 Okt
+    menggantikan yang lama.
+  - Serapan 78,29%, realisasi Oktober Rp 149,10 M dari selisih potret.
+  - LRA Oktober 2028 dibuka kembali, lalu menampilkan per kegiatan (mis. 3073:
+    Okt Rp 18,9 M, s.d. Okt Rp 189,9 M), lalu Selesai dan dibekukan.
+  - Panel tampil di Dashboard Subbagren (PROGAR dan DALGAR) dan Dashboard pimpinan.
+  - Pembaca juga diuji pada `docs/realisasi-belanja.xlsx` asli (cocok:
+    Rp 1.487.719.385.000 / Rp 1.398.947.177.519). Hanya dibaca, tidak diimpor
+    ke database.
+- **Catatan:**
+  - `docs/realisasi-belanja.xlsx` berisi angka anggaran asli dan **belum masuk
+    git**; sebaiknya tidak di-commit.
+  - Temuan lama yang tidak terkait: halaman workspace di lebar 390px melebar ke
+    624px (juga di menu Laporan yang lama).
+  - Data uji di laptop: potret myinterest 30 Sep dan 31 Okt 2028 (fiktif).
+
+### 7o. File myinterest diunggah di tahap 1 LRA, bukan menu terpisah (2026-11-18)
+
+- **Keputusan pemilik:**
+  - File myinterest **hanya** diunggah di tahap 1 LRA bulanan dan langsung berlaku
+    untuk dashboard. Kasubbagren tetap memeriksa tahapnya.
+  - Menu Data myinterest menjadi **halaman lihat** (tanpa impor/hapus).
+- **Alur LRA (docx no. 14):**
+  1. Mengunduh realisasi dari myinterest: isian tanggal unduh, dasar (default
+     "Surat arahan … pengganti aplikasi SMAP"), dan satu file Excel.
+  2. Menyusun laporan dan surat pengantar (PDF).
+  3. Tanda tangan Kadensus.
+  4. Kirim ke Astamarena.
+- **Backend:**
+  - Katalog: form/pekerjaan `unduh_myinterest`, slot `myinterest` berjenis `xlsx`.
+    `lap_lra` kini dimulai dari tahap ini.
+  - Unggah lampiran slot xlsx:
+    - Batas 2 MB, dibaca dengan `parseMyinterest`, rentang wajib 1 Januari.
+    - Tanggal data wajib di bulan laporan (`myinterest_bulan_tidak_cocok`).
+    - Unggahan baru menggantikan file lama beserta potretnya, lalu langsung
+      diimpor (`simpanPotret`).
+  - Hapus lampiran = potret dihapus lunak (`hapusPotretLampiran`, cocok sha256).
+  - `myinterest.js`: POST/DELETE dicabut; GET menambahkan tautan `lra` per potret.
+- **Frontend:**
+  - Formulir tahap: slot xlsx satu file (".xlsx"), ditandai "akan diganti".
+  - Lampiran .xlsx diunduh, tidak dipratinjau.
+  - Halaman Data myinterest: tanpa tombol impor; tombol "Buka LRA di menu
+    Laporan"; riwayat berkolom LRA.
+- **Uji di browser (tanpa error)**, data uji: LRA November 2028.
+  - File Oktober ditolak untuk LRA November.
+  - File November diterima: realisasi November 3073 = Rp 19,2 M (selisih potret);
+    riwayat "30 Nov 2028 → LRA November 2028".
+  - Mengganti file tetap satu potret.
+  - Menghapus lampiran: potret 30 Nov hilang dan ringkasan meminta unggah.
+    Unggah kembali berhasil.
+  - Grafik bulanan Okt–Nov tampil; serapan 88,31%.
+- **Catatan:** potret uji 30 Sep dan 31 Okt 2028 diimpor lewat endpoint lama
+  (sudah dicabut), sehingga tidak punya lampiran tahap.
+
+### 7p. Tanggal dan jam unduh myinterest otomatis dari file (2026-11-18)
+
+- **Permintaan pemilik:** tanggal dan jam unduh tidak diketik, tetapi diambil dari
+  baris "Waktu unduh excel" di file. Dashboard menerangkan data per tanggal berapa.
+- **Backend:**
+  - `waktuUnduhOf()` membaca "16-11-2026 12:34:02 WIB (+0700 GMT)" (format
+    myinterest) dan format ISO.
+  - Isian `tanggal` dan `jamUnduh` tahap "Mengunduh realisasi" kini berflag
+    `auto`: `cleanIsian` mengabaikan nilai dari klien, `PUT` tahap
+    mempertahankannya, unggah file mengisinya, dan hapus file mengosongkannya.
+- **Frontend:**
+  - Isian auto tampil sebagai kotak baca-saja ("Terisi otomatis saat file diunggah").
+  - Keterangan di grafik, LRA, dan riwayat menjadi "Data myinterest per
+    30 Nov 2028 · diunduh 2 Des 2028 pukul 09.15 WIB" (`fmtUnduh`).
+- **Uji (tanpa error):**
+  - Unggah file November (waktu unduh 02-12-2028 09:15:40) → isian
+    `tanggal=2028-12-02`, `jamUnduh=09:15:40 WIB`; kolom Tanggal di register
+    2 Des 2028.
+  - `PUT` dengan tanggal palsu diabaikan.
+  - Dashboard Subbagren dan Dashboard pimpinan menampilkan keterangan tersebut.
+
 ## Keputusan terbuka (menunggu pemilik)
 
 1. **Nama menu:** usulan *Penyusunan Dokumen* + *Dokumen Sah* (sesuai istilah
