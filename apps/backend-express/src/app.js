@@ -25,6 +25,7 @@ import { createDirectivesRouter } from './modules/directives/index.js'
 import { createDispositionsRouter } from './modules/urmin/dispositions.js'
 import { createDistributionInboxRouter } from './modules/urmin/distribution-inbox.js'
 import { createSuratMasukRouter } from './modules/urmin/surat-masuk.js'
+import { createPersuratanRouter } from './modules/persuratan/index.js'
 
 /**
  * Perakitan router, padanan NewRouterWithAuth (internal/httpapi/router.go:32).
@@ -103,6 +104,9 @@ export function createApp({ pool, config, mailer: injectedMailer }) {
   v1.use('/subbagren/progar', operational, createProgarRouter({ pool, config }))
   // R5H13: Dokumen Perencanaan + Monitoring Kinerja & LKIP (migrasi 051, Express saja).
   v1.use('/subbagren/perencanaan', operational, createPerencanaanRouter({ pool, config }))
+  // R5H21: persuratan antar-unit (migrasi 064, Express saja). Prefix baru: Caddy harus
+  // mengalihkan /api/v1/persuratan/* ke Express (SDL_EXPRESS_PATHS).
+  v1.use('/persuratan', operational, createPersuratanRouter({ pool, config }))
   v1.use('/leadership/directives', operational, createDirectivesRouter({ pool, config }))
   v1.use('/urmin/surat-masuk', operational, createSuratMasukRouter({ pool, config }))
   v1.use('/urmin/distribution-inbox', operational, createDistributionInboxRouter({ pool, config }))

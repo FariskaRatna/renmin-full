@@ -38,7 +38,7 @@ const DATA_URL_PREFIX = 'data:image/png;base64,'
  * (bukan dipercaya apa adanya) dan dibatasi ukurannya; hasilnya PNG bersih
  * tanpa metadata.
  */
-async function cleanSignatureImage(dataUrl) {
+export async function cleanSignatureImage(dataUrl) {
   if (typeof dataUrl !== 'string' || !dataUrl.startsWith(DATA_URL_PREFIX)) return null
   const b64 = dataUrl.slice(DATA_URL_PREFIX.length)
   if (b64.length === 0 || b64.length > Math.ceil(MAX_SIGNATURE_BYTES / 3) * 4 || !/^[A-Za-z0-9+/]+={0,2}$/.test(b64)) return null
@@ -57,7 +57,7 @@ async function cleanSignatureImage(dataUrl) {
 
 const sha256 = (buf) => createHash('sha256').update(buf).digest('hex')
 
-async function loadSavedSignature(pool, key, userId) {
+export async function loadSavedSignature(pool, key, userId) {
   const { rows } = await pool.query(
     'SELECT image_seal,sha256,updated_at FROM sdl_user_signatures WHERE user_id::text=$1',
     [userId],
@@ -68,7 +68,7 @@ async function loadSavedSignature(pool, key, userId) {
   return { image, updatedAt: rows[0].updated_at }
 }
 
-async function storeSignature(runner, key, userId, image) {
+export async function storeSignature(runner, key, userId, image) {
   const sealed = sealEvidence(key, image)
   await runner.query(
     `INSERT INTO sdl_user_signatures(user_id,image_seal,sha256,updated_at)
@@ -135,14 +135,14 @@ export function createTtdRouter({ pool, config }) {
   return router
 }
 
-function jakartaStamp(date) {
+export function jakartaStamp(date) {
   const text = new Intl.DateTimeFormat('id-ID', {
     timeZone: 'Asia/Jakarta', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
   }).format(date)
   return `${text} WIB`
 }
 
-function signedName(original) {
+export function signedName(original) {
   const base = String(original).replace(/\.pdf$/i, '')
   return `${base}-ttd.pdf`.slice(-200)
 }
