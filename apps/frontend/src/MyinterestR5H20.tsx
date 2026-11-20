@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { LraDashboardR5H24 } from './LraDashboardR5H24'
 import { rupiah } from './ProgarR5H11'
 import { confirmDialog, showToast } from './UIFeedback'
 import './ProgarR5H11.css'
@@ -21,6 +22,7 @@ type Bulanan = { bulan: number; tanggalAkhir: string; pagu: string; kumulatif: s
 type Data = { tahun: number; impor: Impor[]; bulanan: Bulanan[]
   terbaru: null | { imporId: string; tanggalAkhir: string; waktuUnduh: string; totalPagu: string; totalRealisasi: string; kegiatan: Kegiatan[]; perJenis: Record<string, { pagu: string; realisasi: string }> } }
 
+export type LraData = Data
 const BASE = '/api/v1/subbagren/progar'
 const ERRORS: Record<string, string> = {
   access_denied: 'Akun ini tidak berwenang mengimpor data myinterest.',
@@ -178,7 +180,8 @@ export default function MyinterestR5H20({ onOpenLaporan }: { onOpenLaporan?: () 
     </div>
     <p className="sdl-progar__hint">Unduh <strong>Realisasi Belanja per Jenis Kegiatan</strong> dari myinterest dengan rentang <strong>1 Januari s.d. akhir bulan</strong>, lalu impor di sini setiap awal bulan. Angka ini menjadi acuan resmi LRA dan dashboard; realisasi per bulan dihitung dari selisih potret akhir bulan.{onOpenLaporan && <> <button type="button" className="sdl-progar__link" onClick={onOpenLaporan}>Buka menu Laporan →</button></>}</p>
     {error && <p className="sdl-progar__error" role="alert">{error}</p>}
-    <section className="panel sdl-progar__program"><LraChart variant="page" data={data} /></section>
+    {/* R5H24: tampilan dashboard mengikuti referensi pemilik (dashboad_ren.jpg). */}
+    {data?.terbaru ? <LraDashboardR5H24 data={data} /> : <section className="panel sdl-progar__program"><LraChart variant="page" data={data} /></section>}
     {t && <section className="panel sdl-progar__program" aria-label="Rincian per jenis belanja">
       <h3 className="sdl-lra__h3">Rincian per kegiatan dan jenis belanja · s.d. {tgl(t.tanggalAkhir)}</h3>
       <div className="table-scroll"><table className="data-table sdl-progar__table sdl-progar__register">
