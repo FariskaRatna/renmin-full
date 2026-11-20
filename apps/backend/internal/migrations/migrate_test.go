@@ -73,6 +73,9 @@ func TestEmbeddedMigrationOrderAndSafety(t *testing.T) {
 		"sql/061_revisi_rpd_dipa.sql",
 		"sql/062_myinterest_impor.sql",
 		"sql/063_dokumen_lampiran.sql",
+		"sql/064_persuratan_antar_unit.sql",
+		"sql/065_tahap_sumber_surat.sql",
+		"sql/066_arahan_tindak_lanjut.sql",
 	}
 	items, err := load()
 	if err != nil {
@@ -190,6 +193,9 @@ func migrationSafetyIssue(name, body string) string {
 				// R5H19: tautan Revisi RPD -> dokumen DIPA. Satu ADD COLUMN nullable
 				// tanpa DEFAULT, tanpa backfill.
 				"sql/061_revisi_rpd_dipa.sql": {"SDL_REN_DOKUMEN"},
+				// R5H22: tautan sumber surat/undangan di tahap. Dua ADD COLUMN nullable
+				// tanpa DEFAULT, tanpa backfill.
+				"sql/065_tahap_sumber_surat.sql": {"SDL_REN_DOKUMEN_TAHAP"},
 			}
 			clauses := ""
 			for _, table := range reviewed[name] {
