@@ -9,7 +9,7 @@ import { BODY_LIMITS, rawBody } from '../../http/payload.js'
 import { buildXlsx } from '../../http/xlsx.js'
 import { HttpError, PERMIT_SQL, audit, body, handle, id, text, version } from './progar.js'
 import { parseDateOnly, parseGoInt, respond } from './shared.js'
-import { JENIS_TAHAP, PEKERJAAN, TANPA_SAH, cleanIsian, cleanPeriode, katalog, slotOf } from './tahap-katalog.js'
+import { JENIS_TAHAP, PEKERJAAN, TANPA_SAH, bisaSumber, cleanIsian, cleanPeriode, katalog, slotOf } from './tahap-katalog.js'
 import { zipNames } from './myinterest-xlsx.js'
 import { MAX_BUTIR_REVISI, REVISI_JENIS, RINGKASAN_JENIS, cekTotalRpd, cleanRpd, hitungRingkasan, lockPosAktif, rpdMap, tahapPerluCek, terapkanRevisi, verifiedSum } from './dalgar.js'
 
@@ -36,6 +36,9 @@ import { MAX_BUTIR_REVISI, REVISI_JENIS, RINGKASAN_JENIS, cekTotalRpd, cleanRpd,
  *   GET    /dokumen/:id/tahap/:tid/lampiran/:lid   unduh satu lampiran
  *          Slot berjenis 'office' menerima PDF/.xlsx/.docx (tanpa impor), mis. hasil unduhan myinterest LRA.
  *   DELETE /dokumen/:id/tahap/:tid/lampiran/:lid   hapus satu lampiran (selama tahap masih terbuka)
+ *   R5H22 (migrasi 065): POST/PUT tahap menerima `sumber: {jenis:"disposisi"|"surat_masuk", id} | null` untuk
+ *          tahap "menerima surat/undangan" -- HANYA tautan (PDF tidak disalin). Disposisi harus berinduk surat
+ *          masuk dan salah satu penerimanya anggota Subbagren; Surat Masuk harus sudah dikirim ke Subbagren.
  *   POST   /dokumen/:id/lampiran            multipart `file` PDF/.xlsx/.docx <= 20 MB: lampiran DOKUMEN di luar
  *          tahap (migrasi 063; maks 30). GET/DELETE /dokumen/:id/lampiran/:lid. Ubah hanya selama
  *          dokumen belum final (draft, atau sah belum final & belum digantikan); terkunci setelah Final.
@@ -169,6 +172,11 @@ export function createPerencanaanRouter({ pool, config }) {
     const tahapRows = (await pool.query(
       `SELECT t.id::text,t.dokumen_id::text,t.pekerjaan,t.isian,t.version,t.created_at,u.display_name AS updated_name,t.updated_at,
               t.created_by::text,t.updated_by::text,t.cek_status,t.cek_note,t.cek_at,ck.display_name AS cek_name,
+              t.sumber_jenis,t.sumber_id::text AS sumber_id,
+              CASE t.sumber_jenis
+                WHEN 'surat_masuk' THEN (SELECT concat_ws(' · ',NULLIF(sa.nomor,''),sa.perihal) FROM sdl_surat_antar sa WHERE sa.id=t.sumber_id)
+                WHEN 'disposisi' THEN (SELECT concat_ws(' · ',NULLIF(ld.sheet->>'letterNumber',''),COALESCE(NULLIF(ld.sheet->>'subject',''),ld.title)) FROM sdl_leadership_directives ld WHERE ld.id=t.sumber_id)
+              END AS sumber_label,
               COALESCE((SELECT jsonb_agg(jsonb_build_object('id',b.id::text,'slot',b.slot,'filename',b.filename,'size',b.size_bytes) ORDER BY b.slot,b.uploaded_at,b.id)
                           FROM sdl_ren_dokumen_tahap_lampiran b WHERE b.tahap_id=t.id),'[]'::jsonb) AS berkas
          FROM sdl_ren_dokumen_tahap t JOIN sdl_ren_dokumen d ON d.id=t.dokumen_id AND ($1::int IS NULL OR d.tahun=$1::int)
@@ -192,6 +200,7 @@ export function createPerencanaanRouter({ pool, config }) {
         id: t.id, pekerjaan: t.pekerjaan, pekerjaanLabel: PEKERJAAN[t.pekerjaan]?.label ?? t.pekerjaan, isian: t.isian,
         version: t.version, createdAt: t.created_at, updatedAt: t.updated_at, updatedByName: t.updated_name, berkas: t.berkas,
         createdBy: t.created_by, updatedBy: t.updated_by, cekStatus: t.cek_status, cekNote: t.cek_note, cekAt: t.cek_at ?? null, cekByName: t.cek_name ?? null,
+        sumber: t.sumber_jenis ? { jenis: t.sumber_jenis, id: t.sumber_id, label: t.sumber_label ?? '(sumber tidak ditemukan)' } : null,
       })
     }
     respond(res, 200, {
@@ -737,20 +746,43 @@ export function createPerencanaanRouter({ pool, config }) {
     respond(res, 200, { ok: true, cekStatus: v.keputusan })
   }))
 
+  /**
+   * R5H22: sumber surat tahap. undefined = tidak diubah; null = manual. Sumber harus
+   * dapat dibaca Subbagren: Surat Masuk yang sudah dikirim ke Subbagren, atau disposisi
+   * (berinduk surat masuk Urmin) yang salah satu penerimanya anggota Subbagren.
+   */
+  async function cekSumber(c, pekerjaan, raw) {
+    if (raw === undefined || raw === null) return raw
+    if (typeof raw !== 'object' || Array.isArray(raw) || Object.keys(raw).some((k) => k !== 'jenis' && k !== 'id')) throw new HttpError(400, 'invalid_input')
+    if (!bisaSumber(pekerjaan)) throw new HttpError(400, 'sumber_tidak_berlaku')
+    const { jenis } = raw
+    if (jenis !== 'disposisi' && jenis !== 'surat_masuk') throw new HttpError(400, 'invalid_input')
+    if (typeof raw.id !== 'string' || !UUID_RE.test(raw.id)) throw new HttpError(400, 'invalid_input')
+    const ok = jenis === 'surat_masuk'
+      ? (await c.query(`SELECT 1 FROM sdl_surat_antar s JOIN sdl_surat_antar_tujuan t ON t.surat_id=s.id AND t.unit_key='subbagren'
+                         WHERE s.id=$1::uuid AND s.status='dikirim'`, [raw.id])).rowCount
+      : (await c.query(`SELECT 1 FROM sdl_leadership_directives d WHERE d.id=$1::uuid AND d.incoming_id IS NOT NULL
+                          AND EXISTS(SELECT 1 FROM sdl_leadership_directive_recipients r JOIN sdl_user_units uu ON uu.user_id=r.recipient_id AND uu.unit_key='subbagren'
+                                      WHERE r.directive_id=d.id)`, [raw.id])).rowCount
+    if (!ok) throw new HttpError(400, 'sumber_tidak_ditemukan')
+    return { jenis, id: raw.id }
+  }
+
   router.post('/dokumen/:id/tahap', json, handle(async (req, res) => {
     await need(req, 'subbagren.progar.manage')
     const did = id(req.params.id)
-    const v = body(req, ['pekerjaan', 'isian'])
+    const v = body(req, ['pekerjaan', 'isian', 'sumber'])
     if (typeof v.pekerjaan !== 'string' || !Object.hasOwn(PEKERJAAN, v.pekerjaan)) throw new HttpError(400, 'invalid_input')
     const isian = cleanIsian(v.pekerjaan, v.isian)
     if (!isian) throw new HttpError(400, 'invalid_input')
     const row = await withTransaction(pool, async (c) => {
       await lockForTahap(c, did, v.pekerjaan)
+      const sumber = await cekSumber(c, v.pekerjaan, v.sumber)
       const n = await c.query('SELECT count(*)::int AS n FROM sdl_ren_dokumen_tahap WHERE dokumen_id=$1::uuid', [did])
       if (n.rows[0].n >= 50) throw new HttpError(409, 'batas_tahap')
       const r = (await c.query(
-        `INSERT INTO sdl_ren_dokumen_tahap(dokumen_id,pekerjaan,isian,created_by,updated_by) VALUES($1::uuid,$2,$3::jsonb,$4,$4) RETURNING id::text`,
-        [did, v.pekerjaan, JSON.stringify(isian), req.actor])).rows[0]
+        `INSERT INTO sdl_ren_dokumen_tahap(dokumen_id,pekerjaan,isian,created_by,updated_by,sumber_jenis,sumber_id) VALUES($1::uuid,$2,$3::jsonb,$4,$4,$5,$6::uuid) RETURNING id::text`,
+        [did, v.pekerjaan, JSON.stringify(isian), req.actor, sumber?.jenis ?? null, sumber?.id ?? null])).rows[0]
       await bumpDokumen(c, did)
       await audit(c, req.actor, 'dokumen.tahap.create', 'dokumen', did)
       return r
@@ -761,7 +793,7 @@ export function createPerencanaanRouter({ pool, config }) {
   router.put('/dokumen/:id/tahap/:tid', json, handle(async (req, res) => {
     await need(req, 'subbagren.progar.manage')
     const did = id(req.params.id); const tid = id(req.params.tid)
-    const v = body(req, ['isian', 'version'])
+    const v = body(req, ['isian', 'version', 'sumber'])
     const ver = version(v.version)
     await withTransaction(pool, async (c) => {
       await c.query('SELECT 1 FROM sdl_ren_dokumen WHERE id=$1::uuid FOR UPDATE', [did])
@@ -770,9 +802,12 @@ export function createPerencanaanRouter({ pool, config }) {
       if (t.version !== ver) throw new HttpError(409, 'version_conflict')
       const isian = cleanIsian(t.pekerjaan, v.isian)
       if (!isian) throw new HttpError(400, 'invalid_input')
+      // sumber undefined = tidak diubah; null = kembali manual.
+      const sumber = await cekSumber(c, t.pekerjaan, v.sumber)
       await c.query(
-        `UPDATE sdl_ren_dokumen_tahap SET isian=$2::jsonb,cek_status='menunggu',cek_by=NULL,cek_at=NULL,version=version+1,updated_by=$3,updated_at=now() WHERE id=$1::uuid`,
-        [tid, JSON.stringify(isian), req.actor])
+        `UPDATE sdl_ren_dokumen_tahap SET isian=$2::jsonb,cek_status='menunggu',cek_by=NULL,cek_at=NULL,version=version+1,updated_by=$3,updated_at=now(),
+                sumber_jenis=CASE WHEN $4 THEN $5 ELSE sumber_jenis END,sumber_id=CASE WHEN $4 THEN $6::uuid ELSE sumber_id END WHERE id=$1::uuid`,
+        [tid, JSON.stringify(isian), req.actor, sumber !== undefined, sumber?.jenis ?? null, sumber?.id ?? null])
       await bumpDokumen(c, did)
       await audit(c, req.actor, 'dokumen.tahap.update', 'dokumen', did)
     })

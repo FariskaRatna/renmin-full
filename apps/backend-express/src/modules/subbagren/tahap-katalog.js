@@ -324,7 +324,20 @@ export function katalog() {
       berkas: form.berkas,
     }
   }
-  return { jenis: JENIS_TAHAP, pekerjaan, tanpaSah: [...TANPA_SAH], periode: PERIODE }
+  return { jenis: JENIS_TAHAP, pekerjaan, tanpaSah: [...TANPA_SAH], periode: PERIODE, sumber: SUMBER_FORM }
+}
+
+/**
+ * R5H22 (migrasi 065): form tahap yang bisa menautkan sumber surat (disposisi Kabagrenmin
+ * atau Surat Masuk antar-unit). Nilai = kunci isian yang diisi dari sumbernya.
+ */
+export const SUMBER_FORM = {
+  surat_masuk: { nomor: 'nomor', tanggal: 'tanggal', dari: 'dari', perihal: 'perihal' },
+  undangan: { nomor: 'undanganNomor', tanggal: 'undanganTanggal', dari: 'penyelenggara' },
+}
+export function bisaSumber(pekerjaan) {
+  const p = PEKERJAAN[pekerjaan]
+  return Boolean(p && SUMBER_FORM[p.form])
 }
 
 export function slotOf(pekerjaan, slot) {
