@@ -337,3 +337,20 @@ button.sdl-kinerja__cell:focus-visible{outline:3px solid rgba(47,82,144,.35)}
 :root[data-theme=dark] .sdl-progar__lampdok-jenis.is-xlsx{background:#17352a;color:#9fd8b3}
 :root[data-theme=dark] .sdl-progar__lampdok-jenis.is-docx{background:#1c3152;color:#9fbdf0}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .sdl-progar__lampdok li{border-color:#2b3c55}:root:not([data-theme="light"]) .sdl-progar__lampdok-jenis{background:#3a1f22;color:#f2b8b8}:root:not([data-theme="light"]) .sdl-progar__lampdok-jenis.is-xlsx{background:#17352a;color:#9fd8b3}:root:not([data-theme="light"]) .sdl-progar__lampdok-jenis.is-docx{background:#1c3152;color:#9fbdf0}}
+
+/* R5H22: sumber surat tahap (disposisi / surat masuk) */
+.sdl-sumber{border:1px solid var(--line,#d9e1ec);border-radius:10px;padding:8px 12px 10px;margin:0;display:grid;gap:8px;grid-column:1/-1}
+.sdl-sumber legend{font-size:12.5px;font-weight:700;padding:0 4px}
+.sdl-sumber__modes{display:flex;flex-wrap:wrap;gap:6px}
+.sdl-sumber__modes label{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--line,#d9e1ec);border-radius:999px;font-size:12.5px;font-weight:650;cursor:pointer}
+.sdl-sumber__modes label.is-on{border-color:#d5ad67;background:rgba(213,173,103,.12)}
+.sdl-sumber__modes input{margin:0}
+.sdl-sumber select{font:inherit;font-size:13px;padding:8px 10px;border:1px solid var(--border);border-radius:10px;background:var(--card);color:var(--ink);width:100%}
+.sdl-sumber small{font-size:11.5px;color:var(--muted)}
+.sdl-sumber-link{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 10px;margin:0;padding:8px 12px;border-left:3px solid #d5ad67;background:rgba(213,173,103,.08);border-radius:6px;font-size:13px}
+.sdl-sumber-link>span{font-weight:700}
+.sdl-sumber-tag{margin:0 6px 0 0}
+:root[data-theme=dark] .sdl-sumber,:root[data-theme=dark] .sdl-sumber__modes label{border-color:#2b3c55}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .sdl-sumber,:root:not([data-theme="light"]) .sdl-sumber__modes label{border-color:#2b3c55}}
+.sdl-progar__fields .sdl-sumber__modes label{display:inline-flex;grid-template-columns:none;align-items:center;gap:6px;width:auto;padding:5px 12px;font-size:12.5px;line-height:1.2;white-space:nowrap}
+.sdl-progar__fields .sdl-sumber__modes input[type=radio]{width:14px;height:14px;min-height:0;padding:0;margin:0;border:0;box-shadow:none;flex:none;accent-color:#1d3557}

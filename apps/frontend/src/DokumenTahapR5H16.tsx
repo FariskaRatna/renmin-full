@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { SumberPicker, type Sumber } from './SumberSuratR5H22'
 import { confirmDialog } from './UIFeedback'
 
 /**
@@ -16,20 +17,22 @@ import { confirmDialog } from './UIFeedback'
 export type KField = { key: string; label: string; type: 'text' | 'textarea' | 'date' | 'number' | 'select'; max: number; required?: boolean; half?: boolean; hint?: string; default?: string; options?: string[] }
 /** jenis 'office': PDF, Excel (.xlsx), atau Word (.docx); selain itu PDF saja. */
 export type KSlot = { slot: string; label: string; utama?: boolean; jenis?: 'office' }
-export type Katalog = { jenis: Record<string, string[]>; pekerjaan: Record<string, { label: string; form: string; fields: KField[]; berkas: KSlot[] }>; tanpaSah?: string[]; periode?: Record<string, 'bulan' | 'triwulan'> }
+export type Katalog = { jenis: Record<string, string[]>; pekerjaan: Record<string, { label: string; form: string; fields: KField[]; berkas: KSlot[] }>; tanpaSah?: string[]; periode?: Record<string, 'bulan' | 'triwulan'>
+  /** R5H22: form yang bisa menautkan sumber surat -> kunci isian yang diisi dari sumber. */
+  sumber?: Record<string, Partial<Record<'nomor' | 'tanggal' | 'dari' | 'perihal', string>>> }
 export type Tahap = { id: string; pekerjaan: string; pekerjaanLabel: string; isian: Record<string, string>; version: number; createdAt: string; updatedAt: string; updatedByName: string; berkas: { id: string; slot: string; filename: string; size: number }[]
-  createdBy: string; updatedBy: string; cekStatus: 'menunggu' | 'diterima' | 'dikembalikan'; cekNote: string; cekAt: string | null; cekByName: string | null }
+  createdBy: string; updatedBy: string; cekStatus: 'menunggu' | 'diterima' | 'dikembalikan'; cekNote: string; cekAt: string | null; cekByName: string | null; sumber?: Sumber | null }
 export type DokMeta = { id: string; jenis: string; periode?: string; judul: string; nomor: string; tanggal: string | null; keterangan: string; version: number; tahap: Tahap[] }
 
 type Api = <T>(path: string, method?: 'GET' | 'POST' | 'PUT' | 'DELETE', body?: unknown) => Promise<T>
 /** files: berkas baru per slot (diunggah saat Simpan); existing: lampiran tersimpan; drop: id lampiran yang akan dihapus. */
-type Block = { key: string; id?: string; version?: number; pekerjaan: string; isian: Record<string, string>; files: Record<string, File[]>; existing: Record<string, { id: string; filename: string }[]>; drop: string[]; dirty: boolean }
+type Block = { key: string; id?: string; version?: number; pekerjaan: string; isian: Record<string, string>; files: Record<string, File[]>; existing: Record<string, { id: string; filename: string }[]>; drop: string[]; dirty: boolean; sumber: Sumber | null; sumberUbah: boolean }
 
 const MAX_PDF = 20 * 1024 * 1024
 const MAX_PER_SLOT = 10
 let seq = 0
 const newKey = () => `b${++seq}`
-const emptyBlock = (): Block => ({ key: newKey(), pekerjaan: '', isian: {}, files: {}, existing: {}, drop: [], dirty: false })
+const emptyBlock = (): Block => ({ key: newKey(), pekerjaan: '', isian: {}, files: {}, existing: {}, drop: [], dirty: false, sumber: null, sumberUbah: false })
 function groupBySlot(berkas: Tahap['berkas']) {
   const out: Block['existing'] = {}
   for (const b of berkas) (out[b.slot] ??= []).push({ id: b.id, filename: b.filename })
@@ -64,7 +67,7 @@ export function DokumenDialog({ mode, kind = 'dokumen', tahun, doc, tahapId, kat
     return all.length + list.filter(x => !x.id).findIndex(x => x.key === b.key) + 1
   }
   const initial = useMemo<Block[]>(() => (doc?.tahap ?? []).filter(t => mode === 'tahap' && t.id === tahapId)
-    .map(t => ({ key: newKey(), id: t.id, version: t.version, pekerjaan: t.pekerjaan, isian: { ...t.isian }, files: {}, existing: groupBySlot(t.berkas), drop: [], dirty: false })), [doc, katalog, mode, tahapId])
+    .map(t => ({ key: newKey(), id: t.id, version: t.version, pekerjaan: t.pekerjaan, isian: { ...t.isian }, files: {}, existing: groupBySlot(t.berkas), drop: [], dirty: false, sumber: t.sumber ?? null, sumberUbah: false })), [doc, katalog, mode, tahapId])
   const [blocks, setBlocks] = useState<Block[]>(() => mode === 'edit' ? [] : initial.length ? initial : [emptyBlock()])
   const [removed, setRemoved] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
@@ -101,7 +104,7 @@ export function DokumenDialog({ mode, kind = 'dokumen', tahun, doc, tahapId, kat
   const setBlock = (key: string, fn: (b: Block) => Block) => setBlocks(bs => bs.map(b => b.key === key ? fn(b) : b))
   function choose(key: string, pekerjaan: string) {
     const fields = katalog?.pekerjaan[pekerjaan]?.fields ?? []
-    setBlock(key, b => ({ ...b, pekerjaan, isian: Object.fromEntries(fields.filter(f => f.default).map(f => [f.key, f.default!])), files: {}, dirty: true }))
+    setBlock(key, b => ({ ...b, pekerjaan, isian: Object.fromEntries(fields.filter(f => f.default).map(f => [f.key, f.default!])), files: {}, dirty: true, sumber: null, sumberUbah: false }))
   }
   function addBlock() {
     setBlocks(bs => [...bs, emptyBlock()])
@@ -154,8 +157,9 @@ export function DokumenDialog({ mode, kind = 'dokumen', tahun, doc, tahapId, kat
       for (const tid of removed) await api(`/dokumen/${did}/tahap/${tid}`, 'DELETE')
       for (const b of active) {
         let tid = b.id
-        if (!tid) tid = (await api<{ id: string }>(`/dokumen/${did}/tahap`, 'POST', { pekerjaan: b.pekerjaan, isian: trimmed(b.isian) })).id
-        else if (b.dirty) await api(`/dokumen/${did}/tahap/${tid}`, 'PUT', { isian: trimmed(b.isian), version: b.version })
+        const sumber = b.sumber ? { jenis: b.sumber.jenis, id: b.sumber.id } : null
+        if (!tid) tid = (await api<{ id: string }>(`/dokumen/${did}/tahap`, 'POST', { pekerjaan: b.pekerjaan, isian: trimmed(b.isian), ...(sumber ? { sumber } : {}) })).id
+        else if (b.dirty) await api(`/dokumen/${did}/tahap/${tid}`, 'PUT', { isian: trimmed(b.isian), version: b.version, ...(b.sumberUbah ? { sumber } : {}) })
         // Unggah dulu baru hapus: mengganti PDF bertanda tangan satu-satunya tidak ditolak.
         for (const [slot, list] of Object.entries(b.files)) {
           for (const file of list) {
@@ -219,6 +223,11 @@ export function DokumenDialog({ mode, kind = 'dokumen', tahun, doc, tahapId, kat
                   <option value="">— Pilih pekerjaan —</option>
                   {allowed.map(k => { const n = b.id ? 0 : timesUsed(k, b.key); return <option key={k} value={k}>{katalog!.pekerjaan[k].label}{n > 0 ? ` (sudah ${n}×)` : ''}</option> })}
                 </select></label>
+              {p && katalog?.sumber?.[p.form] && <SumberPicker key={`${b.key}:${b.pekerjaan}`} value={b.sumber} onPick={(s, isi) => setBlock(b.key, x => {
+                const peta = katalog.sumber![p.form]; const isian = { ...x.isian }
+                if (isi) for (const [k, field] of Object.entries(peta)) { const val = isi[k as keyof typeof isi]; if (field && val) isian[field] = val }
+                return { ...x, sumber: s, sumberUbah: true, dirty: true, isian }
+              })} />}
               {p && p.fields.map(f => <label key={f.key} className={f.half ? 'is-half' : undefined}>
                 <span>{f.label}{f.required && <b aria-hidden="true"> *</b>}</span>
                 {f.type === 'textarea' ? <textarea rows={2} maxLength={f.max} value={b.isian[f.key] ?? ''} onChange={e => { const v = e.target.value; setBlock(b.key, x => ({ ...x, isian: { ...x.isian, [f.key]: v }, dirty: true })) }} />
@@ -272,7 +281,8 @@ export function TahapList({ tahap, katalog, onPreview }: { tahap: Tahap[]; katal
     {tahap.map(t => {
       const p = katalog?.pekerjaan[t.pekerjaan]
       const date = t.isian.tanggal || t.isian.rapatTanggal || t.isian.sprinTanggal || t.isian.suratTanggal || t.isian.ttdTanggal
-      const missing = (p?.berkas ?? []).filter(s => s.utama && !t.berkas.some(b => b.slot === s.slot))
+      // R5H22: tahap bertaut sumber tidak wajib mengunggah PDF surat (dibuka dari sumbernya).
+      const missing = t.sumber ? [] : (p?.berkas ?? []).filter(s => s.utama && !t.berkas.some(b => b.slot === s.slot))
       return <li key={t.id}>
         <span className="sdl-progar__tahap-name">✓ {t.pekerjaanLabel}</span>{date && <span className="sdl-progar__muted"> · {tgl(date)}</span>}
         {t.berkas.map(b => <button key={b.id} type="button" className="sdl-progar__file" title={`Lihat ${b.filename}`} onClick={() => onPreview(t, b.id, b.filename)}>👁 {lampiranLabel(t, b, p?.berkas)}</button>)}

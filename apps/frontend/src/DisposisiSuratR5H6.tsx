@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import './DisposisiSuratR5H6.css'
 import './DirectivesR5F23.css'
 import { ChipPicker } from './DirectivesR5F23'
+import { TindakLanjutR5H23 } from './TindakLanjutR5H23'
 
 /**
  * R5H6: disposisi Kabagrenmin langsung dari detail Surat Masuk.
@@ -168,12 +169,16 @@ export function DisposisiSuratR5H6({letter,onChanged}:{letter:Letter;onChanged?:
    <div className="sm-dispo__meta"><span>Dikirim {fmt(d.createdAt)}</span><span className={`sm-badge tone-${d.total>0&&d.acknowledged===d.total?'ok':'info'}`}>{d.acknowledged} dari {d.total} diterima</span></div>
    {sheetView(d,{label:'Kepada',value:sectionsOf(d)||`${d.total} staf`})}
    {d.recipients&&d.recipients.length>0&&<div className="table-scroll"><table className="data-table sm-dispo__table"><thead><tr><th>Penerima</th><th>Status</th><th>Waktu</th></tr></thead><tbody>{d.recipients.map(r=>{const st=stateOf(r);return <tr key={r.id}><td>{r.name}</td><td><span className={`sm-badge tone-${st.tone}`}>{st.text}</span></td><td>{st.at?fmt(st.at):'—'}</td></tr>})}</tbody></table></div>}
+   {/* R5H23: tindak lanjut para penerima. */}
+   <TindakLanjutR5H23 directiveId={d.id}/>
   </div>)}
 
   {received.map(d=><div className="sm-dispo__block" key={d.id}>
    <div className="sm-dispo__meta"><span>Dikirim {fmt(d.createdAt)}</span>{d.myAcknowledgedAt&&<span className="sm-badge tone-ok">Diterima {fmt(d.myAcknowledgedAt)}</span>}</div>
    {sheetView(d,{label:'Dari',value:d.issuerName})}
    {!d.myAcknowledgedAt&&<div className="sm-dispo__actions"><button type="button" className="btn primary" disabled={busy} onClick={()=>void accept(d.id)}>{busy?'Memproses…':'Terima Disposisi'}</button></div>}
+   {/* R5H23: setelah diterima, penerima menulis tindak lanjut di sini. */}
+   <TindakLanjutR5H23 key={`${d.id}:${d.myAcknowledgedAt??''}`} directiveId={d.id}/>
   </div>)}
 
   {canSend&&<div className="sm-dispo__form">

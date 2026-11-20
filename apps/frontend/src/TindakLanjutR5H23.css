@@ -1,0 +1,31 @@
+/* R5H23 Tindak lanjut arahan. Memakai token --da-* dari .sdl-arahan (terang & gelap). */
+.sdl-tl{margin-top:22px;padding-top:16px;border-top:1px solid var(--da-line,#e2e9f1);display:grid;gap:12px}
+.sdl-tl h3{margin:0;font-size:13px}
+.sdl-tl h4{margin:4px 0 0;font-size:12px;color:var(--da-muted,#71849c);font-weight:700}
+.sdl-tl__muted{margin:0;font-size:12px;color:var(--da-muted,#71849c)}
+.sdl-tl__editor{display:grid;gap:8px;padding:12px 14px;border:1px solid var(--da-line,#e2e9f1);border-left:3px solid var(--da-gold,#bd9255);border-radius:10px;background:var(--da-soft,#f5f7fb)}
+.sdl-tl__editor label{font-size:12px;font-weight:700}
+.sdl-tl__editor textarea{font:inherit;font-size:13.5px;line-height:1.5;color:var(--da-ink,#19304c);background:var(--da-bg,#fff);border:1px solid var(--da-line,#e2e9f1);border-radius:8px;padding:9px 11px;resize:vertical;min-height:92px}
+.sdl-tl__editor textarea:focus-visible{outline:2px solid var(--da-gold,#bd9255);outline-offset:1px}
+.sdl-tl__bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+.sdl-tl__bar small{font-size:11.5px;color:var(--da-muted,#71849c);flex:1;min-width:180px}
+.sdl-tl__btn{font:inherit;font-size:12.5px;font-weight:700;padding:7px 13px;border-radius:8px;border:1px solid var(--da-line,#e2e9f1);background:var(--da-bg,#fff);color:var(--da-ink,#19304c);cursor:pointer}
+.sdl-tl__btn.is-primary{background:var(--da-accent,#17365a);border-color:var(--da-accent,#17365a);color:#fff}
+.sdl-tl__btn:disabled{opacity:.5;cursor:default}
+.sdl-tl__files{list-style:none;margin:0;padding:0;display:grid;gap:5px}
+.sdl-tl__files li{display:flex;align-items:center;gap:9px;min-width:0;font-size:12.5px}
+.sdl-tl__files a{color:var(--da-accent,#17365a);font-weight:700;text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.sdl-tl__files a:hover{text-decoration:underline}
+.sdl-tl__files small{color:var(--da-muted,#71849c);font-size:11px;font-variant-numeric:tabular-nums;flex:none}
+.sdl-tl__files button{margin-left:auto;font:inherit;font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:6px;border:1px solid var(--da-line,#e2e9f1);background:var(--da-bg,#fff);color:var(--da-ink,#19304c);cursor:pointer}
+.sdl-tl__jenis{flex:none;width:38px;text-align:center;font-size:9.5px;font-weight:800;padding:2px 0;border-radius:4px;background:#fbe9e9;color:#9b2c2c}
+.sdl-tl__jenis.is-xlsx{background:#e5f4ea;color:#1f6b3a}.sdl-tl__jenis.is-docx{background:#e7eefb;color:#24477e}.sdl-tl__jenis.is-png,.sdl-tl__jenis.is-jpg{background:#f3eefb;color:#5b3d8a}
+.sdl-tl__others{display:grid;gap:8px}
+.sdl-tl__entry{padding:10px 12px;border:1px solid var(--da-line,#e2e9f1);border-radius:10px;display:grid;gap:6px}
+.sdl-tl__entry header{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.sdl-tl__entry header strong{font-size:13px}
+.sdl-tl__entry header small{font-size:11px;color:var(--da-muted,#71849c);font-variant-numeric:tabular-nums}
+.sdl-tl__entry p{margin:0;font-size:13px;line-height:1.5;white-space:pre-wrap}
+.sdl-tl__entry.is-empty{background:var(--da-soft,#f5f7fb)}
+.sdl-shell[data-theme="dark"] .sdl-tl__jenis{background:#3a1f22;color:#f2b8b8}
+.sdl-shell[data-theme="dark"] .sdl-tl__btn.is-primary{color:#17365a}

@@ -6,6 +6,7 @@ import './SuratKeluarR5F9.css'
 import './SuratMasukStatusR5H5.css'
 import { Pager, usePaged } from './PaginationR5H5'
 import { TtdNaskahR5H7 } from './TtdNaskahR5H7'
+import { KepadaPick, KirimInternalUrmin } from './PersuratanR5H21'
 import { useOpsiDropdown, withOpsi } from './OpsiDropdownR5H8'
 import { SearchSelect } from './SearchSelectR5H8'
 
@@ -26,7 +27,7 @@ type WorkflowDetail={status:string;version:number;canSubmit:boolean;canReview:bo
 // R5H9: 'surat_keluar' = surat keluar disetujui > 7 hari (baris register surat keluar itu sendiri).
 type ArsipSource = ''|'manual'|'disposisi'|'surat_keluar'
 type Entry = { id: string; kind: Kind; code: string; title: string; classification: 'biasa' | 'penting'; fields: Record<string, string>; workRecordId: string; version: number; createdAt: string; workflowStatus?:string; archivedAt?:string }
-type Field = { key: string; label: string; input?: 'number' | 'date' | 'select' | 'textarea' | 'multi' | 'kodearsip' | 'jenissurat' | 'nomorsurat'; choices?: string[]; placeholder?: string }
+type Field = { key: string; label: string; input?: 'number' | 'date' | 'select' | 'textarea' | 'multi' | 'kodearsip' | 'jenissurat' | 'nomorsurat' | 'kepada'; choices?: string[]; placeholder?: string }
 /** R5G10: satu baris master kode arsip (endpoint 147). */
 type KodeArsip = { code: string; name: string; depth: number }
 
@@ -116,7 +117,9 @@ const schema: Record<Kind, { title: string; singular: string; code: string; name
     // R5G13: nomor surat tidak lagi diketik. Ia dirakit backend saat draf
     // dibuat dan hanya ditampilkan di sini.
     {key:'nomorSurat',label:'Nomor Surat',input:'nomorsurat'},
-    {key:'tujuan',label:'Kepada',placeholder:'Nama tujuan surat'},
+    // R5H21 (2026-11-19): tujuan internal distandarkan per UNIT (Subbagren, Seluruh Subbag, ...) supaya bisa
+    // dikirim lewat aplikasi; lainnya tetap diketik. Nilai tersimpan tetap teks di kunci `tujuan`.
+    {key:'tujuan',label:'Kepada',input:'kepada',placeholder:'Nama tujuan surat'},
     {key:'perihal',label:'Perihal Resmi (jika berbeda)',placeholder:'Opsional, isi bila berbeda dari Hal / Tentang'},
     // Dua nilai yang sama dengan derajat surat MASUK (migrasi 034).
     {key:'sifatSurat',label:'Derajat Surat',input:'select',choices:['Biasa','Kilat']},
@@ -972,7 +975,7 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate,isKabag
   }
   const RUJUKAN_KEYS = ['rujukanArahan','rujukanSurat']
 
-  const renderField=(f:Field)=>(f.input==='multi'?<MultiPick key={f.key} field={f} value={form.fields[f.key]||''} onChange={v=>changeField(f.key,v)}/>:f.input==='kodearsip'?<KodeArsipPick key={f.key} field={f} value={form.fields[f.key]||''} onChange={v=>changeField(f.key,v)}/>:f.input==='jenissurat'?<JenisSuratPick key={f.key} field={f} value={form.fields[f.key]||''} onChange={v=>changeField(f.key,v)}/>:f.input==='nomorsurat'?<label className="sumda-field" key={f.key}><span>{f.label}</span>
+  const renderField=(f:Field)=>(f.input==='kepada'?<KepadaPick key={f.key} className="sumda-field" label={f.label} kecuali="urmin" value={form.fields[f.key]||''} onChange={v=>changeField(f.key,v)}/>:f.input==='multi'?<MultiPick key={f.key} field={f} value={form.fields[f.key]||''} onChange={v=>changeField(f.key,v)}/>:f.input==='kodearsip'?<KodeArsipPick key={f.key} field={f} value={form.fields[f.key]||''} onChange={v=>changeField(f.key,v)}/>:f.input==='jenissurat'?<JenisSuratPick key={f.key} field={f} value={form.fields[f.key]||''} onChange={v=>changeField(f.key,v)}/>:f.input==='nomorsurat'?<label className="sumda-field" key={f.key}><span>{f.label}</span>
               {/* R5G13: dibangkitkan backend saat draf dibuat, jadi ia
                   ditampilkan, bukan diminta. Dibiarkan sebagai teks statis dan
                   bukan input terkunci supaya tidak terlihat seperti kolom yang
@@ -1099,6 +1102,8 @@ export default function UrminR5D({kind,openFiles,initialID,initialCreate,isKabag
               {workflowDetail.canSubmit&&!kabagOutgoing&&<button type="button" disabled={workflowBusy||naskahPdf===0} title={naskahPdf===0?'Unggah minimal satu PDF di bagian Naskah Surat & Lampiran.':undefined} className="sumda-button sumda-button-primary" onClick={()=>void workflowAction('submit')}>Ajukan ke Kabagrenmin</button>}
               {workflowDetail.canReview&&<><button type="button" disabled={workflowBusy} className="sumda-button sumda-button-primary" onClick={()=>{if(!naskahFiles.length){showToast('Surat ini tidak memiliki naskah PDF untuk ditandatangani. Kembalikan untuk revisi.','error');return}setTtdOpen(true)}}>Tanda Tangani &amp; Setujui</button><button type="button" disabled={workflowBusy} className="sumda-button sumda-button-cancel" onClick={()=>void workflowAction('reject')}>Kembalikan untuk Revisi</button></>}
             </div>
+            {/* R5H21 langkah 4: salinan surat yang sudah disetujui ke Surat Masuk subbag. */}
+            {!kabagOutgoing&&<KirimInternalUrmin key={workflowRecord.id} registerId={workflowRecord.id} approved={workflowDetail.status==='approved'} rahasia={workflowRecord.classification==='penting'} kepada={workflowRecord.fields.tujuan}/>}
             {workflowDetail.canSubmit&&!kabagOutgoing&&naskahPdf===0&&<p className="urmin-upload-error" role="alert">Belum bisa diajukan: unggah minimal satu <b>PDF</b> di bagian <b>Naskah Surat &amp; Lampiran</b> di bawah. Berkas Pendukung tidak dihitung.</p>}
             {signedFiles.length>0&&<div className="sdl-signed-block"><h3 className="sdl-outgoing-workflow-subtitle">Naskah Bertanda Tangan</h3>
             <p className="urmin-file-hint">Ditandatangani {signedFiles[0].signer} · {readableDate(signedFiles[0].signedAt)}</p>

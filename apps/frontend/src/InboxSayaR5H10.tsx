@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { InboxDistribusi } from './InboxDistribusiR5F2'
+import { loadPersetujuanSurat } from './PersuratanR5H21'
 import './InboxSayaR5H10.css'
 
 /**
@@ -28,6 +29,7 @@ export type InboxTarget =
   | { view: 'arahan'; recordID: string }
   | { view: 'tasks'; recordID: string }
   | { view: 'surat-keluar'; recordID: string }
+  | { view: 'persetujuan-surat'; recordID: string }
 
 type Directive = { id: string; title: string; issuerName: string; createdAt: string; incomingId?: string; agendaSurat?: string; myAcknowledgedAt?: string | null; sheet?: { letterNumber?: string; subject?: string } }
 type Outgoing = { id: string; title: string; owner: string; createdAt: string; workflowStatus?: string; fields: Record<string, string> }
@@ -42,11 +44,13 @@ async function get<T>(url: string): Promise<T | null> {
 
 /** Satu sumber kebenaran untuk halaman Inbox DAN badge di header. */
 export async function loadInbox(me: { id: string; isKabagrenmin: boolean }): Promise<{ items: InboxItem[]; distributionPending: number }> {
-  const [dir, out, tasks, dist] = await Promise.all([
+  const [dir, out, tasks, dist, antar] = await Promise.all([
     get<{ items?: Directive[] }>('/api/v1/leadership/directives/inbox'),
     get<{ items?: Outgoing[] }>('/api/v1/urmin/registry/?kind=surat_keluar'),
     get<{ items?: Task[] }>('/api/v1/urmin/dispositions/?window=active'),
     get<{ pending?: number }>('/api/v1/urmin/distribution-inbox/'),
+    // R5H21: surat keluar subbag yang menunggu tanda tangan Kabagrenmin.
+    me.isKabagrenmin ? loadPersetujuanSurat() : Promise.resolve([]),
   ])
   const items: InboxItem[] = []
 
@@ -67,6 +71,10 @@ export async function loadInbox(me: { id: string; isKabagrenmin: boolean }): Pro
     } else if (!me.isKabagrenmin && s.workflowStatus === 'rejected' && s.owner === me.id) {
       items.push({ key: `sk-${s.id}`, kind: 'surat_keluar', title: s.title, sub: 'Surat keluar dikembalikan Kabagrenmin', at: s.createdAt, badge: 'Perlu revisi', tone: 'danger', open: { view: 'surat-keluar', recordID: s.id } })
     }
+  }
+
+  for (const s of antar) {
+    items.push({ key: `sa-${s.id}`, kind: 'surat_keluar', title: s.perihal, sub: `Surat keluar ${s.unitPengirimLabel} · ${s.nomor}`, at: s.submittedAt ?? s.createdAt, badge: 'Menunggu tanda tangan', tone: 'warn', open: { view: 'persetujuan-surat', recordID: s.id } })
   }
 
   for (const t of tasks?.items ?? []) {

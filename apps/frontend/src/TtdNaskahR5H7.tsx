@@ -79,9 +79,11 @@ function trimmedPng(canvas: HTMLCanvasElement): string | null {
   return out.toDataURL('image/png')
 }
 
-export function TtdNaskahR5H7({ registerId, workRecordId, version, title, files, onClose, onDone }: {
+export function TtdNaskahR5H7({ registerId, workRecordId, version, title, files, onClose, onDone, fileUrl, signUrl }: {
   registerId: string; workRecordId: string; version: number; title: string; files: NaskahFile[]
   onClose: () => void; onDone: (message: string) => void
+  /** R5H21: dipakai ulang untuk surat antar-unit. Tanpa keduanya = surat keluar Urmin. */
+  fileUrl?: (fileId: string) => string; signUrl?: string
 }) {
   const [docs, setDocs] = useState<Record<string, PDFDocumentProxy>>({})
   const [loadError, setLoadError] = useState('')
@@ -126,7 +128,7 @@ export function TtdNaskahR5H7({ registerId, workRecordId, version, title, files,
         pdfjs.GlobalWorkerOptions.workerSrc = worker.default
         const loaded: Record<string, PDFDocumentProxy> = {}
         for (const f of files) {
-          const r = await fetch(`${workURL}${encodeURIComponent(workRecordId)}/files/${encodeURIComponent(f.id)}`, { credentials: 'same-origin', cache: 'no-store' })
+          const r = await fetch(fileUrl ? fileUrl(f.id) : `${workURL}${encodeURIComponent(workRecordId)}/files/${encodeURIComponent(f.id)}`, { credentials: 'same-origin', cache: 'no-store' })
           if (!r.ok) throw Error(`Naskah ${f.name} tidak dapat diunduh (HTTP ${r.status}).`)
           const task = pdfjs.getDocument({ data: new Uint8Array(await r.arrayBuffer()) })
           tasksRef.current.push(task)
@@ -264,7 +266,7 @@ export function TtdNaskahR5H7({ registerId, workRecordId, version, title, files,
       const body = mode === 'saved'
         ? { version, note: note.trim(), useSaved: true, placements }
         : { version, note: note.trim(), useSaved: false, image: drawn, saveAsMine, placements }
-      const r = await api<{ signedFiles: number }>(`/api/v1/urmin/registry/${encodeURIComponent(registerId)}/sign-approve`, 'POST', body)
+      const r = await api<{ signedFiles: number }>(signUrl ?? `/api/v1/urmin/registry/${encodeURIComponent(registerId)}/sign-approve`, 'POST', body)
       onDone(`Surat disetujui; ${r.signedFiles} naskah ditandatangani.`)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Penandatanganan gagal.')
