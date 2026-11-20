@@ -10,6 +10,7 @@ import {
   uploadDraftFile,
 } from './attachments.js'
 import { deleteDraft, getDraft, putDraft } from './draft.js'
+import { registerTindakLanjut } from './tindak-lanjut.js'
 import {
   handOverLetter,
   HandOverRefused,
@@ -706,6 +707,9 @@ export function createDirectivesRouter({ pool, config }) {
     }
     respond(res, 200, { updated: changed })
   }))
+
+  // R5H23 (migrasi 066, Express saja): tindak lanjut penerima arahan.
+  registerTindakLanjut(router, { pool, config })
 
   return router
 }
