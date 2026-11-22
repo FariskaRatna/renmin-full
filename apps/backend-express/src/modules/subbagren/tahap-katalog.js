@@ -13,6 +13,18 @@ import { parseDateOnly } from './shared.js'
  * Isian disimpan sebagai objek JSON berisi string saja (sdl_ren_dokumen_tahap.isian).
  */
 
+/** Label jenis dokumen Subbagren (dipindah dari perencanaan.js untuk Master Data R5H25). */
+export const JENIS_LABEL = {
+  rancangan_renstra: 'Rancangan Renstra', renstra: 'Renstra', rancangan_renja: 'Rancangan Renja', renja: 'Renja', iku: 'IKU',
+  rkks_renbut: 'RKKS Renbut', rkks_pagu_indikatif: 'RKKS Pagu Indikatif', rkks_pagu_anggaran: 'RKKS Pagu Anggaran', rkks_pagu_alokasi: 'RKKS Pagu Alokasi',
+  rka_kl: 'RKA-K/L', dipa: 'DIPA', revisi_dipa: 'Revisi DIPA', pok: 'POK',
+  rendisgar: 'Rendisgar', rengiat: 'Rengiat', renaksi: 'Renaksi', perjanjian_kinerja: 'Perjanjian Kinerja',
+  lap_lra: 'LRA', lap_penggunaan_anggaran: 'Laporan Penggunaan Anggaran', lap_eka_pn: 'Laporan EKA PN',
+  lap_capaian_kinerja: 'Laporan Capaian Kinerja', lap_lkip: 'LKIP', lap_hibah: 'Laporan Hibah',
+  revisi_pok: 'Revisi POK', revisi_rpd: 'Revisi RPD',
+  tor_kak: 'TOR/KAK', rab: 'RAB', lainnya: 'Lainnya',
+}
+
 const f = (key, label, type, max, extra = {}) => ({ key, label, type, max, ...extra })
 const CARA = ['Fisik (dijilid)', 'Surat dinas', 'Elektronik']
 const APLIKASI = ['SAKTI', 'e-jakstra', 'SAKTI dan e-jakstra', 'Lainnya']
@@ -314,7 +326,20 @@ export const TANPA_SAH = new Set(['rkks_renbut', 'rkks_pagu_indikatif', 'rkks_pa
   // R5H17: laporan dan revisi anggaran DALGAR juga berakhir "Selesai".
   'lap_lra', 'lap_penggunaan_anggaran', 'lap_eka_pn', 'lap_capaian_kinerja', 'lap_lkip', 'lap_hibah', 'revisi_pok', 'revisi_rpd'])
 
-export function katalog() {
+/**
+ * R5H25: tahap yang menjadi syarat aturan lain sehingga tidak boleh dinonaktifkan di
+ * Master Data. Nilai = alasan yang ditampilkan ke Superadmin.
+ */
+export const TAHAP_WAJIB = {
+  revisi_rpd: { dipa_baru: 'Revisi RPD baru bisa ditandai Selesai setelah tahap ini diterima dengan PDF DIPA.' },
+}
+export const tahapTerkunci = (jenis, pekerjaan) => Boolean(TAHAP_WAJIB[jenis]?.[pekerjaan])
+
+/**
+ * Katalog untuk frontend. `nonaktif` (R5H25) = { jenis: [tahap…] } dari Master Data; `jenis`
+ * tetap daftar lengkap supaya tahap lama yang sudah dinonaktifkan tetap terbaca label/urutannya.
+ */
+export function katalog(nonaktif = {}) {
   const pekerjaan = {}
   for (const [key, p] of Object.entries(PEKERJAAN)) {
     const form = FORMS[p.form]
@@ -324,7 +349,7 @@ export function katalog() {
       berkas: form.berkas,
     }
   }
-  return { jenis: JENIS_TAHAP, pekerjaan, tanpaSah: [...TANPA_SAH], periode: PERIODE, sumber: SUMBER_FORM }
+  return { jenis: JENIS_TAHAP, pekerjaan, tanpaSah: [...TANPA_SAH], periode: PERIODE, sumber: SUMBER_FORM, nonaktif }
 }
 
 /**

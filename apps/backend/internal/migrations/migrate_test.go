@@ -76,6 +76,7 @@ func TestEmbeddedMigrationOrderAndSafety(t *testing.T) {
 		"sql/064_persuratan_antar_unit.sql",
 		"sql/065_tahap_sumber_surat.sql",
 		"sql/066_arahan_tindak_lanjut.sql",
+		"sql/067_master_tahap.sql",
 	}
 	items, err := load()
 	if err != nil {

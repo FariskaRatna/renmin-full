@@ -12,6 +12,7 @@ import { createKodeArsipRouter, createJenisSuratRouter } from './modules/unitwor
 import { createSuratOpsiRouter } from './modules/unitwork/surat-opsi.js'
 import { createOpsiDropdownRouter } from './modules/unitwork/opsi-dropdown.js'
 import { createMasterDataRouter } from './modules/unitwork/master-data.js'
+import { createMasterTahapRouter } from './modules/subbagren/master-tahap.js'
 import { createUrminRegisterRouter } from './modules/unitwork/urmin-register.js'
 import { createTtdRouter } from './modules/unitwork/outgoing-sign.js'
 import { createUnitWorkRouter } from './modules/unitwork/work.js'
@@ -77,6 +78,9 @@ export function createApp({ pool, config, mailer: injectedMailer }) {
   // R5G12: master data persuratan. Guard Superadmin yang sama dengan /admin
   // lainnya — ini konfigurasi, bukan pekerjaan unit. Mount terpisah supaya
   // /master/:set tidak bersaing dengan route ber-parameter di createAdminRouter.
+  // R5H25: tahap pekerjaan aktif/nonaktif. Dipasang SEBELUM master data persuratan supaya
+  // /master/tahap-pekerjaan[/:jenis] tidak ditangkap /master/:set (404 not_found).
+  v1.use('/admin', requireRoleEditor(pool, config), createMasterTahapRouter({ pool }))
   v1.use('/admin', requireRoleEditor(pool, config), createMasterDataRouter({ pool }))
 
   // Modul operasional: Superadmin justru DITOLAK di sini.

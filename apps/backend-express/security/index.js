@@ -26,6 +26,7 @@ import { verifyR4A1Usulan } from './scenarios/r4a1.js'
 import { verifyR4A2ReviewConsolidation } from './scenarios/r4a2.js'
 import { verifyR4A3Budget } from './scenarios/r4a3.js'
 import { verifyR4A3BProof } from './scenarios/r4a3b.js'
+import { verifyR5H25MasterTahap } from './scenarios/r5h25.js'
 
 /**
  * URUTAN INI ADALAH BAGIAN DARI UJINYA, sama seperti di Go.
@@ -60,6 +61,8 @@ const SCENARIOS = [
   ['11_otp_toggle_audit_and_live_session_revocation', core.otpToggleAndSessionRevocation],
   ['12_logout_and_disabled_account_rejected', core.logoutAndDisabledAccount],
   ['13_unauthorized_mutation_and_no_secret_leak', core.unauthorizedMutationNoLeak],
+  // Skenario EXPRESS SAJA (tanpa padanan Go): berawalan x, selalu setelah urutan 1:1 di atas.
+  ['x1_r5h25_master_tahap_admin_guard', verifyR5H25MasterTahap],
 ]
 
 function line(text = '') {

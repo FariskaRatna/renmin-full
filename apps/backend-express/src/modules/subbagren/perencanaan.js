@@ -9,7 +9,8 @@ import { BODY_LIMITS, rawBody } from '../../http/payload.js'
 import { buildXlsx } from '../../http/xlsx.js'
 import { HttpError, PERMIT_SQL, audit, body, handle, id, text, version } from './progar.js'
 import { parseDateOnly, parseGoInt, respond } from './shared.js'
-import { JENIS_TAHAP, PEKERJAAN, TANPA_SAH, bisaSumber, cleanIsian, cleanPeriode, katalog, slotOf } from './tahap-katalog.js'
+import { JENIS_LABEL, JENIS_TAHAP, PEKERJAAN, TANPA_SAH, bisaSumber, cleanIsian, cleanPeriode, katalog, slotOf } from './tahap-katalog.js'
+import { tahapNonaktif, tolakNonaktif } from './master-tahap.js'
 import { zipNames } from './myinterest-xlsx.js'
 import { MAX_BUTIR_REVISI, REVISI_JENIS, RINGKASAN_JENIS, cekTotalRpd, cleanRpd, hitungRingkasan, lockPosAktif, rpdMap, tahapPerluCek, terapkanRevisi, verifiedSum } from './dalgar.js'
 
@@ -28,8 +29,9 @@ import { MAX_BUTIR_REVISI, REVISI_JENIS, RINGKASAN_JENIS, cekTotalRpd, cleanRpd,
  *   GET    /dokumen/:id/berkas         unduh
  *   POST   /dokumen/:id/review         {keputusan:"disahkan"|"ditolak",catatan,version}
  * Tahap Pekerjaan (R5H16, migrasi 053):
- *   GET    /tahap-katalog                          jenis -> daftar pekerjaan, field & slot berkas
- *   POST   /dokumen/:id/tahap                      {pekerjaan,isian}
+ *   GET    /tahap-katalog                          jenis -> daftar pekerjaan, field & slot berkas;
+ *          R5H25: + `nonaktif: {jenis:[tahap]}` dari Master Data Superadmin (master-tahap.js)
+ *   POST   /dokumen/:id/tahap                      {pekerjaan,isian}; R5H25: tahap nonaktif -> 409 tahap_nonaktif
  *   PUT    /dokumen/:id/tahap/:tid                 {isian,version}
  *   DELETE /dokumen/:id/tahap/:tid
  *   POST   /dokumen/:id/tahap/:tid/lampiran/:slot  multipart `file` PDF <= 20 MB, MENAMBAH (maks 10 per slot; migrasi 055)
@@ -83,16 +85,7 @@ import { MAX_BUTIR_REVISI, REVISI_JENIS, RINGKASAN_JENIS, cekTotalRpd, cleanRpd,
  * dikirim sebagai string desimal ("12.5"), dua angka di belakang koma.
  */
 
-const JENIS_LABEL = {
-  rancangan_renstra: 'Rancangan Renstra', renstra: 'Renstra', rancangan_renja: 'Rancangan Renja', renja: 'Renja', iku: 'IKU',
-  rkks_renbut: 'RKKS Renbut', rkks_pagu_indikatif: 'RKKS Pagu Indikatif', rkks_pagu_anggaran: 'RKKS Pagu Anggaran', rkks_pagu_alokasi: 'RKKS Pagu Alokasi',
-  rka_kl: 'RKA-K/L', dipa: 'DIPA', revisi_dipa: 'Revisi DIPA', pok: 'POK',
-  rendisgar: 'Rendisgar', rengiat: 'Rengiat', renaksi: 'Renaksi', perjanjian_kinerja: 'Perjanjian Kinerja',
-  lap_lra: 'LRA', lap_penggunaan_anggaran: 'Laporan Penggunaan Anggaran', lap_eka_pn: 'Laporan EKA PN',
-  lap_capaian_kinerja: 'Laporan Capaian Kinerja', lap_lkip: 'LKIP', lap_hibah: 'Laporan Hibah',
-  revisi_pok: 'Revisi POK', revisi_rpd: 'Revisi RPD',
-  tor_kak: 'TOR/KAK', rab: 'RAB', lainnya: 'Lainnya',
-}
+// JENIS_LABEL dipindah ke tahap-katalog.js (R5H25: dipakai juga Master Data Superadmin).
 const JENIS = Object.keys(JENIS_LABEL)
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const DEC_RE = /^(0|[1-9][0-9]{0,15})(\.[0-9]{1,2})?$/
@@ -145,7 +138,7 @@ export function createPerencanaanRouter({ pool, config }) {
 
   router.get('/tahap-katalog', handle(async (req, res) => {
     await need(req, 'subbagren.progar.read')
-    respond(res, 200, katalog())
+    respond(res, 200, katalog(await tahapNonaktif(pool)))
   }))
 
   // ================= Dokumen Perencanaan =================
@@ -458,6 +451,7 @@ export function createPerencanaanRouter({ pool, config }) {
     const d = r.rows[0]
     if (!(JENIS_TAHAP[d.jenis] ?? []).includes(pekerjaan)) throw new HttpError(400, 'pekerjaan_tidak_sesuai')
     if (d.final_at !== null || !(d.status === 'draft' || (d.status === 'disahkan' && !d.digantikan))) throw new HttpError(409, 'dokumen_terkunci')
+    return d
   }
   async function bumpDokumen(c, did) {
     await c.query('UPDATE sdl_ren_dokumen SET version=version+1,updated_at=now() WHERE id=$1::uuid', [did])
@@ -776,7 +770,10 @@ export function createPerencanaanRouter({ pool, config }) {
     const isian = cleanIsian(v.pekerjaan, v.isian)
     if (!isian) throw new HttpError(400, 'invalid_input')
     const row = await withTransaction(pool, async (c) => {
-      await lockForTahap(c, did, v.pekerjaan)
+      const d = await lockForTahap(c, did, v.pekerjaan)
+      // R5H25: tahap yang dinonaktifkan Superadmin tidak bisa DITAMBAHKAN; tahap lama
+      // tetap bisa diubah/dihapus/dilampiri (pemeriksaan sengaja di luar lockForTahap).
+      await tolakNonaktif(c, d.jenis, v.pekerjaan)
       const sumber = await cekSumber(c, v.pekerjaan, v.sumber)
       const n = await c.query('SELECT count(*)::int AS n FROM sdl_ren_dokumen_tahap WHERE dokumen_id=$1::uuid', [did])
       if (n.rows[0].n >= 50) throw new HttpError(409, 'batas_tahap')
