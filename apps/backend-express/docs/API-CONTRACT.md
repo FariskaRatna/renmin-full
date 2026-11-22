@@ -1620,3 +1620,29 @@ tanpa backfill). Rancangan `docs/R5H14-PAGU-DASAR-DIPA.md`; uji
 - `POST /pagu/:id/review` dengan `disetujui` memeriksa ulang aturan yang sama
   (DIPA bisa direvisi di antara pencatatan dan persetujuan).
 - Objek pagu di `GET /` bertambah `dokumen:{id,jenis,judul,nomor,digantikan}|null`.
+
+## R5H25 — Master Data tahap pekerjaan aktif/nonaktif (2026-11-22, EXPRESS SAJA)
+
+Migrasi `067_master_tahap.sql` (`sdl_ren_tahap_nonaktif`, `sdl_ren_tahap_master_versi`);
+rancangan `docs/R5H25-MASTER-DATA-TAHAP-PEKERJAAN.md`; uji `verify/r5h25-master-tahap.js`
+dan skenario keamanan `x1_r5h25_master_tahap_admin_guard`. `RE` = AuthorizeRoleEditor
+(Superadmin + `identity.roles.manage` + CSRF non-GET + bukan `must_change_password`);
+`R`/`M` = `subbagren.progar.read`/`.manage` di bawah guard operasional.
+
+| Method | Path | Hak | Catatan |
+|---|---|---|---|
+| GET | `/api/v1/admin/master/tahap-pekerjaan` | RE | `{version,jenis:[{key,label,kelompok:"progar"\|"dalgar",tahap:[{key,label,aktif,terkunci,alasanKunci?}]}]}` |
+| PUT | `/api/v1/admin/master/tahap-pekerjaan/:jenis` | RE | `{aktif:{<tahap>:bool},reason,version}` → `{version,changed}`. 400 `invalid_request` (field asing/bukan JSON), 400 `invalid_input` (jenis/tahap tidak dikenal, nilai bukan boolean, alasan < 8 / > 500); 409 `tahap_terkunci` / `minimal_satu_tahap` / `version_conflict`. Tanpa perubahan nyata: 200 `changed:0`, versi & audit tidak berubah. Audit `master.tahap.update` |
+| GET | `/api/v1/subbagren/perencanaan/tahap-katalog` | R | Endpoint R5H16; **aditif**: `nonaktif:{<jenis>:[<tahap>]}`. `jenis` tetap daftar lengkap |
+| POST | `/api/v1/subbagren/perencanaan/dokumen/:id/tahap` | M | Endpoint R5H16; tahap nonaktif → 409 `tahap_nonaktif`. PUT/DELETE/lampiran/cek tahap lama tidak terpengaruh |
+
+Didaftarkan **sebelum** router `/master/:set` (R5G12) di `app.js` supaya tidak tertangkap
+sebagai himpunan tak dikenal. Path berada di bawah pola Caddy `/api/v1/admin/master/*`
+(R5H8), jadi tidak perlu entri `SDL_EXPRESS_PATHS` baru.
+
+**Rollback.** Bila `/api/v1/admin/master/*` kembali ke Go: guard Go tetap menjawab
+401/403, Superadmin mendapat 404 `not_found` (himpunan `{set}` tak dikenal), dan tab
+Tahap Pekerjaan menampilkan galat muat. Baris nonaktif yang tersimpan tetap ditegakkan
+Express selama `/api/v1/subbagren/*` di Express. Bila `/api/v1/subbagren/*` kembali ke Go,
+seluruh PROGAR/DALGAR memang sudah tidak tersedia di Go; tabel 067 diabaikan. Skema tidak
+perlu dibalik.

@@ -1,6 +1,6 @@
 # R5H25 — Master Data: tahap pekerjaan aktif/nonaktif
 
-Status: **RANCANGAN + RENCANA (2026-11-22), menunggu persetujuan K1–K11; belum ada kode.** Khusus Express. Migrasi **067** (R5H15 → 068).
+Status: **DIBANGUN lokal (2026-11-22), belum di-commit.** K1–K11 disetujui pemilik (berurutan per langkah). Khusus Express. Migrasi **067** (R5H15 → 068).
 
 ## Kebutuhan (kata pemilik)
 
@@ -74,11 +74,11 @@ bentuk (lihat di bawah).
 
 | Metode | Path | Guard | Isi |
 |---|---|---|---|
-| GET | `/api/v1/admin/master-data/tahap` | AuthorizeRoleEditor | `{ version, jenis: [{ key, label, kelompok: 'progar'\|'dalgar', tahap: [{ key, label, aktif, terkunci, alasanKunci? }] }] }` |
-| PUT | `/api/v1/admin/master-data/tahap/:jenis` | AuthorizeRoleEditor + CSRF | `{ aktif: { <tahap>: boolean, … }, reason, version }` → `200 { version }`. Strict (field asing 400) |
+| GET | `/api/v1/admin/master/tahap-pekerjaan` | AuthorizeRoleEditor | `{ version, jenis: [{ key, label, kelompok: 'progar'\|'dalgar', tahap: [{ key, label, aktif, terkunci, alasanKunci? }] }] }` |
+| PUT | `/api/v1/admin/master/tahap-pekerjaan/:jenis` | AuthorizeRoleEditor + CSRF | `{ aktif: { <tahap>: boolean, … }, reason, version }` → `200 { version, changed }`. Strict (field asing `400 invalid_request`) |
 | GET | `/api/v1/subbagren/perencanaan/tahap-katalog` (sudah ada) | operasional | **Tambahan aditif**: field baru `nonaktif: { <jenis>: [<tahap>…] }`. `jenis` tetap berisi daftar lengkap supaya label/urutan tahap lama tetap terbaca |
 
-Kode galat PUT: `400 invalid_input` (pasangan tidak dikenal, alasan kurang/lebih), `409 tahap_terkunci`,
+Kode galat PUT: `400 invalid_request` (field asing/bukan JSON), `400 invalid_input` (pasangan tidak dikenal, nilai bukan boolean, alasan kurang/lebih), `409 tahap_terkunci`,
 `409 minimal_satu_tahap`, `409 version_conflict`.
 
 Penegakan di server (bukan hanya UI): `POST /dokumen/:id/tahap` menolak tahap nonaktif dengan
@@ -115,7 +115,7 @@ INSERT INTO sdl_ren_tahap_master_versi(id) VALUES (1);
 - **Bukan Engine A/B**. Ini endpoint identitas/admin di bawah guard tingkat router AuthorizeRoleEditor, pola
   `modules/roles`. Tidak ada permission baru dan tidak ada grant berskop.
 - Superadmin tetap **ditolak** di semua endpoint `/api/v1/subbagren/*` (tidak berubah).
-- Akun operasional (termasuk Kasubbagren) → `403` di `/api/v1/admin/master-data/*` (perilaku guard yang ada).
+- Akun operasional (termasuk Kasubbagren) → `403` di `/api/v1/admin/master/tahap-pekerjaan*` (perilaku guard yang ada).
 
 ## Frontend
 
@@ -143,7 +143,7 @@ INSERT INTO sdl_ren_tahap_master_versi(id) VALUES (1);
 
 Skenario keamanan (tambahkan ke `scripts/security-test-express.sh`):
 
-- Operator/Kasubbagren → GET/PUT master-data **403**. Anonim → 401.
+- Operator/Kasubbagren → GET/PUT Master Data tahap **403**. Anonim → 401.
 - Superadmin PUT tanpa CSRF → 403. Superadmin `must_change_password` → 403.
 - Superadmin tetap **403** di `/api/v1/subbagren/perencanaan/*` (regresi pemisahan).
 
@@ -310,5 +310,17 @@ berubah**, tidak perlu rekam ulang.
 | K10 | `SDL_DEV_SUPERADMIN_WORKSPACE` di produksi | Tidak memengaruhi R5H25 (`PERMIT_SQL` tetap menolak Superadmin), tetapi klaim pemisahan penuh hanya benar bila flag itu mati. Keputusan terpisah, sudah terbuka sejak 2026-11-04 |
 | K11 | Skenario Express-only di suite keamanan 1:1 | Tambahkan (`x1_…`); angka "21/21" di CLAUDE.md diperbarui oleh pemilik |
 
-Dokumen rilis di atas memakai `/api/v1/admin/master-data/*` dan `400 invalid_input`. Bila K2 dan K6
-disetujui, kedua hal itu diperbarui saat implementasi.
+K2 dan K6 disetujui; bagian Endpoint di atas sudah memakai path dan kode galat final.
+
+## Progres implementasi (2026-11-22)
+
+| Langkah | Hasil |
+|---|---|
+| 1. Migrasi | `067_master_tahap.sql` + manifes Go/Express; `go test ./...` lulus; diterapkan lokal (1 baru, 66 dilewati). R5H15 → 068 |
+| 2. Backend | `modules/subbagren/master-tahap.js` (GET/PUT, `tahapNonaktif`, `tolakNonaktif`), mount sebelum `/master/:set` di `app.js`; `tahap-katalog.js` (`JENIS_LABEL` dipindah ke sini, `TAHAP_WAJIB`, `katalog(nonaktif)`); `perencanaan.js` (`lockForTahap` mengembalikan dokumen, POST tahap memanggil `tolakNonaktif`). `verify/r5h25-master-tahap.js` LULUS; regresi `r5h13-flow`, `r5h21-flow` LULUS |
+| 3. Frontend | `MasterDataTahapR5H25.tsx/.css` (tab "Subbagren (Tahap Pekerjaan)" di `MasterDataR5G12.tsx`); `DokumenTahapR5H16.tsx` (pilihan tahap baru tanpa yang nonaktif, helper `tahapNonaktif`); `DokumenR5H13.tsx` (label "nonaktif di Master Data", galat `tahap_nonaktif`, teks bantuan PDF sah). Diuji di Chrome 1440 terang/gelap + 390 |
+| 4. Keamanan & docs | Skenario `x1_r5h25_master_tahap_admin_guard` (`security/scenarios/r5h25.js`); `API-CONTRACT.md` bagian R5H25; `MIGRATION-PLAN.md` |
+
+Deploy: migrasi 067 (centang *migrate*), rebuild `api` (manifes) + `api-express` + `frontend`.
+Tidak ada perubahan Caddy (path di bawah `/api/v1/admin/master/*`). Pastikan pola R5H8
+`/api/v1/admin/master/*` memang sudah ada di `SDL_EXPRESS_PATHS` produksi (`scripts/server-check.sh`).
