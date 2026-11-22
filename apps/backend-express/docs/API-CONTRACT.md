@@ -1632,7 +1632,7 @@ dan skenario keamanan `x1_r5h25_master_tahap_admin_guard`. `RE` = AuthorizeRoleE
 | Method | Path | Hak | Catatan |
 |---|---|---|---|
 | GET | `/api/v1/admin/master/tahap-pekerjaan` | RE | `{version,jenis:[{key,label,kelompok:"progar"\|"dalgar",tahap:[{key,label,aktif,terkunci,alasanKunci?}]}]}` |
-| PUT | `/api/v1/admin/master/tahap-pekerjaan/:jenis` | RE | `{aktif:{<tahap>:bool},reason,version}` → `{version,changed}`. 400 `invalid_request` (field asing/bukan JSON), 400 `invalid_input` (jenis/tahap tidak dikenal, nilai bukan boolean, alasan < 8 / > 500); 409 `tahap_terkunci` / `minimal_satu_tahap` / `version_conflict`. Tanpa perubahan nyata: 200 `changed:0`, versi & audit tidak berubah. Audit `master.tahap.update` |
+| PUT | `/api/v1/admin/master/tahap-pekerjaan/:jenis` | RE | `{aktif:{<tahap>:bool},reason,version}` → `{version,changed}`. 400 `invalid_request` (field asing/bukan JSON), 400 `invalid_input` (jenis/tahap tidak dikenal, nilai bukan boolean, alasan < 8 / > 500 atau berisi karakter kendali/surrogate tunggal); 409 `tahap_terkunci` / `minimal_satu_tahap` / `version_conflict`. Tanpa perubahan nyata: 200 `changed:0`, versi & audit tidak berubah. Audit `master.tahap.update` |
 | GET | `/api/v1/subbagren/perencanaan/tahap-katalog` | R | Endpoint R5H16; **aditif**: `nonaktif:{<jenis>:[<tahap>]}`. `jenis` tetap daftar lengkap |
 | POST | `/api/v1/subbagren/perencanaan/dokumen/:id/tahap` | M | Endpoint R5H16; tahap nonaktif → 409 `tahap_nonaktif`. PUT/DELETE/lampiran/cek tahap lama tidak terpengaruh |
 
@@ -1641,7 +1641,7 @@ sebagai himpunan tak dikenal. Path berada di bawah pola Caddy `/api/v1/admin/mas
 (R5H8), jadi tidak perlu entri `SDL_EXPRESS_PATHS` baru.
 
 **Rollback.** Bila `/api/v1/admin/master/*` kembali ke Go: guard Go tetap menjawab
-401/403, Superadmin mendapat 404 `not_found` (himpunan `{set}` tak dikenal), dan tab
+401/403, Superadmin mendapat GET 404 `not_found` (himpunan `{set}` tak dikenal; PUT kemungkinan 405 dari chi), dan tab
 Tahap Pekerjaan menampilkan galat muat. Baris nonaktif yang tersimpan tetap ditegakkan
 Express selama `/api/v1/subbagren/*` di Express. Bila `/api/v1/subbagren/*` kembali ke Go,
 seluruh PROGAR/DALGAR memang sudah tidak tersedia di Go; tabel 067 diabaikan. Skema tidak

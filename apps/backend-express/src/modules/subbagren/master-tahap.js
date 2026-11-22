@@ -10,7 +10,7 @@ import { JENIS_LABEL, JENIS_TAHAP, PEKERJAAN, TAHAP_WAJIB, tahapTerkunci } from 
  * R5H25 (migrasi 067): Master Data tahap pekerjaan aktif/nonaktif.
  * docs/R5H25-MASTER-DATA-TAHAP-PEKERJAAN.md. EXPRESS SAJA.
  *
- * Dipasang di /api/v1/admin di belakang AuthorizeRoleEditor (Superadmin +
+ * Dipasang di /api/v1/admin/master/tahap-pekerjaan di belakang AuthorizeRoleEditor (Superadmin +
  * identity.roles.manage + CSRF), sama dengan master data persuratan R5G12/R5H8.
  * Superadmin hanya melihat katalog (nama jenis/tahap + saklar), tidak pernah
  * dokumen atau angka anggaran.
@@ -24,12 +24,12 @@ import { JENIS_LABEL, JENIS_TAHAP, PEKERJAAN, TAHAP_WAJIB, tahapTerkunci } from 
  * (field `nonaktif`), dan POST tahap baru ditolak 409 tahap_nonaktif.
  */
 
-const PATH = '/master/tahap-pekerjaan'
+// eslint-disable-next-line no-control-regex
+const KENDALI = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/
 const sahPasangan = (jenis, pekerjaan) => Boolean(JENIS_TAHAP[jenis]?.includes(pekerjaan))
 
-/** Pasangan nonaktif yang berlaku: { jenis: [tahap…] } (urut sesuai katalog). */
-export async function tahapNonaktif(runner) {
-  const { rows } = await runner.query('SELECT jenis,pekerjaan FROM sdl_ren_tahap_nonaktif')
+/** Baris tabel -> pasangan nonaktif yang berlaku { jenis: [tahap…] }; yatim & terkunci dibuang. */
+function saringNonaktif(rows) {
   const set = new Set(rows.filter((r) => sahPasangan(r.jenis, r.pekerjaan) && !tahapTerkunci(r.jenis, r.pekerjaan)).map((r) => `${r.jenis}\u0000${r.pekerjaan}`))
   const out = {}
   for (const [jenis, list] of Object.entries(JENIS_TAHAP)) {
@@ -37,6 +37,11 @@ export async function tahapNonaktif(runner) {
     if (off.length) out[jenis] = off
   }
   return out
+}
+
+/** Pasangan nonaktif yang berlaku: { jenis: [tahap…] } (urut sesuai katalog). */
+export async function tahapNonaktif(runner) {
+  return saringNonaktif((await runner.query('SELECT jenis,pekerjaan FROM sdl_ren_tahap_nonaktif')).rows)
 }
 
 /**
@@ -65,11 +70,13 @@ export function createMasterTahapRouter({ pool }) {
     }
   }
 
-  router.get(PATH, handle(async (_req, res) => {
-    const [versi, nonaktif] = await Promise.all([
-      pool.query('SELECT version FROM sdl_ren_tahap_master_versi WHERE id=1'),
-      tahapNonaktif(pool),
-    ])
+  router.get('/', handle(async (_req, res) => {
+    // Versi dan daftar dibaca dalam SATU pernyataan (satu snapshot) supaya versi yang dikirim
+    // ke UI selalu cocok dengan saklar yang ditampilkan.
+    const snap = (await pool.query(
+      `SELECT v.version, COALESCE(json_agg(json_build_object('jenis',n.jenis,'pekerjaan',n.pekerjaan)) FILTER (WHERE n.jenis IS NOT NULL),'[]') AS rows
+         FROM sdl_ren_tahap_master_versi v LEFT JOIN sdl_ren_tahap_nonaktif n ON TRUE WHERE v.id=1 GROUP BY v.version`)).rows[0]
+    const nonaktif = saringNonaktif(snap?.rows ?? [])
     const jenis = Object.entries(JENIS_TAHAP).map(([key, list]) => ({
       key, label: JENIS_LABEL[key] ?? key, kelompok: tahapPerluCek(key) ? 'dalgar' : 'progar',
       tahap: list.map((p) => {
@@ -77,10 +84,10 @@ export function createMasterTahapRouter({ pool }) {
         return { key: p, label: PEKERJAAN[p].label, aktif: !(nonaktif[key] ?? []).includes(p), terkunci: Boolean(alasan), ...(alasan ? { alasanKunci: alasan } : {}) }
       }),
     }))
-    reply(res, 200, { version: versi.rows[0]?.version ?? 0, jenis })
+    reply(res, 200, { version: snap?.version ?? 0, jenis })
   }))
 
-  router.put(`${PATH}/:jenis`, json, handle(async (req, res) => {
+  router.put('/:jenis', json, handle(async (req, res) => {
     const payload = parsePayload(req, ['aktif', 'reason', 'version'])
     if (!payload.ok) throw new HttpError(400, 'invalid_request')
     const { aktif, reason, version } = payload.value
@@ -90,7 +97,9 @@ export function createMasterTahapRouter({ pool }) {
     const ubah = Object.entries(aktif)
     if (!ubah.length || ubah.some(([p, on]) => !list.includes(p) || typeof on !== 'boolean')) throw new HttpError(400, 'invalid_input')
     const alasan = typeof reason === 'string' ? reason.trim() : ''
-    if (alasan.length < 8 || [...alasan].length > 500) throw new HttpError(400, 'invalid_input')
+    // Karakter kendali (selain tab/baris baru) dan surrogate tunggal ditolak di sini: JSONB
+    // Postgres menolak \u0000/surrogate sehingga tanpa ini klien menerima 500, bukan 400.
+    if (alasan.length < 8 || [...alasan].length > 500 || KENDALI.test(alasan) || !alasan.isWellFormed()) throw new HttpError(400, 'invalid_input')
     if (!Number.isInteger(version) || version < 0) throw new HttpError(400, 'invalid_input')
 
     const out = await withTransaction(pool, async (c) => {

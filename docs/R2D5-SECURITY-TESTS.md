@@ -5,10 +5,12 @@
 | Suite | Menguji | Perintah | Status |
 |---|---|---|---|
 | Go | `apps/backend` (melayani produksi hari ini) | `bash ./scripts/security-test-r2d5.sh` | 21 subtest |
-| Express | `apps/backend-express` (akan menggantikannya) | `bash ./scripts/security-test-express.sh` | **21/21 LULUS, 2026-11-01** |
+| Express | `apps/backend-express` (akan menggantikannya) | `bash ./scripts/security-test-express.sh` | **22/22 LULUS, 2026-11-22** (21 skenario 1:1 + `x1_r5h25`) |
 
 Suite Express adalah port satu-lawan-satu dari yang Go, dengan nama skenario
-yang identik supaya kedua laporan bisa ditaruh berdampingan. Ia ada karena
+yang identik supaya kedua laporan bisa ditaruh berdampingan. Skenario berawalan
+`x` (mulai `x1_r5h25_master_tahap_admin_guard`, 2026-11-22) menguji fitur yang
+HANYA ada di Express, tidak punya padanan Go, dan selalu dijalankan setelah urutan 1:1. Ia ada karena
 satu alasan yang mudah terlewat: **begitu Caddy mengalihkan satu prefix ke
 Express, suite Go tetap hijau sambil berhenti menjaga backend yang sebenarnya
 melayani.** Ia tidak akan merah — ia hanya berhenti relevan.

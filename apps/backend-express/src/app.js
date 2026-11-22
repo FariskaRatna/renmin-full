@@ -78,9 +78,10 @@ export function createApp({ pool, config, mailer: injectedMailer }) {
   // R5G12: master data persuratan. Guard Superadmin yang sama dengan /admin
   // lainnya — ini konfigurasi, bukan pekerjaan unit. Mount terpisah supaya
   // /master/:set tidak bersaing dengan route ber-parameter di createAdminRouter.
-  // R5H25: tahap pekerjaan aktif/nonaktif. Dipasang SEBELUM master data persuratan supaya
-  // /master/tahap-pekerjaan[/:jenis] tidak ditangkap /master/:set (404 not_found).
-  v1.use('/admin', requireRoleEditor(pool, config), createMasterTahapRouter({ pool }))
+  // R5H25: tahap pekerjaan aktif/nonaktif. Dipasang di path-nya sendiri dan SEBELUM master data
+  // persuratan supaya /master/tahap-pekerjaan[/:jenis] tidak ditangkap /master/:set (404), dan
+  // supaya request /admin lainnya tidak menjalankan guard tambahan.
+  v1.use('/admin/master/tahap-pekerjaan', requireRoleEditor(pool, config), createMasterTahapRouter({ pool }))
   v1.use('/admin', requireRoleEditor(pool, config), createMasterDataRouter({ pool }))
 
   // Modul operasional: Superadmin justru DITOLAK di sini.

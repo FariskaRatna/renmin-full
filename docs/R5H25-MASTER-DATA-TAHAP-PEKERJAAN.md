@@ -1,6 +1,6 @@
 # R5H25 — Master Data: tahap pekerjaan aktif/nonaktif
 
-Status: **DIBANGUN lokal (2026-11-22), belum di-commit.** K1–K11 disetujui pemilik (berurutan per langkah). Khusus Express. Migrasi **067** (R5H15 → 068).
+Status: **SELESAI (2026-11-22), di-commit** (`671ec04`, `7863ee5`, `6e20609` + perbaikan review). K1–K11 disetujui pemilik. Menunggu deploy. Khusus Express. Migrasi **067** (R5H15 → 068).
 
 ## Kebutuhan (kata pemilik)
 
@@ -78,7 +78,7 @@ bentuk (lihat di bawah).
 | PUT | `/api/v1/admin/master/tahap-pekerjaan/:jenis` | AuthorizeRoleEditor + CSRF | `{ aktif: { <tahap>: boolean, … }, reason, version }` → `200 { version, changed }`. Strict (field asing `400 invalid_request`) |
 | GET | `/api/v1/subbagren/perencanaan/tahap-katalog` (sudah ada) | operasional | **Tambahan aditif**: field baru `nonaktif: { <jenis>: [<tahap>…] }`. `jenis` tetap berisi daftar lengkap supaya label/urutan tahap lama tetap terbaca |
 
-Kode galat PUT: `400 invalid_request` (field asing/bukan JSON), `400 invalid_input` (pasangan tidak dikenal, nilai bukan boolean, alasan kurang/lebih), `409 tahap_terkunci`,
+Kode galat PUT: `400 invalid_request` (field asing/bukan JSON), `400 invalid_input` (pasangan tidak dikenal, nilai bukan boolean, alasan kurang/lebih atau berisi karakter kendali/surrogate tunggal), `409 tahap_terkunci`,
 `409 minimal_satu_tahap`, `409 version_conflict`.
 
 Penegakan di server (bukan hanya UI): `POST /dokumen/:id/tahap` menolak tahap nonaktif dengan
@@ -163,7 +163,7 @@ Gerbang: `go test` (manifes migrasi), suite keamanan Go + Express, `npm run buil
 ## Rencana Implementasi
 
 > Disusun 2026-11-22 dari kode di `main` (6db831d) oleh subagen `planner`, diperiksa ulang. Belum ada kode.
-> Status: **MENUNGGU PERSETUJUAN** keputusan K1–K11 di §9.
+> Status: K1–K11 **disetujui** pemilik 2026-11-22; dikerjakan (lihat Progres implementasi).
 
 ### 1. Backend: Express saja
 
@@ -232,11 +232,11 @@ Gerbang: `go test` (manifes migrasi), suite keamanan Go + Express, `npm run buil
 
 **Express**
 - `src/modules/subbagren/master-tahap.js` (baru): `createMasterTahapRouter({ pool })`.
-  - `GET /tahap`: `kelompok` dari `tahapPerluCek` (`dalgar.js:17-23`).
-  - `PUT /tahap/:jenis`: `parsePayload` strict, `reason` 8–500.
+  - `GET /master/tahap-pekerjaan`: `kelompok` dari `tahapPerluCek` (`dalgar.js:17-23`).
+  - `PUT /master/tahap-pekerjaan/:jenis`: `parsePayload` strict, `reason` 8–500 tanpa karakter kendali/surrogate tunggal.
   - Transaksi PUT: versi `FOR UPDATE` → validasi `tahap_terkunci` / `minimal_satu_tahap` → DELETE/INSERT baris
     nonaktif jenis itu → naikkan versi → audit `master.tahap.update` (`subject_type='ren.tahap'`, metadata
-    `versionBefore`, `nonaktifBefore/After`, `changes`, `reason`; pola `roles/index.js:85-91`).
+    `versionBefore`, `nonaktifBefore/After`, `dinyalakan`, `dimatikan`, `reason`; pola `roles/index.js:85-91`).
   - Ekspor `tahapNonaktif(runner)` dan `tolakNonaktif(c, jenis, pekerjaan)`.
 - `tahap-katalog.js`: `TAHAP_WAJIB = { revisi_rpd: { dipa_baru: '<alasan>' } }`; `katalog(nonaktif = {})`.
   Berkas tetap murni, tanpa DB.
@@ -324,3 +324,15 @@ K2 dan K6 disetujui; bagian Endpoint di atas sudah memakai path dan kode galat f
 Deploy: migrasi 067 (centang *migrate*), rebuild `api` (manifes) + `api-express` + `frontend`.
 Tidak ada perubahan Caddy (path di bawah `/api/v1/admin/master/*`). Pastikan pola R5H8
 `/api/v1/admin/master/*` memang sudah ada di `SDL_EXPRESS_PATHS` produksi (`scripts/server-check.sh`).
+
+### Perbaikan hasil /review (2026-11-22)
+
+- Alasan yang berisi karakter kendali (selain tab/baris baru) atau surrogate tunggal kini `400 invalid_input`;
+  sebelumnya lolos validasi lalu ditolak JSONB Postgres sehingga klien menerima **500** (dibuktikan pada kode lama).
+- Skenario keamanan `x1_r5h25_master_tahap_admin_guard` diperluas: Origin asing, PUT saat `must_change_password`,
+  role superadmin nonaktif, tanpa `identity.roles.manage`, seluruh validasi PUT (termasuk `__proto__`/`constructor`
+  di path dan body, NUL, surrogate), `tahap_terkunci`, `minimal_satu_tahap`, versi basi, penegakan
+  `409 tahap_nonaktif` dengan tahap lama tetap bisa diubah/dihapus, dan isi audit. Express 22/22 LULUS.
+- Router R5H25 dipasang di path-nya sendiri (`/admin/master/tahap-pekerjaan`, route `/` dan `/:jenis`) sehingga
+  request `/admin` lain kembali menjalankan guard 2× seperti sebelum R5H25; mount lama tidak diubah.
+- GET membaca versi + daftar nonaktif dalam satu pernyataan (satu snapshot).
