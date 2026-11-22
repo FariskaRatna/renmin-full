@@ -33,4 +33,5 @@ mengunduh, tidak bisa menulis; orang luar 404. Tanpa error halaman.
 ## Temuan (perilaku lama, belum diubah)
 
 Disposisi surat yang dibuka dari **Inbox** diarahkan ke halaman Arahan, padahal daftar Arahan hanya memuat
-arahan umum — detailnya tidak terbuka. Disposisi dibuka lewat menu **Disposisi / Tugas Disposisi**.
+arahan umum — detailnya tidak terbuka. **Diperbaiki 2026-11-22:** Inbox membuka menu Disposisi/Tugas Disposisi
+dengan recordID `dispo:<id arahan>` dan `TugasDisposisiR5F3` langsung membuka lembar disposisinya.

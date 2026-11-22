@@ -6,6 +6,7 @@ import './TugasDisposisiR5F3.css'
 import { clickRow } from './ClickableRowR5H7'
 import { DisposisiSuratR5H6 } from './DisposisiSuratR5H6'
 import { SuratR3B } from './SuratR3B'
+import { DISPO_DEEPLINK } from './InboxSayaR5H10'
 
 type TaskStatus = 'pending' | 'in_progress' | 'completed'
 type ReviewStatus = 'not_ready' | 'awaiting_review' | 'approved' | 'revision_requested'
@@ -308,10 +309,19 @@ export default function TugasDisposisiR5F3({ currentUserId, initialID, workspace
   // layar kosong yang terbaca seperti "tidak ada data".
   useEffect(() => { setPage(1) }, [workspaceTab, fromDate, toDate, query, statusFilter, ownerFilter, pageSize])
   useEffect(() => {
-    if (!initialID || deepLinkHandled.current === initialID) return
+    if (!initialID || initialID.startsWith(DISPO_DEEPLINK) || deepLinkHandled.current === initialID) return
     deepLinkHandled.current = initialID
     void openDetail(initialID)
   }, [initialID, openDetail])
+  // Dari Inbox: buka lembar disposisi (id arahan) setelah daftar disposisi termuat.
+  useEffect(() => {
+    if (!initialID?.startsWith(DISPO_DEEPLINK) || deepLinkHandled.current === initialID) return
+    const d = directives.find(x => x.id === initialID.slice(DISPO_DEEPLINK.length))
+    if (!d) return
+    deepLinkHandled.current = initialID
+    void openDisposition(d)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialID, directives])
 
   async function refresh() {
     await refreshList()

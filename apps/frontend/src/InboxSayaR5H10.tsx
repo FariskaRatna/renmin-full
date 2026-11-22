@@ -24,6 +24,12 @@ import './InboxSayaR5H10.css'
  */
 
 export type InboxKind = 'disposisi' | 'arahan' | 'surat_keluar' | 'tugas'
+/**
+ * Disposisi SURAT tidak tampil di halaman Arahan (yang hanya memuat arahan umum), jadi Inbox
+ * membukanya di menu Disposisi/Tugas Disposisi. recordID berawalan ini = id arahan (directive),
+ * bukan id tugas; TugasDisposisiR5F3 membuka lembar disposisinya (2026-11-22).
+ */
+export const DISPO_DEEPLINK = 'dispo:'
 export type InboxItem = { key: string; kind: InboxKind; title: string; sub: string; at: string; badge: string; tone: 'warn' | 'danger' | 'info'; open: InboxTarget }
 export type InboxTarget =
   | { view: 'arahan'; recordID: string }
@@ -61,7 +67,7 @@ export async function loadInbox(me: { id: string; isKabagrenmin: boolean }): Pro
       key: `dir-${d.id}`, kind: isDispo ? 'disposisi' : 'arahan',
       title: isDispo ? (d.sheet?.subject || d.title) : d.title,
       sub: isDispo ? `Disposisi dari ${d.issuerName}${d.sheet?.letterNumber ? ` · ${d.sheet.letterNumber}` : ''}` : `Arahan dari ${d.issuerName}`,
-      at: d.createdAt, badge: 'Belum diterima', tone: 'warn', open: { view: 'arahan', recordID: d.id },
+      at: d.createdAt, badge: 'Belum diterima', tone: 'warn', open: isDispo ? { view: 'tasks', recordID: `${DISPO_DEEPLINK}${d.id}` } : { view: 'arahan', recordID: d.id },
     })
   }
 
