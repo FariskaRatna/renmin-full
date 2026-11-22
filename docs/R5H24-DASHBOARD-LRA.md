@@ -1,6 +1,6 @@
 # R5H24 — Dashboard Realisasi Anggaran (menu Data myinterest)
 
-Status: **DIBANGUN lokal (2026-11-20), belum di-commit.** Frontend saja; tanpa migrasi, tanpa API baru.
+Status: **SELESAI, di-commit** (`f447cb7`, lanjutan 2026-11-22 `d75d2c9`: tabel per jenis belanja + Rincian per Kegiatan). Frontend saja; tanpa migrasi, tanpa API baru. Belum dideploy.
 
 Permintaan pemilik: bentuk dashboard myinterest mengikuti `mockup/redesign/references/dashboad_ren.jpg`.
 
