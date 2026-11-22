@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { confirmDialog, showToast } from './UIFeedback'
 import { Pager, usePaged } from './PaginationR5H5'
 import './MasterDataR5G12.css'
+import MasterDataTahapR5H25 from './MasterDataTahapR5H25'
 
 /**
  * R5G12: pengelolaan master data persuratan oleh Superadmin.
@@ -24,13 +25,15 @@ import './MasterDataR5G12.css'
 type Row = { code: string; name: string }
 type SetKey = 'jenis-surat' | 'kode-arsip' | 'disposisi' | 'jalur-surat' | 'penandatangan' | 'pemberi-nomor' | 'verifikator' | 'tembusan' | 'tipe-surat'
   | 'arsip-jenis' | 'arsip-status' | 'agenda-hadir' | 'personel-status' | 'kondisi-barang' | 'sop-jenis' | 'sop-status' | 'pid-kategori' | 'pid-tingkat-akses' | 'pid-status' | 'rb-status'
-type Group = 'persuratan' | 'sumda' | 'binfung'
+type Group = 'persuratan' | 'sumda' | 'binfung' | 'subbagren'
 
 // R5H8: kelompok tampilan halaman Master Data, satu tab per kelompok.
 const GROUPS: { key: Group; label: string }[] = [
   { key: 'persuratan', label: 'Persuratan (Urmin)' },
   { key: 'sumda', label: 'Subbagsumda' },
   { key: 'binfung', label: 'Subbagbinfung' },
+  // R5H25: saklar tahap pekerjaan dokumen PROGAR/DALGAR.
+  { key: 'subbagren', label: 'Subbagren (Tahap Pekerjaan)' },
 ]
 
 /**
@@ -312,6 +315,6 @@ export default function MasterDataR5G12() {
         {GROUPS.map(g => <button key={g.key} type="button" role="tab" aria-selected={group===g.key} className={group===g.key?'is-active':''} onClick={()=>setGroup(g.key)}>{g.label}</button>)}
       </div>
     </section>
-    {SETS.filter(spec => (spec.group ?? 'persuratan') === group).map(spec => <MasterSet key={spec.key} spec={spec}/>)}
+    {group === 'subbagren' ? <MasterDataTahapR5H25/> : SETS.filter(spec => (spec.group ?? 'persuratan') === group).map(spec => <MasterSet key={spec.key} spec={spec}/>)}
   </div>
 }

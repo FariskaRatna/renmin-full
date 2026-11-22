@@ -354,3 +354,7 @@ button.sdl-kinerja__cell:focus-visible{outline:3px solid rgba(47,82,144,.35)}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .sdl-sumber,:root:not([data-theme="light"]) .sdl-sumber__modes label{border-color:#2b3c55}}
 .sdl-progar__fields .sdl-sumber__modes label{display:inline-flex;grid-template-columns:none;align-items:center;gap:6px;width:auto;padding:5px 12px;font-size:12.5px;line-height:1.2;white-space:nowrap}
 .sdl-progar__fields .sdl-sumber__modes input[type=radio]{width:14px;height:14px;min-height:0;padding:0;margin:0;border:0;box-shadow:none;flex:none;accent-color:#1d3557}
+
+/* R5H25: tahap lama yang dinonaktifkan di Master Data. */
+.sdl-progar__tag.sdl-progar__tag-off{margin-left:6px;background:transparent;border:1px dashed var(--border);color:var(--muted);font-weight:600}
+:root[data-theme=dark] .sdl-progar__tag.sdl-progar__tag-off{background:transparent;color:var(--muted)}

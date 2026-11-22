@@ -19,7 +19,11 @@ export type KField = { key: string; label: string; type: 'text' | 'textarea' | '
 export type KSlot = { slot: string; label: string; utama?: boolean; jenis?: 'office' }
 export type Katalog = { jenis: Record<string, string[]>; pekerjaan: Record<string, { label: string; form: string; fields: KField[]; berkas: KSlot[] }>; tanpaSah?: string[]; periode?: Record<string, 'bulan' | 'triwulan'>
   /** R5H22: form yang bisa menautkan sumber surat -> kunci isian yang diisi dari sumber. */
-  sumber?: Record<string, Partial<Record<'nomor' | 'tanggal' | 'dari' | 'perihal', string>>> }
+  sumber?: Record<string, Partial<Record<'nomor' | 'tanggal' | 'dari' | 'perihal', string>>>
+  /** R5H25: tahap yang dinonaktifkan Superadmin di Master Data (jenis -> pekerjaan). Tidak ditawarkan untuk tahap BARU. */
+  nonaktif?: Record<string, string[]> }
+/** R5H25: tahap ini dinonaktifkan di Master Data untuk jenis dokumen tersebut. */
+export const tahapNonaktif = (k: Katalog | null | undefined, jenis: string, pekerjaan: string) => Boolean(k?.nonaktif?.[jenis]?.includes(pekerjaan))
 export type Tahap = { id: string; pekerjaan: string; pekerjaanLabel: string; isian: Record<string, string>; version: number; createdAt: string; updatedAt: string; updatedByName: string; berkas: { id: string; slot: string; filename: string; size: number }[]
   createdBy: string; updatedBy: string; cekStatus: 'menunggu' | 'diterima' | 'dikembalikan'; cekNote: string; cekAt: string | null; cekByName: string | null; sumber?: Sumber | null }
 export type DokMeta = { id: string; jenis: string; periode?: string; judul: string; nomor: string; tanggal: string | null; keterangan: string; version: number; tahap: Tahap[] }
@@ -84,6 +88,8 @@ export function DokumenDialog({ mode, kind = 'dokumen', tahun, doc, tahapId, kat
     const list = katalog?.jenis[meta.jenis] ?? []
     return list
   }, [katalog, meta.jenis])
+  // R5H25: pilihan untuk tahap BARU tanpa yang dinonaktifkan; tahap tersimpan tetap memakai daftar lengkap.
+  const pilihan = useMemo(() => allowed.filter(k => !tahapNonaktif(katalog, meta.jenis, k)), [allowed, katalog, meta.jenis])
   const hasTahap = allowed.length > 0
   const jenisLocked = mode === 'edit' && (doc?.tahap.length ?? 0) > 0
   // Berapa kali tiap pekerjaan sudah dicatat (urutan bebas, boleh berulang -- mis. rapat
@@ -221,7 +227,7 @@ export function DokumenDialog({ mode, kind = 'dokumen', tahun, doc, tahapId, kat
               <label><span>Pekerjaan</span>
                 <select ref={b.key === blocks[blocks.length - 1].key ? lastRef : undefined} value={b.pekerjaan} disabled={Boolean(b.id)} onChange={e => choose(b.key, e.target.value)}>
                   <option value="">— Pilih pekerjaan —</option>
-                  {allowed.map(k => { const n = b.id ? 0 : timesUsed(k, b.key); return <option key={k} value={k}>{katalog!.pekerjaan[k].label}{n > 0 ? ` (sudah ${n}×)` : ''}</option> })}
+                  {(b.id ? allowed : pilihan).map(k => { const n = b.id ? 0 : timesUsed(k, b.key); return <option key={k} value={k}>{katalog!.pekerjaan[k].label}{n > 0 ? ` (sudah ${n}×)` : ''}{b.id && tahapNonaktif(katalog, meta.jenis, k) ? ' (nonaktif di Master Data)' : ''}</option> })}
                 </select></label>
               {p && katalog?.sumber?.[p.form] && <SumberPicker key={`${b.key}:${b.pekerjaan}`} value={b.sumber} onPick={(s, isi) => setBlock(b.key, x => {
                 const peta = katalog.sumber![p.form]; const isian = { ...x.isian }

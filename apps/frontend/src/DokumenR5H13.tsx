@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type React
 import { SUMBER_LABEL, type Sumber } from './SumberSuratR5H22'
 import { LampiranPreviewR5F15 } from './LampiranPreviewR5F15'
 import { FormDialog, rupiah, type Dialog } from './ProgarR5H11'
-import { DokumenDialog, cekLabel, periodeLabel, ringkasTahap, tanggalTahap, ulangKe, type Katalog, type Tahap } from './DokumenTahapR5H16'
+import { DokumenDialog, cekLabel, periodeLabel, ringkasTahap, tahapNonaktif, tanggalTahap, ulangKe, type Katalog, type Tahap } from './DokumenTahapR5H16'
 import { confirmDialog, showToast } from './UIFeedback'
 import { REVISI_ANGGARAN, RINGKASAN_JENIS, RevisiAnggaran, RingkasanRealisasi } from './DalgarR5H19'
 import './ProgarR5H11.css'
@@ -49,7 +49,8 @@ const ERRORS: Record<string, string> = {
   invalid_link: 'Program/kegiatan atau dokumen yang direvisi tidak sesuai tahun/jenisnya.',
   dokumen_not_draft: 'Dokumen ini sudah diputuskan dan tidak dapat diubah lagi.',
   version_conflict: 'Data sudah diubah (mungkin berkas baru diunggah). Muat ulang lalu coba lagi.',
-  berkas_required: 'Belum ada PDF dokumen. Untuk jenis bertahap, lampirkan "Dokumen yang sudah ditandatangani" di tahap Mengajukan pengesahan.',
+  berkas_required: 'Belum ada PDF dokumen. Unggah PDF bertanda tangan ke dokumen, atau untuk jenis bertahap lampirkan "Dokumen yang sudah ditandatangani" di tahap pengesahannya.',
+  tahap_nonaktif: 'Tahap ini dinonaktifkan Superadmin di Master Data, jadi tidak bisa ditambahkan lagi. Muat ulang halaman.',
   tahap_sudah_diterima: 'Tahap yang sudah diterima Kasubbagren tidak bisa dihapus.',
   pdf_sah_wajib_ada: 'Dokumen sudah sah: PDF bertanda tangan terakhir tidak boleh dihapus. Unggah penggantinya dulu.',
   tahap_belum_diterima: 'Masih ada tahap yang belum diterima Kasubbagren.',
@@ -592,7 +593,11 @@ function DetailDialog({ doc, cek, lampiranDok, tanpaSah, showAnggaran, onAnggara
         {doc.final && <><dt>{tanpaSah ? 'Selesai' : 'Final'}</dt><dd>{doc.finalByName}, <span className="sdl-progar__num">{tgl(doc.finalAt?.slice(0, 10) ?? null)}</span></dd></>}
         {tanpaSah ? <><dt>Pengesahan</dt><dd className="sdl-progar__muted">Tidak diperlukan — dokumen ditandai Selesai setelah {cek ? 'semua tahap diterima Kasubbagren' : 'tahap pekerjaannya lengkap'}.</dd></> : <><dt>PDF dokumen</dt><dd>{doc.berkas && <button type="button" className="sdl-progar__file" onClick={() => onPreview(`${BASE}/dokumen/${doc.id}/berkas`, doc.berkas!.filename)}>👁 {doc.berkas.filename}</button>}
           {signed.map(({ t, b }) => <button key={b.id} type="button" className="sdl-progar__file" onClick={() => onPreview(`${BASE}/dokumen/${doc.id}/tahap/${t.id}/lampiran/${b.id}`, b.filename)}>👁 {b.filename}</button>)}
-          {!doc.berkas && !signed.length && <span className="sdl-progar__muted">{katalog?.jenis[doc.jenis]?.length ? 'Belum ada — lampirkan “Dokumen yang sudah ditandatangani” di tahap Mengajukan pengesahan' : 'Belum ada'}</span>}</dd></>}
+          {!doc.berkas && !signed.length && <span className="sdl-progar__muted">{(() => {
+            // R5H25: arahkan ke tahap pengesahan yang masih aktif; bila semuanya nonaktif, unggah langsung ke dokumen.
+            const sah = (katalog?.jenis[doc.jenis] ?? []).find(p => !tahapNonaktif(katalog, doc.jenis, p) && katalog?.pekerjaan[p]?.berkas.some(s => s.slot === 'dokumen_sah'))
+            return sah ? `Belum ada — lampirkan “Dokumen yang sudah ditandatangani” di tahap ${katalog!.pekerjaan[sah].label}` : katalog?.jenis[doc.jenis]?.length ? 'Belum ada — unggah PDF bertanda tangan ke dokumen ini' : 'Belum ada'
+          })()}</span>}</dd></>}
         {doc.periode && <><dt>Periode</dt><dd>{periodeLabel(doc.periode)} {doc.tahun}</dd></>}
         {showAnggaran && <><dt>Anggaran (estimasi)</dt><dd className="sdl-progar__anggaran">
           <span>{doc.anggaran ? <strong className="sdl-progar__num">{rupiah(doc.anggaran)}</strong> : <span className="sdl-progar__muted">Belum diisi</span>}
@@ -635,7 +640,7 @@ function DetailDialog({ doc, cek, lampiranDok, tanpaSah, showAnggaran, onAnggara
               return <tr key={t.id} className="sdl-progar__row-link" onClick={e => { if (!(e.target as HTMLElement).closest('button')) setLihat(t.id) }}>
               <td className="sdl-progar__num">{no}</td>
               <td className="sdl-progar__num sdl-progar__nowrap">{tg ? tgl(tg) : <span className="sdl-progar__muted">–</span>}</td>
-              <td><button type="button" className="sdl-progar__open" onClick={() => setLihat(t.id)} title="Buka detail tahap">{t.pekerjaanLabel}</button>{u.total > 1 && <span className="sdl-progar__ke"> ke-{u.ke}</span>}</td>
+              <td><button type="button" className="sdl-progar__open" onClick={() => setLihat(t.id)} title="Buka detail tahap">{t.pekerjaanLabel}</button>{u.total > 1 && <span className="sdl-progar__ke"> ke-{u.ke}</span>}{tahapNonaktif(katalog, doc.jenis, t.pekerjaan) && <span className="sdl-progar__tag sdl-progar__tag-off" title="Tahap ini sudah tidak ditawarkan untuk dokumen baru. Data yang tercatat tetap bisa diubah.">nonaktif di Master Data</span>}</td>
               <td className="sdl-progar__ringkas">{t.sumber && <span className="sdl-progar__tag sdl-sumber-tag" title={t.sumber.label}>🔗 {SUMBER_LABEL[t.sumber.jenis]}</span>}{ringkasTahap(t, katalog) || <span className="sdl-progar__muted">–</span>}</td>
               <td className="sdl-progar__num sdl-progar__col-lamp">{t.berkas.length ? `📎 ${t.berkas.length}` : <span className="sdl-progar__muted">–</span>}</td>
               {cek && <td>{badgeCek(t)}
