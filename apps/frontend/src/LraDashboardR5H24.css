@@ -37,7 +37,7 @@
 .sdl-lrad__kpi small{font-size:11.5px;color:var(--d-muted)}
 /* Panel */
 .sdl-lrad__grid{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(300px,1fr);gap:16px;align-items:start}
-.sdl-lrad__panel{padding:18px 22px;border-radius:14px;background:var(--d-card);border:1px solid var(--d-line);display:grid;gap:12px}
+.sdl-lrad__panel{grid-template-columns:minmax(0,1fr);padding:18px 22px;border-radius:14px;background:var(--d-card);border:1px solid var(--d-line);display:grid;gap:12px}
 .sdl-lrad__panel>header{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
 .sdl-lrad__panel h3{margin:4px 0 2px;font-size:16px;font-weight:800}
 .sdl-lrad__panel header p{margin:0;font-size:12px;color:var(--d-muted)}
@@ -63,6 +63,32 @@
 .sdl-lrad__seg.is-dim{opacity:.3}
 .sdl-lrad__donut-cap{font-size:9px;font-weight:800;letter-spacing:.08em;fill:var(--d-muted)}
 .sdl-lrad__donut-val{font-size:24px;font-weight:800;fill:var(--d-ink);font-variant-numeric:tabular-nums}
+/* Komposisi: donat + tabel per jenis; tabel rincian per kegiatan */
+.sdl-lrad__komposisi{display:grid;grid-template-columns:240px minmax(0,1fr);gap:24px;align-items:center}
+.sdl-lrad__tablewrap{overflow-x:auto;min-width:0}
+.sdl-lrad__table{width:100%;border-collapse:collapse;font-size:12.5px;font-variant-numeric:tabular-nums}
+.sdl-lrad__table th,.sdl-lrad__table td{padding:9px 10px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--d-line)}
+.sdl-lrad__table th:first-child{text-align:left;white-space:normal;min-width:180px}
+.sdl-lrad__table thead th{font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--d-muted);border-bottom-width:2px}
+.sdl-lrad__table tbody th{font-weight:700}
+.sdl-lrad__table tbody tr.is-on{background:var(--d-soft)}
+.sdl-lrad__table tfoot th,.sdl-lrad__table tfoot td{font-weight:800;border-top:2px solid var(--d-line);border-bottom:0;background:var(--d-soft)}
+.sdl-lrad__table td.is-minus{color:#b4372f}
+:root[data-theme=dark] .sdl-lrad__table td.is-minus{color:#f08b82}
+.sdl-lrad__sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:8px;vertical-align:-1px;background:var(--s0)}
+.sdl-lrad__sw.is-s1{background:var(--s1)}.sdl-lrad__sw.is-s2{background:var(--s2)}.sdl-lrad__sw.is-s3{background:var(--s3)}.sdl-lrad__sw.is-s4{background:var(--s4)}
+.sdl-lrad__pct{display:inline-grid;gap:4px;justify-items:end;min-width:84px}
+.sdl-lrad__pct b{font-weight:800}
+.sdl-lrad__track.is-mini{height:5px;width:84px}
+.sdl-lrad__keg th button{all:unset;cursor:pointer;display:flex;gap:6px;align-items:baseline;font-weight:750;line-height:1.35}
+.sdl-lrad__keg th button:focus-visible{outline:2px solid var(--d-gold);outline-offset:2px;border-radius:4px}
+.sdl-lrad__caret{display:inline-block;color:var(--d-muted);transition:transform .15s;flex:none}
+tbody.is-open .sdl-lrad__caret{transform:rotate(90deg)}
+.sdl-lrad__kode{color:var(--d-gold);font-size:11.5px;font-weight:800;flex:none}
+.sdl-lrad__sub{display:none}
+tbody.is-open .sdl-lrad__sub{display:table-row}
+.sdl-lrad__sub th,.sdl-lrad__sub td{font-size:12px;color:var(--d-muted);background:var(--d-soft);padding-top:6px;padding-bottom:6px}
+.sdl-lrad__sub th{padding-left:34px;font-weight:600!important}
 .sdl-lrad__legend{list-style:none;margin:0;padding:0;width:100%;display:grid;gap:4px}
 .sdl-lrad__legend li{display:grid;grid-template-columns:12px minmax(0,1fr) auto;gap:10px;align-items:center;padding:7px 8px;border-radius:8px}
 .sdl-lrad__legend li.is-on{background:var(--d-soft)}
@@ -79,5 +105,6 @@
 .sdl-lrad__slot{display:flex;align-items:flex-end;justify-content:center}
 .sdl-lrad__slot span{display:block;width:28px;border-radius:4px 4px 0 0;background:var(--d-bar)}
 @media (max-width:1100px){.sdl-lrad__grid{grid-template-columns:1fr}.sdl-lrad__kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:900px){.sdl-lrad__komposisi{grid-template-columns:minmax(0,1fr)}}
 @media (max-width:720px){.sdl-lrad__hero{grid-template-columns:1fr;padding:22px 20px}.sdl-lrad__kpis{grid-template-columns:1fr 1fr;gap:10px}.sdl-lrad__kpi strong{font-size:21px}.sdl-lrad__panel{padding:16px}}
-@media print{.sdl-lrad__print{display:none}.sdl-lrad__hero{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+@media print{.sdl-lrad__print{display:none}.sdl-lrad__sub{display:table-row}.sdl-lrad__caret{display:none}.sdl-lrad__tablewrap{overflow:visible}.sdl-lrad__hero{-webkit-print-color-adjust:exact;print-color-adjust:exact}}

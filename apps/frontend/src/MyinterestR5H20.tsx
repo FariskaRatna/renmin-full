@@ -182,17 +182,7 @@ export default function MyinterestR5H20({ onOpenLaporan }: { onOpenLaporan?: () 
     {error && <p className="sdl-progar__error" role="alert">{error}</p>}
     {/* R5H24: tampilan dashboard mengikuti referensi pemilik (dashboad_ren.jpg). */}
     {data?.terbaru ? <LraDashboardR5H24 data={data} /> : <section className="panel sdl-progar__program"><LraChart variant="page" data={data} /></section>}
-    {t && <section className="panel sdl-progar__program" aria-label="Rincian per jenis belanja">
-      <h3 className="sdl-lra__h3">Rincian per kegiatan dan jenis belanja · s.d. {tgl(t.tanggalAkhir)}</h3>
-      <div className="table-scroll"><table className="data-table sdl-progar__table sdl-progar__register">
-        <thead><tr><th>Kegiatan</th><th>Jenis belanja</th><th className="is-num">Pagu</th><th className="is-num">Realisasi</th><th className="is-num">%</th><th className="is-num">Sisa</th></tr></thead>
-        <tbody>{t.kegiatan.flatMap(k => Object.entries(k.jenis).map(([j, v], i) => <tr key={`${k.kode}-${j}`}>
-          {i === 0 && <td rowSpan={Object.keys(k.jenis).length}><strong>{k.kode}</strong><small>{k.nama}</small></td>}
-          <td>{JENIS_LABEL[j] ?? j}</td><td className="is-num">{rupiah(v.pagu)}</td><td className="is-num">{rupiah(v.realisasi)}</td>
-          <td className="is-num">{pctText(pct(v.realisasi, v.pagu))}</td><td className="is-num">{rupiah((big(v.pagu) - big(v.realisasi)).toString())}</td></tr>))}</tbody>
-        <tfoot><tr><th colSpan={2}>Jumlah</th><th className="is-num">{rupiah(t.totalPagu)}</th><th className="is-num">{rupiah(t.totalRealisasi)}</th><th className="is-num">{pctText(pct(t.totalRealisasi, t.totalPagu))}</th><th className="is-num">{rupiah((big(t.totalPagu) - big(t.totalRealisasi)).toString())}</th></tr></tfoot>
-      </table></div>
-    </section>}
+    {/* Rincian per kegiatan & jenis belanja kini di LraDashboardR5H24 (2026-11-22). */}
     {data && data.impor.length > 0 && <section className="panel sdl-progar__program" aria-label="Riwayat impor">
       <h3 className="sdl-lra__h3">Riwayat impor TA {data.tahun}</h3>
       <div className="table-scroll"><table className="data-table sdl-progar__table sdl-progar__register">
