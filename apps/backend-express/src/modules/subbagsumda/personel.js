@@ -3,7 +3,9 @@ import { Router } from 'express'
 import { withTransaction } from '../../db.js'
 import { BODY_LIMITS, rawBody } from '../../http/payload.js'
 import { parseGoInt, respond } from '../subbagren/shared.js'
-import { GOLONGAN_PNS, HttpError, UUID_RE, body, cekPangkat, idParam, makeHandle, permit, pilihan, tanggal, teks } from './umum.js'
+import { riwayatDiklatPersonel } from './diklat.js'
+import { KOMPETENSI_60_SQL, kompetensiPersonel } from './kompetensi.js'
+import { GOLONGAN_PNS, HARI_INI, HttpError, UUID_RE, hariDari, body, cekPangkat, idParam, makeHandle, permit, pilihan, tanggal, teks } from './umum.js'
 
 /**
  * R5H27: Subbagsumda — Master Personel, Monitoring Pensiun, Dashboard.
@@ -48,11 +50,8 @@ export { GOLONGAN_PNS }
 const UKURAN_HALAMAN = new Set([5, 10, 50, 100])
 const MAKS_TINJAU = 200
 
-/** Tanggal hari ini menurut Asia/Jakarta, dihitung di Postgres. */
-export const HARI_INI = "(now() AT TIME ZONE 'Asia/Jakarta')::date"
-
-/** Ekspresi tanggal WIB dari parameter timestamptz — dipakai verify untuk uji batas zona. */
-export const hariDari = (param) => `((${param})::timestamptz AT TIME ZONE 'Asia/Jakarta')::date`
+// HARI_INI/hariDari kini tinggal di umum.js (R5H29); di-re-export supaya verify R5H27 tetap utuh.
+export { HARI_INI, hariDari }
 
 /**
  * SATU-SATUNYA rumus tahap (K6/K7): dipakai daftar, alert, dashboard, dan tinjau.
@@ -214,6 +213,9 @@ export function createSumdaPersonelRouter({ pool }) {
       ringkas: r.jenis === 'UKP' ? `Pangkat → ${r.usulan_pangkat_label}` : r.jenis === 'MUTASI' ? [r.usulan_jabatan, r.usulan_unit_kerja].filter(Boolean).join(' · ')
         : r.jenis === 'PENYESUAIAN_JABATAN' ? `Jabatan → ${r.usulan_jabatan}` : 'Kenaikan gaji berkala',
     }))
+    // R5H29 K18 (aditif, hanya di GET ini): riwayat diklat dan kompetensi personel.
+    item.riwayatDiklat = await riwayatDiklatPersonel(pool, id)
+    item.kompetensi = await kompetensiPersonel(pool, id)
     respond(res, 200, { item })
   }))
 
@@ -391,6 +393,7 @@ export function createSumdaDashboardRouter({ pool }) {
         alert: Number(tot.alert), belumDitinjau: Number(tot.belum_ditinjau), belumLengkap: Number(tot.belum_lengkap),
         enamBulan: proyeksi.reduce((s, b) => s + b.jumlah, 0),
         karierMenunggu: Number(tot.karier_menunggu), // R5H28 K14 (aditif)
+        kompetensiKedaluwarsa60: (await pool.query(KOMPETENSI_60_SQL)).rows[0].n, // R5H29 K18/K31 (aditif)
       },
       proyeksi,
       alertTerdekat,

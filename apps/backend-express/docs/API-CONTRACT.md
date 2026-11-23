@@ -1663,12 +1663,12 @@ Validasi strict: field asing → 400 `invalid_body`. Semua respons `Cache-Contro
 | GET | `/api/v1/subbagsumda/personel/capabilities` | O | `{canRead,canCreate,canUpdate,canArchive,canReview}` (tanpa hak → semua `false`, tetap 200) |
 | GET | `/api/v1/subbagsumda/personel` | R | `?q=&status=&unitKerja=&lengkap=belum&page=&size=` (size 5/10/50/100, bawaan 10) → `{items,total,page,size,unitKerja:[…]}`. Item: `{id,nrp,nama,jenis,pangkat,pangkatLabel,jabatan,unitKerja,tmtDinas,tanggalPensiun,status,catatan,version,salinan,perluDilengkapi,sisaHari,tahap,createdAt,updatedAt}` |
 | POST | `/api/v1/subbagsumda/personel` | C | `{nrp,nama,jenis,pangkat,jabatan,unitKerja,tmtDinas,tanggalPensiun,status,catatan}` → 201 `{item}` |
-| GET | `/api/v1/subbagsumda/personel/:id` | R | `{item}`; id bukan UUID/terarsip → 404 `not_found`. **+R5H28:** `item.riwayatKarier[]` (lihat § R5H28) |
+| GET | `/api/v1/subbagsumda/personel/:id` | R | `{item}`; id bukan UUID/terarsip → 404 `not_found`. **+R5H28:** `item.riwayatKarier[]` (lihat § R5H28). **+R5H29:** `item.riwayatDiklat[]`, `item.kompetensi[]` (lihat § R5H29) |
 | PATCH | `/api/v1/subbagsumda/personel/:id` | U | Badan penuh + `version` → 200 `{item}`; 409 `version_conflict` |
 | DELETE | `/api/v1/subbagsumda/personel/:id?version=` | A | Arsip (soft delete) → 204; 409 `version_conflict` |
 | GET | `/api/v1/subbagsumda/pensiun/alert` | R | `?tahap=H-60\|H-30\|H-14\|H-7\|JATUH_TEMPO` → `{ringkas:{<tahap>:n},belumDitinjau,items:[{personel,sisaHari,tahap,ditinjau:{oleh,pada}\|null}]}` |
 | POST | `/api/v1/subbagsumda/pensiun/alert/tinjau` | V | `{items:[{personelId,tahap,tanggalPensiun}]}` (1–200 butir, kunci persis) → `{ditinjau:n}` (idempoten). Satu butir yang tahap/tanggalnya tidak cocok dengan keadaan sekarang → 409 `alert_berubah`, tidak ada yang tersimpan |
-| GET | `/api/v1/subbagsumda/dashboard` | R | **+R5H28:** `totals.karierMenunggu` (lihat § R5H28). `{totals:{personel,aktif,mpp,alert,belumDitinjau,belumLengkap,enamBulan},proyeksi:[{bulan:"YYYY-MM",jumlah}×6],alertTerdekat[≤5],terdekat[≤5],aktivitas[≤5]}` |
+| GET | `/api/v1/subbagsumda/dashboard` | R | **+R5H28:** `totals.karierMenunggu` (lihat § R5H28). **+R5H29:** `totals.kompetensiKedaluwarsa60`. `{totals:{personel,aktif,mpp,alert,belumDitinjau,belumLengkap,enamBulan},proyeksi:[{bulan:"YYYY-MM",jumlah}×6],alertTerdekat[≤5],terdekat[≤5],aktivitas[≤5]}` |
 
 Aturan isi: `nrp` 2–64 dari `A-Z a-z 0-9 spasi . _ / ( ) [ ] -` (NRP lama yang sudah tersimpan boleh dipertahankan), `nama` 3–200, `jenis` `Polri`\|`PNS` (wajib), `pangkat` kode rank master
 aktif (Polri) atau golongan `I/a`…`IV/e` (PNS) — pangkat lama yang sudah tersimpan boleh
@@ -1723,7 +1723,8 @@ Kode galat: 400 `invalid_body`/`invalid_input`/`invalid_rank`/`invalid_file_type
 `personel_belum_lengkap`/`batas_lampiran`; 503 `evidence_encryption_unavailable`/`evidence_integrity_failure`/
 `database_unavailable`. Menambah/menghapus lampiran menaikkan `version` dan mencatat pengubahnya sebagai
 `updated_by`, sehingga orang yang mengganti lampiran tidak bisa memutus pengajuan itu (perluasan K19). Lampiran juga
-ditolak (409 `personel_terarsip`) bila personelnya sudah diarsipkan. Nama berkas Unicode diunduh dengan
+ditolak (409 `personel_terarsip`) bila personelnya sudah diarsipkan. **Sejak R5H29:** PDF terenkripsi atau rusak (gagal
+diparse pdf-lib / tanpa halaman) → 400 `invalid_file_type`. Nama berkas Unicode diunduh dengan
 `filename*=UTF-8''…` (RFC 5987). Bila nilai yang diterapkan saat Selesai berbeda dari usulan yang disetujui,
 `diterapkan.dikoreksi` memuat nama field-nya (juga di metadata audit `selesai`). Pengajuan milik personel terarsip hanya bisa
 dibatalkan.
@@ -1738,6 +1739,62 @@ tanggalUsulan,tanggalEfektif,ringkas}` (maks. 50, terbaru di atas; tidak ada di 
 modul Sumda kini 400 `invalid_input`, bukan 503.
 
 **Rollback.** Bila `/api/v1/subbagsumda/*` kembali ke Go, `/karier*` dijawab chi 404 `text/plain`; layar Karier
-menampilkan "tidak tersedia" (tanpa cadangan registry). Tabel 069 diam; skema tidak perlu dibalik. Rollback sempit:
+menampilkan "tidak tersedia" (tanpa cadangan registry). Tabel 069 diam; skema tidak perlu dibalik. **Usang sejak R5H29**
+(belum memuat `/diklat*`, `/kompetensi*`; pakai pola di § R5H29). Rollback sempit:
 `/api/v1/subbagsumda/personel* /api/v1/subbagsumda/pensiun/* /api/v1/subbagsumda/dashboard /api/v1/subbagsumda/karier*
+/api/v1/subbagsumda/opsi-dropdown/*`.
+
+## R5H29 — Subbagsumda: Diklat & Kompetensi (2026-11-23, EXPRESS SAJA)
+
+Migrasi `070_sumda_diklat_kompetensi.sql` (`sdl_sumda_diklat`, `sdl_sumda_diklat_peserta`, `sdl_sumda_kompetensi`,
+`sdl_sumda_diklat_lampiran`, `sdl_sumda_diklat_riwayat`; permission `subbagsumda.diklat.manage`/`.archive`; salinan
+sekali dari registry `kind='pendidikan'`); rancangan `docs/R5H29-SUMDA-DIKLAT-KOMPETENSI.md`; uji
+`verify/r5h29-sumda-diklat.js` dan skenario `x4_r5h29_sumda_diklat_guard`. Guard operasional (**O**). Hak = permission
+pada grant aktif unit `subbagsumda`: `R` = `subbagsumda.personel.read`, `M` = `subbagsumda.diklat.manage`, `A` =
+`subbagsumda.diklat.archive`. Validasi strict; semua respons `Cache-Control: no-store`. Tanpa persetujuan (K3).
+
+| Method | Path | Hak | Catatan |
+|---|---|---|---|
+| GET | `/api/v1/subbagsumda/diklat/capabilities` | O | `{canRead,canManage,canArchive}` |
+| GET | `/api/v1/subbagsumda/diklat` | R | `?q=&status=&jenis=&tahun=&page=&size=` → `{items,total,page,size}`. Item: `{id,nama,jenis,penyelenggara,lokasi,nomorSurat,tanggalMulai,tanggalSelesai,status,catatan,version,salinan,jumlahPeserta,createdByName,createdAt,updatedAt}` |
+| POST | `/api/v1/subbagsumda/diklat` | M | `{nama,jenis,penyelenggara,lokasi,nomorSurat,tanggalMulai,tanggalSelesai,catatan}` → 201 `{item}`. `jenis` `Pendidikan`\|`Pelatihan`\|`Kursus`\|`Seminar/Lokakarya`\|`Sertifikasi`\|`Lainnya` |
+| GET | `/api/v1/subbagsumda/diklat/:id` | R | `{item,peserta:[{id,personelId,nrp,nama,personelStatus,terarsip,pangkatLabel,unitKerja,hasil,nomorSertifikat,keterangan,version,kompetensiId,lampiran[]}],lampiran:[{id,filename,size,uploadedBy,uploadedByName,uploadedAt}],riwayat:[{dari,ke,catatan,oleh,pada}]}` |
+| PATCH | `/api/v1/subbagsumda/diklat/:id` | M | badan penuh + `version`; setelah Selesai/Dibatalkan hanya `catatan` boleh berbeda, selain itu 409 `status_tidak_sesuai` |
+| POST | `/api/v1/subbagsumda/diklat/:id/status` | M | `{status,catatan,version,tanggalSelesai?}`; Terjadwal→Berjalan→Selesai, Terjadwal/Berjalan→Dibatalkan (alasan ≥ 8 karakter); Selesai wajib tanggal selesai; `tanggalSelesai` hanya untuk Selesai |
+| DELETE | `/api/v1/subbagsumda/diklat/:id?version=` | A | arsip; sesudahnya semua sub-endpoint 404; kompetensi turunan tetap |
+| POST | `/api/v1/subbagsumda/diklat/:id/peserta` | M | `{personelIds:[uuid…],version}`; 1–50 per kirim, total ≤ 200, all-or-nothing; personel Aktif/MPP; hanya Terjadwal/Berjalan |
+| PATCH | `/api/v1/subbagsumda/diklat/:id/peserta/:pid` | M | `{hasil,nomorSertifikat,keterangan,version}`; hanya saat Selesai; `nomorSertifikat` hanya untuk `Lulus`; Lulus→lainnya ditolak 409 `kompetensi_terkait` bila ada kompetensi turunan aktif |
+| DELETE | `/api/v1/subbagsumda/diklat/:id/peserta/:pid?version=` | M | versi peserta; hanya Terjadwal/Berjalan; personel terarsip → 409 `personel_terarsip` |
+| POST · GET · DELETE | `/api/v1/subbagsumda/diklat/:id/lampiran` · `…/lampiran/:lid` · `…/lampiran/:lid` | M · R · M | PDF kegiatan: POST unggah, GET `:lid` unduh, DELETE `:lid` hapus (daftar ada di `GET /:id`). ≤ 5 MB, maks. 10, SDL1; PDF terenkripsi/rusak → 400 `invalid_file_type`; hapus = pengunggah atau A |
+| POST · GET · DELETE | `/api/v1/subbagsumda/diklat/:id/peserta/:pid/lampiran` · `…/:lid` · `…/:lid` | M · R · M | sertifikat peserta (sama); unggah/hapus hanya saat kegiatan Selesai dan personel belum terarsip; rantai induk penuh diperiksa (id silang → 404) |
+| GET | `/api/v1/subbagsumda/kompetensi/capabilities` | O | `{canRead,canManage,canArchive}` |
+| GET | `/api/v1/subbagsumda/kompetensi/alert` | R | `?tahap=` → `{ringkas:{"H-60","H-30","KEDALUWARSA"},items}`; hanya personel Aktif/MPP belum terarsip; `items` maks. 500 (terdekat dulu), `ringkas` hitungan penuh |
+| GET | `/api/v1/subbagsumda/kompetensi` | R | `?q=&personelId=&kategori=&tahap=&page=&size=`. Item: `{id,personelId,nama,kategori,nomor,penerbit,tanggalTerbit,berlakuSampai,catatan,version,dariPesertaId,dariDiklat:{id,nama}\|null,personel:{id,nrp,nama,status,terarsip},sisaHari,tahap}` |
+| POST | `/api/v1/subbagsumda/kompetensi` | M | `{personelId,nama,kategori,nomor,penerbit,tanggalTerbit,berlakuSampai,catatan,dariPesertaId?}` → 201; dengan `dariPesertaId`: peserta Lulus, kegiatan Selesai, personel sama (FK komposit), satu kompetensi aktif per peserta (409 `kompetensi_ganda`) |
+| GET | `/api/v1/subbagsumda/kompetensi/:id` | R | `{item,lampiran[],sertifikatPeserta:[{id,filename,size}]}` (tautan, tidak disalin); bila kegiatan asal terarsip: `dariDiklat` null (`dariPesertaId` tetap) dan `sertifikatPeserta` kosong |
+| PATCH | `/api/v1/subbagsumda/kompetensi/:id` | M | badan penuh + `version`; personel terarsip → 409 `personel_terarsip` |
+| DELETE | `/api/v1/subbagsumda/kompetensi/:id?version=` | A | arsip; personel terarsip → 409 `personel_terarsip` |
+| POST · GET · DELETE | `/api/v1/subbagsumda/kompetensi/:id/lampiran` · `…/:lid` · `…/:lid` | M · R · M | sertifikat kompetensi (sama) |
+
+Tahap kompetensi dihitung server dari `berlaku_sampai` terhadap hari WIB: `H-60` (31–60 hari), `H-30` (1–30),
+`KEDALUWARSA` (≤ 0); `null` bila tanpa batas, personel bukan Aktif/MPP/terarsip, atau ada kompetensi aktif lain dengan
+nama sama (`lower(btrim)`) yang berlaku lebih akhir atau tanpa batas (K30).
+
+Kode galat: 400 `invalid_body`/`invalid_input`/`invalid_file_type`/`one_file_required`; 413 `file_too_large`; 403
+`access_denied`; 404 `not_found`; 409 `version_conflict`/`status_tidak_sesuai`/`peserta_ganda`/`batas_peserta`/
+`personel_tidak_aktif`/`personel_terarsip`/`hasil_belum_boleh`/`kompetensi_ganda`/`kompetensi_terkait`/`batas_lampiran`;
+503 `evidence_encryption_unavailable`/`evidence_integrity_failure`/`database_unavailable`.
+
+Audit `subbagsumda.diklat.*` dan `subbagsumda.kompetensi.*` (metadata daftar putih `{jenis,kategori,status,fields,
+version,jumlah}`; tanpa nama, NRP, atau nomor sertifikat).
+
+**Aditif pada R5H27:** `GET /api/v1/subbagsumda/personel/:id` → `item.riwayatDiklat[]` `{diklatId,pesertaId,nama,jenis,
+status,tanggalMulai,tanggalSelesai,hasil,nomorSertifikat}` dan `item.kompetensi[]` `{id,nama,kategori,nomor,penerbit,
+tanggalTerbit,berlakuSampai,sisaHari,tahap}` (masing-masing maks. 50); `GET /api/v1/subbagsumda/dashboard` →
+`totals.kompetensiKedaluwarsa60` (H-60 + H-30 + Kedaluwarsa).
+
+**Rollback.** Bila `/api/v1/subbagsumda/*` kembali ke Go, `/diklat*` dan `/kompetensi*` dijawab chi 404 `text/plain`;
+layar menampilkan "tidak tersedia" dengan tombol registry pendidikan lama (darurat, K35). Tabel 070 diam; skema tidak
+perlu dibalik. Rollback sempit: `/api/v1/subbagsumda/personel* /api/v1/subbagsumda/pensiun/*
+/api/v1/subbagsumda/dashboard /api/v1/subbagsumda/karier* /api/v1/subbagsumda/diklat* /api/v1/subbagsumda/kompetensi*
 /api/v1/subbagsumda/opsi-dropdown/*`.

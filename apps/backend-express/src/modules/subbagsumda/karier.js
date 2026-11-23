@@ -1,12 +1,10 @@
-import { createHash } from 'node:crypto'
 import { Router } from 'express'
 
-import { openEvidence, sealEvidence } from '../../crypto/evidence.js'
 import { withTransaction } from '../../db.js'
-import { contentDisposition, detectFileType, readSingleFile } from '../../http/multipart.js'
 import { BODY_LIMITS, rawBody } from '../../http/payload.js'
 import { parseGoInt, respond } from '../subbagren/shared.js'
 import { HttpError, UUID_RE, body, cekPangkat, idParam, makeHandle, permit, pilihan, tanggal, teks } from './umum.js'
+import { MAKS_LAMPIRAN, bacaPdf, bukaPdf, pasangHeaderUnduh } from './lampiran.js'
 
 /**
  * R5H28: Subbagsumda — Karier & Mutasi. Migrasi 069. EXPRESS SAJA.
@@ -37,9 +35,6 @@ export const JENIS_KARIER = Object.freeze(['UKP', 'KGB', 'MUTASI', 'PENYESUAIAN_
 export const STATUS_KARIER = Object.freeze(['Diajukan', 'Diproses', 'Disetujui', 'Ditolak', 'Selesai', 'Dibatalkan'])
 const TERBUKA = ['Diajukan', 'Diproses', 'Disetujui']
 const UKURAN_HALAMAN = new Set([5, 10, 50, 100])
-const MAKS_PDF = 5 << 20
-const MAKS_LAMPIRAN = 10
-const SAFE_PDF_NAME = /^[\p{L}\p{N} ._()\-,]{1,150}\.pdf$/iu
 
 const P = {
   read: 'subbagsumda.personel.read',
@@ -76,17 +71,6 @@ async function nilaiUsulan(c, raw, jenis, jenisPersonel) {
     await cekPangkat(c, jenisPersonel, v.pangkat)
   }
   return v
-}
-
-/**
- * Content-Disposition aman untuk nama berkas Unicode (RFC 6266/5987): `filename` ASCII sebagai cadangan,
- * `filename*` UTF-8 untuk nama asli. Nama ASCII murni tetap memakai bentuk lama (contentDisposition).
- */
-function disposisi(nama) {
-  if (/^[\x20-\x7e]*$/.test(nama)) return contentDisposition('attachment', nama)
-  const ascii = nama.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_')
-  const utf8 = encodeURIComponent(nama).replace(/['()*]/g, (ch) => `%${ch.charCodeAt(0).toString(16).toUpperCase()}`)
-  return `attachment; filename="${ascii}"; filename*=UTF-8''${utf8}`
 }
 
 function versi(v) {
@@ -412,27 +396,12 @@ export function createSumdaKarierRouter({ pool, config }) {
     return r.rows[0].status
   }
 
-  async function bacaPdf(req) {
-    const up = await readSingleFile(req, { fieldName: 'file', maxBodyBytes: BODY_LIMITS.SUMDA_LAMPIRAN, maxFileBytes: MAKS_PDF, maxFiles: 2 })
-    if (up.bodyExceeded || up.error === 'too_large') throw new HttpError(413, 'file_too_large')
-    if (up.fileCount !== 1 || !up.file) throw new HttpError(400, 'one_file_required')
-    const blob = up.file.buffer
-    const filename = up.file.filename.trim()
-    const tail = blob.subarray(Math.max(0, blob.length - 2048))
-    const isPdf = SAFE_PDF_NAME.test(filename) && blob.length > 0 && detectFileType(blob) === 'application/pdf' &&
-      blob.subarray(0, 5).toString('latin1') === '%PDF-' && tail.includes('%%EOF')
-    if (!isPdf) throw new HttpError(400, 'invalid_file_type')
-    let sealed
-    try { sealed = sealEvidence(evidenceKey, blob) } catch { throw new HttpError(503, 'evidence_encryption_unavailable') }
-    return { blob, filename, sealed, digest: createHash('sha256').update(blob).digest('hex') }
-  }
-
   router.post('/:id/lampiran', handle(async (req, res) => {
     await need(req, P.manage)
     const id = idParam(req.params.id)
     // Periksa keberadaan & status SEBELUM membaca berkas besar.
     await cekTerbuka(pool, id, false)
-    const { blob, filename, sealed, digest } = await bacaPdf(req)
+    const { blob, filename, sealed, digest } = await bacaPdf(req, evidenceKey)
     const row = await withTransaction(pool, async (c) => {
       await cekTerbuka(c, id, true)
       const n = (await c.query('SELECT count(*)::int AS n FROM sdl_sumda_karier_lampiran WHERE karier_id=$1::uuid', [id])).rows[0].n
@@ -476,16 +445,8 @@ export function createSumdaKarierRouter({ pool, config }) {
     const id = idParam(req.params.id); const lid = idParam(req.params.lid)
     const r = await pool.query('SELECT filename,sha256,body FROM sdl_sumda_karier_lampiran WHERE id=$1::uuid AND karier_id=$2::uuid', [lid, id])
     if (r.rowCount !== 1) throw new HttpError(404, 'not_found')
-    let plain
-    try { plain = openEvidence(evidenceKey, r.rows[0].body) } catch { throw new HttpError(503, 'evidence_integrity_failure') }
-    if (createHash('sha256').update(plain).digest('hex') !== r.rows[0].sha256) throw new HttpError(503, 'evidence_integrity_failure')
-    // Header dipasang LEBIH DULU (review S1): nama non-Latin-1 tidak boleh membuat setHeader melempar
-    // setelah audit unduhan terlanjur tercatat.
-    res.set('Content-Type', 'application/octet-stream')
-    res.set('Content-Disposition', disposisi(r.rows[0].filename))
-    res.set('X-Content-Type-Options', 'nosniff')
-    res.set('Content-Security-Policy', 'sandbox')
-    res.set('Cache-Control', 'no-store')
+    const plain = bukaPdf(r.rows[0], evidenceKey)
+    pasangHeaderUnduh(res, r.rows[0].filename) // sebelum audit (review S1)
     await withTransaction(pool, (c) => audit(c, req.actor, 'subbagsumda.karier.lampiran.download', 'subbagsumda.karier', id))
     res.status(200).end(plain)
   }))

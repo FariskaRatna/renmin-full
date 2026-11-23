@@ -24,7 +24,7 @@ const K = '/api/v1/subbagsumda/karier'
 const PER = '/api/v1/subbagsumda/personel'
 const raw = (s) => Buffer.from(s, 'utf8')
 const PROTO_ASLI = new Set(Object.getOwnPropertyNames(Object.prototype))
-const PDF = Buffer.from('%PDF-1.4\n1 0 obj <<>> endobj\ntrailer <<>>\n%%EOF\n', 'latin1')
+const PDF = Buffer.from('%PDF-1.4\n1 0 obj <</Type/Catalog/Pages 2 0 R>> endobj\n2 0 obj <</Type/Pages/Kids[3 0 R]/Count 1>> endobj\n3 0 obj <</Type/Page/Parent 2 0 R/MediaBox[0 0 300 200]>> endobj\ntrailer <</Root 1 0 R>>\n%%EOF\n', 'latin1')
 const PALSU = '00000000-0000-4000-8000-000000000000'
 
 async function appLain(env, configLain) {

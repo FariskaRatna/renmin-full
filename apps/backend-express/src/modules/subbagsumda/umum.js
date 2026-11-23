@@ -14,6 +14,15 @@ import { fail } from '../subbagren/shared.js'
  */
 
 export const UNIT = 'subbagsumda'
+
+/**
+ * Tanggal hari ini menurut Asia/Jakarta, dihitung di Postgres. Pool Express bersesi UTC (db.js:45),
+ * jadi CURRENT_DATE meleset sehari pukul 00:00-06:59 WIB — jangan pernah dipakai di modul Sumda.
+ */
+export const HARI_INI = "(now() AT TIME ZONE 'Asia/Jakarta')::date"
+
+/** Ekspresi tanggal WIB dari parameter timestamptz — dipakai verify untuk uji batas zona. */
+export const hariDari = (param) => `((${param})::timestamptz AT TIME ZONE 'Asia/Jakarta')::date`
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 // eslint-disable-next-line no-control-regex
 const KENDALI = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/

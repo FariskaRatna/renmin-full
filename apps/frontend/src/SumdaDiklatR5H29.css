@@ -1,0 +1,20 @@
+/* R5H29: Diklat & Kompetensi. Memakai kelas R5H27 (sdl-sumda__*), R5H28 (sdl-karier__*) dan dialog sdl-progar__*. */
+.sdl-diklat__status,.sdl-diklat__hasil{display:inline-block;font-size:11px;font-weight:750;padding:2px 8px;border-radius:6px;white-space:nowrap}
+.sdl-diklat__status.is-terjadwal{background:#eef2f7;color:#3d5370}
+.sdl-diklat__status.is-berjalan{background:#fdf2dc;color:#8a5a06}
+.sdl-diklat__status.is-selesai{background:#e3f4ec;color:#1d6a48}
+.sdl-diklat__status.is-dibatalkan{background:#eef2f7;color:#5d6b7e;text-decoration:line-through}
+.sdl-diklat__hasil.is-belum{background:#eef2f7;color:#5d6b7e}
+.sdl-diklat__hasil.is-lulus{background:#e3f4ec;color:#1d6a48}
+.sdl-diklat__hasil.is-tidak-lulus{background:#fbe6e4;color:#9b2c22}
+.sdl-diklat__hasil.is-tidak-hadir{background:#fdf2dc;color:#8a5a06}
+.sdl-diklat__peserta{min-width:0}
+.sdl-diklat__peserta .sdl-sumda__actions{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
+.sdl-diklat__pilih{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:6px}
+.sdl-diklat__pilih li{display:flex;gap:6px;align-items:center;padding:4px 8px;border:1px solid var(--border);border-radius:8px;font-size:12px}
+.sdl-diklat__alert{margin-top:-4px}
+
+:root[data-theme=dark] .sdl-diklat__status.is-terjadwal,:root[data-theme=dark] .sdl-diklat__status.is-dibatalkan,:root[data-theme=dark] .sdl-diklat__hasil.is-belum{background:#22324a;color:#9fb0c4}
+:root[data-theme=dark] .sdl-diklat__status.is-berjalan,:root[data-theme=dark] .sdl-diklat__hasil.is-tidak-hadir{background:#3b2f14;color:#f0c46c}
+:root[data-theme=dark] .sdl-diklat__status.is-selesai,:root[data-theme=dark] .sdl-diklat__hasil.is-lulus{background:#173a2b;color:#8fd6b0}
+:root[data-theme=dark] .sdl-diklat__hasil.is-tidak-lulus{background:#3e1f1c;color:#f0a39b}

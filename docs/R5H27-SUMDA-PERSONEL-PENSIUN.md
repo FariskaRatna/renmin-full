@@ -180,6 +180,8 @@ suite keamanan, `npm run build` frontend, lalu demo browser (op, kasubbag, kabag
 
 - Halaman referensi lain: Karier & Mutasi, Diklat, Cuti, Kesejahteraan, Kinerja, Inventaris/BMN versi baru,
   Persuratan, Laporan & Analitik, Pengaturan Demo.
+  *(Kemudian dikerjakan: Karier & Mutasi di R5H28, Diklat & Kompetensi di R5H29 — keduanya menambah field aditif
+  pada `GET /personel/:id` dan `/dashboard`.)*
 - **"Proses Pensiun"** (membuat berkas layanan pensiun dari alert) → menyusul bersama modul layanan.
 - Email atau notifikasi browser untuk alert (K4). Lonceng notifikasi di header referensi.
 - Perhitungan otomatis tanggal pensiun dari tanggal lahir/BUP (K1).
