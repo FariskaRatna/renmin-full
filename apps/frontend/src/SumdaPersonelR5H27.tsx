@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import { Pager, type PagerState } from './PaginationR5H5'
 import { confirmDialog, showToast } from './UIFeedback'
+import { ApiError, BULAN, Shade, TidakTersedia, UUID_RE, makeApi, tgl, waktu } from './SumdaBersama'
 import './ProgarR5H11.css'
 import './SumdaPersonelR5H27.css'
 
@@ -20,24 +21,24 @@ import './SumdaPersonelR5H27.css'
 
 type Tahap = 'H-60' | 'H-30' | 'H-14' | 'H-7' | 'JATUH_TEMPO'
 type Status = 'Aktif' | 'MPP' | 'Pensiun' | 'Nonaktif'
+type RiwayatKarier = { id: string; jenis: string; status: string; tanggalUsulan: string; tanggalEfektif: string; ringkas: string }
 type Personel = {
   id: string; nrp: string; nama: string; jenis: '' | 'Polri' | 'PNS'; pangkat: string; pangkatLabel: string
   jabatan: string; unitKerja: string; tmtDinas: string; tanggalPensiun: string; status: Status; catatan: string
   version: number; salinan: boolean; perluDilengkapi: boolean; sisaHari: number | null; tahap: Tahap | null
+  riwayatKarier?: RiwayatKarier[]
 }
 type Alert = { personel: Personel; sisaHari: number; tahap: Tahap; ditinjau: { oleh: string; pada: string } | null }
 type Caps = { canRead: boolean; canCreate: boolean; canUpdate: boolean; canArchive: boolean; canReview: boolean }
 type Aktivitas = { jenis: string; personelId: string | null; personelNama: string | null; oleh: string; pada: string; rincian: Record<string, unknown> }
 type Dashboard = {
-  totals: { personel: number; aktif: number; mpp: number; alert: number; belumDitinjau: number; belumLengkap: number; enamBulan: number }
+  totals: { personel: number; aktif: number; mpp: number; alert: number; belumDitinjau: number; belumLengkap: number; enamBulan: number; karierMenunggu?: number }
   proyeksi: { bulan: string; jumlah: number }[]; alertTerdekat: Alert[]; terdekat: Personel[]; aktivitas: Aktivitas[]
 }
 type Rank = { code: string; shortName: string; fullName: string; group: string }
 type Mode = 'dashboard' | 'master' | 'pensiun'
-export type SumdaNav = (menu: 'personel' | 'pensiun', opts?: { recordID?: string }) => void
+export type SumdaNav = (menu: 'personel' | 'pensiun' | 'karier', opts?: { recordID?: string }) => void
 
-const BASE = '/api/v1/subbagsumda'
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const STATUS: Status[] = ['Aktif', 'MPP', 'Pensiun', 'Nonaktif']
 const TAHAP: { key: Tahap; label: string; rentang: string }[] = [
   { key: 'H-60', label: '2 bulan lagi', rentang: '31–60 hari' },
@@ -47,8 +48,6 @@ const TAHAP: { key: Tahap; label: string; rentang: string }[] = [
   { key: 'JATUH_TEMPO', label: 'Jatuh tempo', rentang: 'hari ini atau terlewat' },
 ]
 const GOLONGAN_PNS = ['I', 'II', 'III', 'IV'].flatMap(g => (g === 'IV' ? ['a', 'b', 'c', 'd', 'e'] : ['a', 'b', 'c', 'd']).map(r => `${g}/${r}`))
-const BULAN = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des']
-
 const ERRORS: Record<string, string> = {
   access_denied: 'Akun ini tidak berwenang melakukan tindakan tersebut.',
   invalid_input: 'Isian belum lengkap atau tidak sesuai. Personel Aktif/MPP wajib bertanggal pensiun.',
@@ -61,38 +60,8 @@ const ERRORS: Record<string, string> = {
   database_unavailable: 'Server sedang tidak dapat diakses. Coba beberapa saat lagi.',
 }
 
-/** Endpoint tidak dikenal server (mis. prefix dikembalikan ke Go): balasan 404 berupa teks, bukan JSON. */
-class TidakTersedia extends Error {}
-class ApiError extends Error { constructor(public code: string, message: string) { super(message) } }
+const api = makeApi(ERRORS, 'Master Personel tidak tersedia di server saat ini.')
 
-async function api<T>(path: string, method: 'GET' | 'POST' | 'PATCH' | 'DELETE' = 'GET', body?: unknown): Promise<T> {
-  const headers: Record<string, string> = {}
-  if (method !== 'GET') {
-    const c = await fetch('/api/v1/auth/csrf', { credentials: 'same-origin', cache: 'no-store' })
-    if (!c.ok) throw Error('Sesi keamanan tidak tersedia. Silakan login kembali.')
-    headers['X-CSRF-Token'] = ((await c.json()) as { csrfToken: string }).csrfToken
-  }
-  if (body !== undefined) headers['Content-Type'] = 'application/json'
-  const r = await fetch(`${BASE}${path}`, { method, credentials: 'same-origin', cache: 'no-store', headers, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) })
-  const json = (r.headers.get('content-type') ?? '').includes('application/json')
-  if (r.status === 404 && !json) throw new TidakTersedia('Master Personel tidak tersedia di server saat ini.')
-  if (!r.ok) {
-    const e: { error?: string } = json ? await r.json().catch(() => ({})) : {}
-    const code = e.error ?? `http_${r.status}`
-    throw new ApiError(code, ERRORS[code] ?? `Permintaan gagal (HTTP ${r.status}).`)
-  }
-  return r.status === 204 ? (undefined as T) : (await r.json() as T)
-}
-
-/** 'YYYY-MM-DD' -> '23 Nov 2026' tanpa melewati zona waktu browser. */
-function tgl(d: string) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return '—'
-  return `${Number(d.slice(8, 10))} ${BULAN[Number(d.slice(5, 7)) - 1]} ${d.slice(0, 4)}`
-}
-function waktu(iso: string) {
-  const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? '—' : new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' }).format(d)
-}
 function sisaTeks(n: number | null) {
   if (n === null) return ''
   return n > 0 ? `${n} hari lagi` : n === 0 ? 'Hari ini' : `Lewat ${-n} hari`
@@ -151,6 +120,8 @@ function DashboardView({ onNavigate, onLost }: { onNavigate: SumdaNav; onLost: (
       <div className={t.belumDitinjau ? 'is-attention' : ''}><dt>Alert pensiun ≤ 60 hari</dt><dd>{t.alert}</dd><small>{t.belumDitinjau} belum ditinjau</small></div>
       <div><dt>Data belum lengkap</dt><dd>{t.belumLengkap}</dd><small>Aktif/MPP tanpa tanggal pensiun atau jenis</small></div>
       <div><dt>Pensiun 6 bulan</dt><dd>{t.enamBulan}</dd><small>Bulan ini s.d. 5 bulan ke depan</small></div>
+      {t.karierMenunggu !== undefined && <div className={t.karierMenunggu ? 'is-attention' : ''}><dt>Karier menunggu keputusan</dt><dd>{t.karierMenunggu}</dd>
+        <small><button type="button" className="sdl-sumda__link" onClick={() => onNavigate('karier')}>Karier &amp; Mutasi</button></small></div>}
     </dl>
 
     <div className="sdl-sumda__split">
@@ -311,18 +282,15 @@ function MasterView({ initialID, onLost }: { initialID?: string; onLost: () => v
   </section>
 }
 
-function Shade({ children, onClose, label, busy = false }: { children: ReactNode; onClose: () => void; label: string; busy?: boolean }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !busy && !e.defaultPrevented) { e.preventDefault(); onClose() } }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [busy, onClose])
-  return <div className="sdl-progar__shade" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget && !busy) onClose() }}>
-    <div className="sdl-progar__dialog sdl-sumda__dialog" role="dialog" aria-modal="true" aria-label={label}>{children}</div>
-  </div>
-}
+const JENIS_KARIER_LABEL: Record<string, string> = { UKP: 'UKP', KGB: 'KGB', MUTASI: 'Mutasi', PENYESUAIAN_JABATAN: 'Penyesuaian jabatan' }
 
 function DetailDialog({ p, caps, onClose, onEdit, onArchive }: { p: Personel; caps: Caps | null; onClose: () => void; onEdit: () => void; onArchive: () => void }) {
+  // R5H28 K13/K28: riwayat karier hanya ada di GET /personel/:id, jadi dimuat setiap dialog dibuka.
+  const [riwayat, setRiwayat] = useState<RiwayatKarier[] | null>(null)
+  useEffect(() => {
+    if (!UUID_RE.test(p.id)) return
+    api<{ item: Personel }>(`/personel/${encodeURIComponent(p.id)}`).then(r => setRiwayat(r.item.riwayatKarier ?? [])).catch(() => setRiwayat([]))
+  }, [p.id])
   const rows: [string, ReactNode][] = [
     ['NRP / NIP', <span className="sdl-sumda__mono">{p.nrp}</span>], ['Jenis', p.jenis || 'Belum diisi'],
     ['Pangkat / golongan', p.pangkatLabel || '—'], ['Jabatan', p.jabatan || '—'], ['Unit kerja', p.unitKerja || '—'],
@@ -336,6 +304,13 @@ function DetailDialog({ p, caps, onClose, onEdit, onArchive }: { p: Personel; ca
     {p.perluDilengkapi && <p className="sdl-sumda__notice">{p.salinan ? 'Data ini disalin dari registry lama. ' : ''}Lengkapi jenis personel dan tanggal pensiun agar alert pensiun berjalan.</p>}
     <dl className="sdl-sumda__detail">{rows.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}</dl>
     {p.catatan && <div className="sdl-sumda__catatan"><strong>Catatan</strong><p>{p.catatan}</p></div>}
+    <section className="sdl-sumda__riwayat" aria-label="Riwayat karier dan mutasi">
+      <strong>Riwayat karier &amp; mutasi</strong>
+      {riwayat === null ? <p className="sdl-sumda__muted">Memuat…</p>
+        : riwayat.length === 0 ? <p className="sdl-sumda__muted">Belum ada pengajuan.</p>
+          : <ol>{riwayat.map(r => <li key={r.id}><span className="sdl-sumda__mono">{tgl(r.tanggalEfektif || r.tanggalUsulan)}</span>
+            <span>{JENIS_KARIER_LABEL[r.jenis] ?? r.jenis} · {r.ringkas}</span><span className="sdl-sumda__muted">{r.status}</span></li>)}</ol>}
+    </section>
     <footer>
       {caps?.canArchive && <button type="button" className="btn sdl-progar__danger" onClick={onArchive}>Arsipkan</button>}
       <span className="sdl-sumda__grow" />

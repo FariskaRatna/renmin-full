@@ -12,7 +12,7 @@
 .sdl-sumda__sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 
 /* Ringkasan satu baris: angka + konteks, dipisah garis tipis, bukan kartu. */
-.sdl-sumda__summary{margin:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border:1px solid var(--border);border-radius:10px;background:var(--card);overflow:hidden}
+.sdl-sumda__summary{margin:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));border:1px solid var(--border);border-radius:10px;background:var(--card);overflow:hidden}
 .sdl-sumda__summary>div{padding:12px 16px;display:grid;gap:2px;border-left:3px solid transparent}
 .sdl-sumda__summary>div+div{border-left:1px solid var(--border)}
 .sdl-sumda__summary>div:first-child{border-left:3px solid #956db9}
@@ -137,3 +137,14 @@
 :root[data-theme=dark] .sdl-sumda__flag{color:#e3c46a}
 :root[data-theme=dark] .sdl-sumda__done{color:#8fd6b0}
 :root[data-theme=dark] .sdl-sumda__link{color:#8fb0e6}
+
+/* R5H28: riwayat karier & mutasi di dialog detail personel (K13). */
+.sdl-sumda__riwayat{display:grid;gap:6px}
+.sdl-sumda__riwayat>strong{font-size:11px;color:var(--muted)}
+.sdl-sumda__riwayat ol{list-style:none;margin:0;padding:0;border:1px solid var(--border);border-radius:8px}
+.sdl-sumda__riwayat li{display:grid;grid-template-columns:96px minmax(0,1fr) auto;gap:10px;padding:7px 10px;font-size:12.5px;border-bottom:1px dashed var(--border)}
+.sdl-sumda__riwayat li:last-child{border-bottom:0}
+@media(max-width:560px){.sdl-sumda__riwayat li{grid-template-columns:1fr}}
+
+/* Label grid form tidak meregangkan input bila label sebelahnya punya teks bantuan. */
+.sdl-progar__fields.sdl-sumda__grid label{align-content:start}

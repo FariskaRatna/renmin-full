@@ -1,8 +1,9 @@
 import { Router } from 'express'
 
 import { withTransaction } from '../../db.js'
-import { BODY_LIMITS, parsePayload, rawBody } from '../../http/payload.js'
-import { fail, parseGoInt, respond } from '../subbagren/shared.js'
+import { BODY_LIMITS, rawBody } from '../../http/payload.js'
+import { parseGoInt, respond } from '../subbagren/shared.js'
+import { GOLONGAN_PNS, HttpError, UUID_RE, body, cekPangkat, idParam, makeHandle, permit, pilihan, tanggal, teks } from './umum.js'
 
 /**
  * R5H27: Subbagsumda — Master Personel, Monitoring Pensiun, Dashboard.
@@ -36,15 +37,6 @@ import { fail, parseGoInt, respond } from '../subbagren/shared.js'
  * mengubahnya menjadi Date lokal.
  */
 
-const UNIT = 'subbagsumda'
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-// eslint-disable-next-line no-control-regex
-const KENDALI = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/
-// eslint-disable-next-line no-control-regex
-const KENDALI_SEBARIS = /[\u0000-\u001F\u007F]/
-// Karakter format tak terlihat (zero-width, pembalik arah U+202E, BOM, …) ditolak di semua isian,
-// supaya nama/NRP tidak bisa tampil sama padahal berbeda, atau tampil terbalik.
-const FORMAT_TAK_TERLIHAT = /\p{Cf}/u
 // NRP/NIP: ASCII sempit. NRP lama (hasil salinan registry) yang sudah tersimpan boleh dipertahankan.
 const NRP_RE = /^[A-Za-z0-9 ._/()[\]-]+$/
 
@@ -52,8 +44,7 @@ export const STATUS = Object.freeze(['Aktif', 'MPP', 'Pensiun', 'Nonaktif'])
 export const STATUS_DIPANTAU = Object.freeze(['Aktif', 'MPP']) // K7
 export const JENIS = Object.freeze(['Polri', 'PNS'])
 export const TAHAP = Object.freeze(['H-60', 'H-30', 'H-14', 'H-7', 'JATUH_TEMPO'])
-export const GOLONGAN_PNS = Object.freeze(['I', 'II', 'III', 'IV'].flatMap((g) =>
-  (g === 'IV' ? ['a', 'b', 'c', 'd', 'e'] : ['a', 'b', 'c', 'd']).map((r) => `${g}/${r}`)))
+export { GOLONGAN_PNS }
 const UKURAN_HALAMAN = new Set([5, 10, 50, 100])
 const MAKS_TINJAU = 200
 
@@ -76,17 +67,6 @@ export function tahapSql(alias = 'p', hari = HARI_INI) {
 }
 export const sisaSql = (alias = 'p', hari = HARI_INI) => `(${alias}.tanggal_pensiun - ${hari})`
 
-const PERMIT_SQL = `SELECT EXISTS(
-  SELECT 1 FROM sdl_users u
-    JOIN sdl_user_units uu ON uu.user_id=u.id AND uu.unit_key='${UNIT}'
-    JOIN sdl_access_grants g ON g.user_id=u.id AND g.unit_key='${UNIT}'
-         AND g.revoked_at IS NULL AND (g.expires_at IS NULL OR g.expires_at>now())
-    JOIN sdl_roles r ON r.role_key=g.role_key AND r.is_active AND r.role_key<>'superadmin'
-    JOIN sdl_role_permissions rp ON rp.role_key=g.role_key AND rp.permission_key=$2
-   WHERE u.id::text=$1 AND u.is_active AND NOT u.must_change_password
-     AND NOT EXISTS(SELECT 1 FROM sdl_user_roles sr WHERE sr.user_id=u.id AND sr.role_key='superadmin')
-) AS ok`
-
 const P = {
   read: 'subbagsumda.personel.read',
   create: 'subbagsumda.personel.create',
@@ -95,71 +75,7 @@ const P = {
   review: 'subbagsumda.pensiun.review',
 }
 
-class HttpError extends Error {
-  constructor(status, code) { super(code); this.status = status; this.code = code }
-}
-
-function handle(fn) {
-  return async (req, res) => {
-    try {
-      await fn(req, res)
-    } catch (error) {
-      if (error instanceof HttpError) { fail(res, error.status, error.code); return }
-      if (error?.code === '23505') {
-        fail(res, 409, error.constraint === 'sdl_sumda_personel_nrp_aktif_idx' ? 'duplicate_nrp' : 'duplicate')
-        return
-      }
-      if (error?.code === '23514') { fail(res, 400, 'invalid_input'); return }
-      fail(res, 503, 'database_unavailable')
-    }
-  }
-}
-
-function permit(pool) {
-  const can = async (actor, permission) => (await pool.query(PERMIT_SQL, [actor, permission])).rows[0].ok === true
-  const need = async (req, permission) => {
-    if (!(await can(req.actor, permission))) throw new HttpError(403, 'access_denied')
-  }
-  return { can, need }
-}
-
-function body(req, keys) {
-  const p = parsePayload(req, keys)
-  if (!p.ok) throw new HttpError(400, 'invalid_body')
-  return p.value
-}
-
-/** Teks: null/undefined = ''. Bukan string, karakter kendali, surrogate tunggal, atau di luar panjang -> 400. */
-function teks(v, min, max, { multiline = false } = {}) {
-  if (v === undefined || v === null) v = ''
-  if (typeof v !== 'string') throw new HttpError(400, 'invalid_input')
-  const t = v.trim()
-  if ((multiline ? KENDALI : KENDALI_SEBARIS).test(t) || FORMAT_TAK_TERLIHAT.test(t) || !t.isWellFormed()) throw new HttpError(400, 'invalid_input')
-  const n = [...t].length
-  if (n < min || n > max) throw new HttpError(400, 'invalid_input')
-  return t
-}
-
-/** Tanggal YYYY-MM-DD yang benar-benar ada, dalam rentang tahun (K16). '' -> null. */
-function tanggal(v, minYear, maxYear) {
-  if (v === undefined || v === null || v === '') return null
-  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v)) throw new HttpError(400, 'invalid_input')
-  const d = new Date(`${v}T00:00:00Z`)
-  if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== v) throw new HttpError(400, 'invalid_input')
-  const y = d.getUTCFullYear()
-  if (y < minYear || y > maxYear) throw new HttpError(400, 'invalid_input')
-  return v
-}
-
-function pilihan(v, list) {
-  if (typeof v !== 'string' || !list.includes(v)) throw new HttpError(400, 'invalid_input')
-  return v
-}
-
-function idParam(raw) {
-  if (!UUID_RE.test(raw)) throw new HttpError(404, 'not_found')
-  return raw
-}
+const handle = makeHandle({ sdl_sumda_personel_nrp_aktif_idx: 'duplicate_nrp' })
 
 const FIELD_INPUT = ['nrp', 'nama', 'jenis', 'pangkat', 'jabatan', 'unitKerja', 'tmtDinas', 'tanggalPensiun', 'status', 'catatan']
 
@@ -185,14 +101,7 @@ async function validasi(c, b, lama = null) {
   if (STATUS_DIPANTAU.includes(v.status) && !v.tanggalPensiun) throw new HttpError(400, 'invalid_input')
   if (!NRP_RE.test(v.nrp) && v.nrp !== lama?.nrp) throw new HttpError(400, 'invalid_input')
   const pangkatTetap = lama !== null && v.pangkat === lama.pangkat && v.jenis === lama.jenis
-  if (v.pangkat !== '' && !pangkatTetap) {
-    if (v.jenis === 'PNS') {
-      if (!GOLONGAN_PNS.includes(v.pangkat)) throw new HttpError(400, 'invalid_rank')
-    } else {
-      const r = await c.query('SELECT EXISTS(SELECT 1 FROM sdl_polri_rank_master WHERE code=$1 AND is_active) AS ok', [v.pangkat])
-      if (!r.rows[0].ok) throw new HttpError(400, 'invalid_rank')
-    }
-  }
+  if (v.pangkat !== '' && !pangkatTetap) await cekPangkat(c, v.jenis, v.pangkat)
   return v
 }
 
@@ -290,7 +199,22 @@ export function createSumdaPersonelRouter({ pool }) {
 
   router.get('/:id', handle(async (req, res) => {
     await need(req, P.read)
-    respond(res, 200, { item: await ambil(pool, idParam(req.params.id)) })
+    const id = idParam(req.params.id)
+    const item = await ambil(pool, id)
+    // R5H28 K13/K28 (aditif, hanya di GET ini): riwayat karier & mutasi personel, terbaru di atas.
+    const rk = (await pool.query(
+      `SELECT k.id::text,k.jenis,k.status,k.tanggal_usulan::text AS tanggal_usulan,k.tanggal_efektif::text AS tanggal_efektif,
+              k.usulan_pangkat,coalesce(ur.short_name,k.usulan_pangkat) AS usulan_pangkat_label,k.usulan_jabatan,k.usulan_unit_kerja
+         FROM sdl_sumda_karier k
+         JOIN sdl_sumda_personel p ON p.id=k.personel_id
+         LEFT JOIN sdl_polri_rank_master ur ON p.jenis IS DISTINCT FROM 'PNS' AND ur.code=k.usulan_pangkat
+        WHERE k.personel_id=$1::uuid ORDER BY k.created_at DESC, k.id LIMIT 50`, [id])).rows
+    item.riwayatKarier = rk.map((r) => ({
+      id: r.id, jenis: r.jenis, status: r.status, tanggalUsulan: r.tanggal_usulan, tanggalEfektif: r.tanggal_efektif ?? '',
+      ringkas: r.jenis === 'UKP' ? `Pangkat → ${r.usulan_pangkat_label}` : r.jenis === 'MUTASI' ? [r.usulan_jabatan, r.usulan_unit_kerja].filter(Boolean).join(' · ')
+        : r.jenis === 'PENYESUAIAN_JABATAN' ? `Jabatan → ${r.usulan_jabatan}` : 'Kenaikan gaji berkala',
+    }))
+    respond(res, 200, { item })
   }))
 
   router.patch('/:id', json, handle(async (req, res) => {
@@ -440,7 +364,9 @@ export function createSumdaDashboardRouter({ pool }) {
              (SELECT count(*) FROM sdl_sumda_personel WHERE deleted_at IS NULL AND status='MPP') AS mpp,
              (SELECT count(*) FROM sdl_sumda_personel p WHERE p.deleted_at IS NULL AND ${BELUM_LENGKAP}) AS belum_lengkap,
              (SELECT count(*) FROM a) AS alert,
-             (SELECT count(*) FROM a WHERE reviewed_at IS NULL) AS belum_ditinjau`)).rows[0]
+             (SELECT count(*) FROM a WHERE reviewed_at IS NULL) AS belum_ditinjau,
+             (SELECT count(*) FROM sdl_sumda_karier k JOIN sdl_sumda_personel kp ON kp.id=k.personel_id
+               WHERE k.status='Diproses' AND kp.deleted_at IS NULL) AS karier_menunggu`)).rows[0]
     // K19: kartu "Pensiun 6 bulan" = jumlah grafik proyeksi (bulan berjalan s.d. +5).
     const proyeksi = (await pool.query(`
       SELECT to_char(b.m,'YYYY-MM') AS bulan, count(p.id)::int AS jumlah
@@ -464,6 +390,7 @@ export function createSumdaDashboardRouter({ pool }) {
         personel: Number(tot.personel), aktif: Number(tot.aktif), mpp: Number(tot.mpp),
         alert: Number(tot.alert), belumDitinjau: Number(tot.belum_ditinjau), belumLengkap: Number(tot.belum_lengkap),
         enamBulan: proyeksi.reduce((s, b) => s + b.jumlah, 0),
+        karierMenunggu: Number(tot.karier_menunggu), // R5H28 K14 (aditif)
       },
       proyeksi,
       alertTerdekat,

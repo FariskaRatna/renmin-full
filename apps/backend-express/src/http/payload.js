@@ -111,4 +111,6 @@ export const BODY_LIMITS = Object.freeze({
   // R5H27, Express saja: Master Personel (badan penuh) dan tinjau alert pensiun
   // (maks. 200 butir, kira-kira 18 KB).
   SUMDA: 32768,
+  // R5H28: satu PDF lampiran Karier & Mutasi (<= 5 MB) + bingkai multipart.
+  SUMDA_LAMPIRAN: 5 * 1024 * 1024 + 65536,
 })

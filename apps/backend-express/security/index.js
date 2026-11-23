@@ -28,6 +28,7 @@ import { verifyR4A3Budget } from './scenarios/r4a3.js'
 import { verifyR4A3BProof } from './scenarios/r4a3b.js'
 import { verifyR5H25MasterTahap } from './scenarios/r5h25.js'
 import { verifyR5H27SumdaPersonel } from './scenarios/r5h27.js'
+import { verifyR5H28SumdaKarier } from './scenarios/r5h28.js'
 
 /**
  * URUTAN INI ADALAH BAGIAN DARI UJINYA, sama seperti di Go.
@@ -65,6 +66,7 @@ const SCENARIOS = [
   // Skenario EXPRESS SAJA (tanpa padanan Go): berawalan x, selalu setelah urutan 1:1 di atas.
   ['x1_r5h25_master_tahap_admin_guard', verifyR5H25MasterTahap],
   ['x2_r5h27_sumda_personel_guard', verifyR5H27SumdaPersonel],
+  ['x3_r5h28_sumda_karier_guard', verifyR5H28SumdaKarier],
 ]
 
 function line(text = '') {
