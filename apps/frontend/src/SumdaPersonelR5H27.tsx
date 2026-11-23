@@ -22,22 +22,26 @@ import './SumdaPersonelR5H27.css'
 type Tahap = 'H-60' | 'H-30' | 'H-14' | 'H-7' | 'JATUH_TEMPO'
 type Status = 'Aktif' | 'MPP' | 'Pensiun' | 'Nonaktif'
 type RiwayatKarier = { id: string; jenis: string; status: string; tanggalUsulan: string; tanggalEfektif: string; ringkas: string }
+type RiwayatDiklat = { diklatId: string; pesertaId: string; nama: string; jenis: string; status: string; tanggalMulai: string; tanggalSelesai: string; hasil: string; nomorSertifikat: string }
+type KompetensiRingkas = { id: string; nama: string; kategori: string; nomor: string; berlakuSampai: string; sisaHari: number | null; tahap: 'H-60' | 'H-30' | 'KEDALUWARSA' | null }
 type Personel = {
   id: string; nrp: string; nama: string; jenis: '' | 'Polri' | 'PNS'; pangkat: string; pangkatLabel: string
   jabatan: string; unitKerja: string; tmtDinas: string; tanggalPensiun: string; status: Status; catatan: string
   version: number; salinan: boolean; perluDilengkapi: boolean; sisaHari: number | null; tahap: Tahap | null
   riwayatKarier?: RiwayatKarier[]
+  riwayatDiklat?: RiwayatDiklat[]
+  kompetensi?: KompetensiRingkas[]
 }
 type Alert = { personel: Personel; sisaHari: number; tahap: Tahap; ditinjau: { oleh: string; pada: string } | null }
 type Caps = { canRead: boolean; canCreate: boolean; canUpdate: boolean; canArchive: boolean; canReview: boolean }
 type Aktivitas = { jenis: string; personelId: string | null; personelNama: string | null; oleh: string; pada: string; rincian: Record<string, unknown> }
 type Dashboard = {
-  totals: { personel: number; aktif: number; mpp: number; alert: number; belumDitinjau: number; belumLengkap: number; enamBulan: number; karierMenunggu?: number }
+  totals: { personel: number; aktif: number; mpp: number; alert: number; belumDitinjau: number; belumLengkap: number; enamBulan: number; karierMenunggu?: number; kompetensiKedaluwarsa60?: number }
   proyeksi: { bulan: string; jumlah: number }[]; alertTerdekat: Alert[]; terdekat: Personel[]; aktivitas: Aktivitas[]
 }
 type Rank = { code: string; shortName: string; fullName: string; group: string }
 type Mode = 'dashboard' | 'master' | 'pensiun'
-export type SumdaNav = (menu: 'personel' | 'pensiun' | 'karier', opts?: { recordID?: string }) => void
+export type SumdaNav = (menu: 'personel' | 'pensiun' | 'karier' | 'diklat', opts?: { recordID?: string; tab?: string }) => void
 
 const STATUS: Status[] = ['Aktif', 'MPP', 'Pensiun', 'Nonaktif']
 const TAHAP: { key: Tahap; label: string; rentang: string }[] = [
@@ -122,6 +126,8 @@ function DashboardView({ onNavigate, onLost }: { onNavigate: SumdaNav; onLost: (
       <div><dt>Pensiun 6 bulan</dt><dd>{t.enamBulan}</dd><small>Bulan ini s.d. 5 bulan ke depan</small></div>
       {t.karierMenunggu !== undefined && <div className={t.karierMenunggu ? 'is-attention' : ''}><dt>Karier menunggu keputusan</dt><dd>{t.karierMenunggu}</dd>
         <small><button type="button" className="sdl-sumda__link" onClick={() => onNavigate('karier')}>Karier &amp; Mutasi</button></small></div>}
+      {t.kompetensiKedaluwarsa60 !== undefined && <div className={t.kompetensiKedaluwarsa60 ? 'is-attention' : ''}><dt>Kompetensi kedaluwarsa ≤ 60 hari</dt><dd>{t.kompetensiKedaluwarsa60}</dd>
+        <small><button type="button" className="sdl-sumda__link" onClick={() => onNavigate('diklat', { tab: 'kompetensi' })}>Diklat &amp; Kompetensi</button></small></div>}
     </dl>
 
     <div className="sdl-sumda__split">
@@ -286,10 +292,15 @@ const JENIS_KARIER_LABEL: Record<string, string> = { UKP: 'UKP', KGB: 'KGB', MUT
 
 function DetailDialog({ p, caps, onClose, onEdit, onArchive }: { p: Personel; caps: Caps | null; onClose: () => void; onEdit: () => void; onArchive: () => void }) {
   // R5H28 K13/K28: riwayat karier hanya ada di GET /personel/:id, jadi dimuat setiap dialog dibuka.
+  // R5H29 K18: riwayat diklat & kompetensi ikut di respons yang sama.
   const [riwayat, setRiwayat] = useState<RiwayatKarier[] | null>(null)
+  const [diklat, setDiklat] = useState<RiwayatDiklat[]>([])
+  const [kompetensi, setKompetensi] = useState<KompetensiRingkas[]>([])
   useEffect(() => {
     if (!UUID_RE.test(p.id)) return
-    api<{ item: Personel }>(`/personel/${encodeURIComponent(p.id)}`).then(r => setRiwayat(r.item.riwayatKarier ?? [])).catch(() => setRiwayat([]))
+    api<{ item: Personel }>(`/personel/${encodeURIComponent(p.id)}`).then(r => {
+      setRiwayat(r.item.riwayatKarier ?? []); setDiklat(r.item.riwayatDiklat ?? []); setKompetensi(r.item.kompetensi ?? [])
+    }).catch(() => setRiwayat([]))
   }, [p.id])
   const rows: [string, ReactNode][] = [
     ['NRP / NIP', <span className="sdl-sumda__mono">{p.nrp}</span>], ['Jenis', p.jenis || 'Belum diisi'],
@@ -311,6 +322,18 @@ function DetailDialog({ p, caps, onClose, onEdit, onArchive }: { p: Personel; ca
           : <ol>{riwayat.map(r => <li key={r.id}><span className="sdl-sumda__mono">{tgl(r.tanggalEfektif || r.tanggalUsulan)}</span>
             <span>{JENIS_KARIER_LABEL[r.jenis] ?? r.jenis} · {r.ringkas}</span><span className="sdl-sumda__muted">{r.status}</span></li>)}</ol>}
     </section>
+    {riwayat !== null && <section className="sdl-sumda__riwayat" aria-label="Riwayat diklat">
+      <strong>Riwayat diklat</strong>
+      {diklat.length === 0 ? <p className="sdl-sumda__muted">Belum pernah tercatat sebagai peserta.</p>
+        : <ol>{diklat.map(r => <li key={r.pesertaId}><span className="sdl-sumda__mono">{r.tanggalMulai ? tgl(r.tanggalMulai) : '—'}</span>
+          <span>{r.nama} · {r.jenis}</span><span className="sdl-sumda__muted">{r.status === 'Selesai' ? r.hasil : r.status}</span></li>)}</ol>}
+    </section>}
+    {riwayat !== null && <section className="sdl-sumda__riwayat" aria-label="Kompetensi">
+      <strong>Kompetensi</strong>
+      {kompetensi.length === 0 ? <p className="sdl-sumda__muted">Belum ada kompetensi tercatat.</p>
+        : <ol>{kompetensi.map(k => <li key={k.id}><span className="sdl-sumda__mono">{k.berlakuSampai ? tgl(k.berlakuSampai) : 'Tanpa batas'}</span>
+          <span>{k.nama} · {k.kategori}</span><span className={k.tahap ? 'sdl-sumda__flag' : 'sdl-sumda__muted'}>{k.tahap === 'KEDALUWARSA' ? 'Kedaluwarsa' : k.tahap ?? ''}</span></li>)}</ol>}
+    </section>}
     <footer>
       {caps?.canArchive && <button type="button" className="btn sdl-progar__danger" onClick={onArchive}>Arsipkan</button>}
       <span className="sdl-sumda__grow" />
