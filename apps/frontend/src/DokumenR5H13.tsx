@@ -399,7 +399,7 @@ export default function DokumenR5H13({ userId, mode = 'rancang', onOpenRancang, 
       : <section className="panel sdl-progar__program sdl-progar__doclist" aria-label="Daftar dokumen">
           <p className="sdl-progar__count">{rows.length} {mode === 'laporan' ? 'laporan' : mode === 'revisi' ? 'revisi' : 'dokumen'}</p>
           <div className="table-scroll"><table className="data-table sdl-progar__table">
-            <thead><tr><th>Jenis</th><th>{mode === 'laporan' ? 'Laporan' : mode === 'revisi' ? 'Revisi' : 'Dokumen'}</th><th>Tahap Pekerjaan</th>{mode !== 'rancang' && <th>Status</th>}<th><span className="sdl-progar__sr">Aksi</span></th></tr></thead>
+            <thead><tr><th>Jenis</th><th>{mode === 'laporan' ? 'Laporan' : mode === 'revisi' ? 'Revisi' : 'Dokumen'}</th><th>Tahap Pekerjaan</th>{mode !== 'rancang' && <th>Status</th>}<th scope="col">Aksi</th></tr></thead>
             <tbody>{rows.map(d => {
               const st = status(d); const mine = d.createdBy === userId
               const last = d.tahap.length ? d.tahap[d.tahap.length - 1] : null
@@ -644,7 +644,7 @@ function DetailDialog({ doc, lampiranDok, tanpaSah, showApprovalDetails, showAng
               {jumlahPekerjaan.length > 1 && jumlahPekerjaan.map(([k, label, n]) => <button key={k} type="button" className={saring === k ? 'is-on' : undefined} aria-pressed={saring === k} onClick={() => setSaring(k)}>{label} <span className="sdl-progar__num">{n}</span></button>)}
             </div>}
             <div className="table-scroll"><table className="data-table sdl-progar__table sdl-progar__register">
-            <thead><tr><th className="sdl-progar__num">No</th><th>Tanggal</th><th>Pekerjaan</th><th className="sdl-progar__ringkas">Ringkasan</th><th className="sdl-progar__col-lamp">Lampiran</th><th>Pemeriksaan</th><th><span className="sdl-progar__sr">Aksi</span></th></tr></thead>
+            <thead><tr><th className="sdl-progar__num">No</th><th>Tanggal</th><th>Pekerjaan</th><th className="sdl-progar__ringkas">Ringkasan</th><th className="sdl-progar__col-lamp">Lampiran</th><th>Pemeriksaan</th><th scope="col">Aksi</th></tr></thead>
             <tbody>{shown.map(t => {
               const no = doc.tahap.indexOf(t) + 1; const u = ulangKe(doc.tahap, t); const tg = tanggalTahap(t, katalog)
               return <tr key={t.id} className="sdl-progar__row-link" onClick={e => { if (!(e.target as HTMLElement).closest('button')) setLihat(t.id) }}>
