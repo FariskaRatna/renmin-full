@@ -1693,3 +1693,45 @@ baru dijawab chi 404 `text/plain`. Frontend menampilkan "Master Personel tidak t
 tombol "Buka data registry lama (darurat)". Tabel 068 diam; skema tidak perlu dibalik. Untuk
 mengembalikan registry saja, ganti pola dengan `/api/v1/subbagsumda/personel*
 /api/v1/subbagsumda/pensiun/* /api/v1/subbagsumda/dashboard /api/v1/subbagsumda/opsi-dropdown/*`.
+
+## R5H28 — Subbagsumda: Karier & Mutasi (2026-11-23, EXPRESS SAJA)
+
+Migrasi `069_sumda_karier_mutasi.sql` (`sdl_sumda_karier`, `sdl_sumda_karier_riwayat`, `sdl_sumda_karier_lampiran`,
+permission `subbagsumda.karier.manage`/`.approve`); rancangan `docs/R5H28-SUMDA-KARIER-MUTASI.md`; uji
+`verify/r5h28-sumda-karier.js` dan skenario keamanan `x3_r5h28_sumda_karier_guard`. Guard operasional (**O**). Hak =
+permission pada grant aktif unit `subbagsumda` (scope apa pun): `R` = `subbagsumda.personel.read`, `M` =
+`subbagsumda.karier.manage`, `A` = `subbagsumda.karier.approve`, `U` = `subbagsumda.personel.update`. Validasi strict;
+semua respons `Cache-Control: no-store`.
+
+| Method | Path | Hak | Catatan |
+|---|---|---|---|
+| GET | `/api/v1/subbagsumda/karier/capabilities` | O | `{canRead,canManage,canApprove}` |
+| GET | `/api/v1/subbagsumda/karier` | R | `?q=&status=&jenis=&personelId=&page=&size=` (size 5/10/50/100) → `{items,total,page,size}`. Item: `{id,jenis,nomorReferensi,tanggalUsulan,tanggalEfektif,status,catatan,version,usulan:{pangkat,pangkatLabel,jabatan,unitKerja},ringkas,diterapkan,createdBy,createdByName,updatedBy,decidedByName,decidedAt,selesaiAt,personel:{id,nrp,nama,jenis,pangkat,pangkatLabel,jabatan,unitKerja,status,version,terarsip}}` |
+| POST | `/api/v1/subbagsumda/karier` | M | `{personelId,jenis,nomorReferensi,tanggalUsulan,tanggalEfektif,usulan,catatan}` → 201 `{item}`. `jenis` `UKP`\|`KGB`\|`MUTASI`\|`PENYESUAIAN_JABATAN`; `usulan` berkunci sesuai jenis (UKP `pangkat`; MUTASI `jabatan`/`unitKerja`, min. satu; PENYESUAIAN_JABATAN `jabatan`; KGB kosong) |
+| GET | `/api/v1/subbagsumda/karier/:id` | R | `{item,lampiran:[{id,filename,size,uploadedBy,uploadedByName,uploadedAt}],riwayat:[{dari,ke,catatan,oleh,pada}]}` |
+| PATCH | `/api/v1/subbagsumda/karier/:id` | M | `{nomorReferensi,tanggalUsulan,tanggalEfektif,usulan,catatan,version}`; hanya status Diajukan. `personelId`/`jenis` tidak diterima (400 `invalid_body`) |
+| POST | `/api/v1/subbagsumda/karier/:id/aksi` | M/A(+U) | `{aksi,catatan,version}`; `selesai` juga `{tanggalEfektif,terapkan:{<field>,personelVersion}}` (KGB tanpa `terapkan`). `proses` M (Diajukan); `setujui`/`tolak` A + bukan pencatat/pengubah terakhir (Diproses); `batalkan` M + pencatat atau A (Diajukan/Diproses); `selesai` M+U (Disetujui) — menerapkan nilai ke Master Personel dalam transaksi yang sama. Tolak/batalkan: catatan ≥ 8 karakter |
+| POST | `/api/v1/subbagsumda/karier/:id/lampiran` | M | multipart `file`, PDF ≤ 5 MB, maks. 10; selama Diajukan/Diproses/Disetujui; disegel SDL1 → 201 `{id,sha256}` |
+| GET | `/api/v1/subbagsumda/karier/:id/lampiran/:lid` | R | unduh `application/octet-stream`, `attachment`, `nosniff`, `CSP: sandbox`; id silang → 404 |
+| DELETE | `/api/v1/subbagsumda/karier/:id/lampiran/:lid` | M | pengunggah atau A; hanya Diajukan/Diproses |
+
+Kode galat: 400 `invalid_body`/`invalid_input`/`invalid_rank`/`invalid_file_type`/`one_file_required`; 413
+`file_too_large`; 403 `access_denied`/`self_review_forbidden`; 404 `not_found`; 409 `version_conflict`/
+`status_tidak_sesuai`/`pengajuan_ganda`/`personel_berubah`/`personel_terarsip`/`personel_tidak_aktif`/
+`personel_belum_lengkap`/`batas_lampiran`; 503 `evidence_encryption_unavailable`/`evidence_integrity_failure`/
+`database_unavailable`. Menambah/menghapus lampiran menaikkan `version`. Pengajuan milik personel terarsip hanya bisa
+dibatalkan.
+
+Audit `subbagsumda.karier.create|update|proses|setujui|tolak|batalkan|selesai|lampiran.add|lampiran.delete|
+lampiran.download` (metadata `{jenis,status,fields,version}` saja); Selesai yang mengubah master juga menulis
+`subbagsumda.personel.update {fields,version}`.
+
+**Aditif pada R5H27:** `GET /api/v1/subbagsumda/personel/:id` → `item.riwayatKarier[]` `{id,jenis,status,
+tanggalUsulan,tanggalEfektif,ringkas}` (maks. 50, terbaru di atas; tidak ada di respons POST/PATCH); `GET
+/api/v1/subbagsumda/dashboard` → `totals.karierMenunggu` (status Diproses, personel belum terarsip). Galat FK (23503) di
+modul Sumda kini 400 `invalid_input`, bukan 503.
+
+**Rollback.** Bila `/api/v1/subbagsumda/*` kembali ke Go, `/karier*` dijawab chi 404 `text/plain`; layar Karier
+menampilkan "tidak tersedia" (tanpa cadangan registry). Tabel 069 diam; skema tidak perlu dibalik. Rollback sempit:
+`/api/v1/subbagsumda/personel* /api/v1/subbagsumda/pensiun/* /api/v1/subbagsumda/dashboard /api/v1/subbagsumda/karier*
+/api/v1/subbagsumda/opsi-dropdown/*`.
