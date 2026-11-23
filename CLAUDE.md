@@ -17,7 +17,7 @@ sungguhan, bukan sekadar test merah.
 | Direktori | Stack | Peran |
 |---|---|---|
 | `apps/backend/` | Go 1.27 + chi + pgx | **Produksi.** Sumber kebenaran perilaku |
-| `apps/backend-express/` | Node/Express (JavaScript, ESM) | Migrasi. **142/142 endpoint diporting, 382/382 kasus harness cocok** dengan baseline Go (2026-11-01). Trafik belum dialihkan |
+| `apps/backend-express/` | Node/Express (JavaScript, ESM) | Migrasi. **142/142 endpoint diporting, 382/382 kasus harness cocok** dengan baseline Go (2026-11-01). **Sebagian trafik sudah dialihkan** lewat `SDL_EXPRESS_PATHS` (portal, executive, subbag\*, unit-work, urmin, leadership; per catatan 2026-11-10). Fitur baru R5H11–R5H26 **hanya ada di Express** |
 | `apps/frontend/` | React 19 + Vite 8 + Tailwind 4 | Dipakai keduanya, tidak disentuh |
 
 Migrasi Go → Express sedang berjalan. Aturan yang mengikat selama masa ini ada di
@@ -52,7 +52,8 @@ Vite dev server mem-proxy `/api` → `http://api:8080` di dalam network Docker
 uji lewat `http://127.0.0.1:5174/api/v1/system/status`.
 
 Backend Express berjalan berdampingan sebagai service `api-express`, berbagi
-database yang sama dengan Go. Trafik belum dialihkan ke sana:
+database yang sama dengan Go. Di produksi sebagian prefix sudah dialihkan ke sana; di lokal ia
+dijalankan berdampingan:
 
 ```bash
 docker compose --env-file .env \
@@ -126,10 +127,13 @@ terisolasi, dan laporannya jatuh ke `0.sekerips/reports/`:
 ```bash
 bash scripts/security-test-r2d5.sh      # backend Go (9 file, tag r2d5integration,
                                         #   TIDAK ikut `go test ./...`)
-bash scripts/security-test-express.sh   # backend Express (21/21 per 2026-11-01)
+bash scripts/security-test-express.sh   # backend Express (22/22 per 2026-11-22:
+                                        #   21 skenario 1:1 + x1_r5h25 khusus Express)
 ```
 
-Port Express-nya satu-lawan-satu dengan nama skenario yang identik. Ia ada
+Port Express-nya satu-lawan-satu dengan nama skenario yang identik. Skenario
+berawalan `x` menguji fitur yang hanya ada di Express dan selalu dijalankan
+setelah urutan 1:1. Port ini ada
 karena **suite Go tetap hijau sambil berhenti relevan** begitu Caddy
 mengalihkan satu prefix ke Express — ia tidak akan merah, ia hanya tidak lagi
 menguji backend yang melayani. Harness golden-file bukan penggantinya: ia
@@ -179,7 +183,7 @@ identik, satu diproses Go dan satu Express, lalu keadaan akhirnya dibandingkan
 baris per baris — seed 171/171 baris cocok, reset 7/7 cocok, dan hash yang
 ditulis Express diterima `auth.VerifyPassword` Go.
 
-33 berkas SQL ikut masuk image lewat `additional_contexts` di
+67 berkas SQL ikut masuk image lewat `additional_contexts` di
 `compose.express.yaml` (padanan `//go:embed`), sehingga `--migrate` berguna di
 dalam container, bukan hanya dari checkout source. Skema tetap satu sumber.
 
@@ -199,8 +203,8 @@ mengubah konfigurasi proxy Vite memengaruhi produksi, bukan cuma dev.
 
 ### Database
 
-57 tabel, semua berprefiks `sdl_`. Skema dibangun dari **33 file SQL ter-embed**
-di `apps/backend/internal/migrations/sql/` (`001_core.sql` … `033_*.sql`).
+100 tabel, semua berprefiks `sdl_`. Skema dibangun dari **67 file SQL ter-embed**
+di `apps/backend/internal/migrations/sql/` (`001_core.sql` … `067_*.sql`).
 
 Runner (`migrations/migrate.go`) menerapkan secara transaksional, memegang advisory
 lock, mencatat SHA-256 per file di `sdl_schema_migrations`, dan **menolak kalau
@@ -305,7 +309,7 @@ Berlaku sampai Express melayani 100% trafik.
    handler → test) sebelum domain berikutnya.
 5. **Peralihan lewat Caddy per prefix**, bukan feature flag di kode. Rollback =
    satu baris config + reload.
-6. **Skema database tidak ikut bermigrasi.** Runner Express membaca 33 SQL yang
+6. **Skema database tidak ikut bermigrasi.** Runner Express membaca SQL yang
    sama dari `apps/backend/internal/migrations/sql/` — jangan disalin.
 7. **Satu worker email aktif.** Selama transisi kedua backend hidup; kalau keduanya
    memproses outbox, email terkirim dua kali ke pengguna nyata.
