@@ -399,7 +399,7 @@ export default function DokumenR5H13({ userId, mode = 'rancang', onOpenRancang, 
       : <section className="panel sdl-progar__program sdl-progar__doclist" aria-label="Daftar dokumen">
           <p className="sdl-progar__count">{rows.length} {mode === 'laporan' ? 'laporan' : mode === 'revisi' ? 'revisi' : 'dokumen'}</p>
           <div className="table-scroll"><table className="data-table sdl-progar__table">
-            <thead><tr><th>Jenis</th><th>{mode === 'laporan' ? 'Laporan' : mode === 'revisi' ? 'Revisi' : 'Dokumen'}</th><th>Tahap Pekerjaan</th><th>Status</th><th><span className="sdl-progar__sr">Aksi</span></th></tr></thead>
+            <thead><tr><th>Jenis</th><th>{mode === 'laporan' ? 'Laporan' : mode === 'revisi' ? 'Revisi' : 'Dokumen'}</th><th>Tahap Pekerjaan</th>{mode !== 'rancang' && <th>Status</th>}<th><span className="sdl-progar__sr">Aksi</span></th></tr></thead>
             <tbody>{rows.map(d => {
               const st = status(d); const mine = d.createdBy === userId
               const last = d.tahap.length ? d.tahap[d.tahap.length - 1] : null
@@ -408,12 +408,12 @@ export default function DokumenR5H13({ userId, mode = 'rancang', onOpenRancang, 
                 <td className="sdl-progar__jenis">{d.jenisLabel}{d.periode && <small className="sdl-progar__num">{periodeLabel(d.periode)} {d.tahun}</small>}</td>
                 <td><button type="button" className="sdl-progar__open" onClick={() => setDetailId(d.id)} title="Buka detail dokumen">{d.judul}</button>{d.penggantiDari && <span className="sdl-progar__tag">Revisi</span>}
                   <small className="sdl-progar__num"><span className="sdl-progar__ta">TA {d.tahun}</span> {[d.nomor, tgl(d.tanggal)].filter(Boolean).join(' · ') || 'Tanpa nomor'}</small>
-                  {d.anggaran && <small className="sdl-progar__num">Estimasi {rupiah(d.anggaran)}</small>}
+                  {mode !== 'rancang' && d.anggaran && <small className="sdl-progar__num">Estimasi {rupiah(d.anggaran)}</small>}
                   {d.status === 'ditolak' && <small className="sdl-progar__rejected">Ditolak: “{d.reviewNote}”</small>}
                   {d.status === 'disahkan' && draftRevisi(d) && <small className="sdl-progar__pending">✎ Ada revisi yang sedang dirancang</small>}</td>
                 <td>{last ? <><span className="sdl-progar__tahap-count">{d.tahap.length} tahap</span><small>Terakhir: {last.pekerjaanLabel}{lastDate && <span className="sdl-progar__num"> · {tgl(lastDate)}</span>}</small>{tahapRingkas(d)}</>
                   : <span className="sdl-progar__muted">{punyaTahap(d) ? 'Belum ada' : '–'}</span>}</td>
-                <td><span className={`sdl-progar__badge ${st.cls}`}>{st.label}</span></td>
+                {mode !== 'rancang' && <td><span className={`sdl-progar__badge ${st.cls}`}>{st.label}</span></td>}
                 <td><div className="sdl-progar__row-actions">
                   <button type="button" className="btn" onClick={() => setDetailId(d.id)}>Buka</button>
                   {d.status === 'draft' && canSahkan && !mine && !tanpaSah(d) && <><button type="button" className="btn primary" disabled={!hasPdf(d)} title={hasPdf(d) ? undefined : (punyaTahap(d) ? 'Belum ada dokumen bertanda tangan di tahap pengesahan' : 'Belum ada PDF dokumen')} onClick={() => void sahkan(d)}>Sahkan</button>
@@ -429,13 +429,14 @@ export default function DokumenR5H13({ userId, mode = 'rancang', onOpenRancang, 
 
     {detailId && (docs ?? []).some(d => d.id === detailId) && (() => {
       const d = docs!.find(x => x.id === detailId)!
-      return <DetailDialog key={d.id} tautan={tautanDipa(d)} doc={d} tanpaSah={tanpaSah(d)} showAnggaran={alurDokumen(d)} onAnggaran={canManage && !d.final && !d.digantikan ? () => ubahAnggaran(d) : undefined} katalog={katalog} blocked={Boolean(dialog || dokDialog || riwayat || preview)} statusOf={status} onClose={() => setDetailId(null)}
-        signed={signedOf(d)} onOpenSumber={onOpenSumber} onUbahTahap={canManage && tahapTerbuka(d) ? t => ubahTahap(d, t) : undefined} tahapActions={t => canSahkan && tahapTerbukaRaw(d) && t.cekStatus === 'menunggu' ? (t.updatedBy === userId
+      const showExtras = mode !== 'rancang' && alurDokumen(d)
+      return <DetailDialog key={d.id} tautan={tautanDipa(d)} doc={d} tanpaSah={tanpaSah(d)} showAnggaran={showExtras} onAnggaran={showExtras && canManage && !d.final && !d.digantikan ? () => ubahAnggaran(d) : undefined} katalog={katalog} blocked={Boolean(dialog || dokDialog || riwayat || preview)} statusOf={status} onClose={() => setDetailId(null)}
+        showApprovalDetails={mode !== 'rancang'} signed={signedOf(d)} onOpenSumber={onOpenSumber} onUbahTahap={canManage && tahapTerbuka(d) ? t => ubahTahap(d, t) : undefined} tahapActions={t => canSahkan && tahapTerbukaRaw(d) && t.cekStatus === 'menunggu' ? (t.updatedBy === userId
           ? <span className="sdl-progar__muted">Diubah oleh Anda</span>
           : <span className="sdl-progar__cek-btns"><button type="button" className="sdl-progar__mini is-ok" onClick={() => void guard(() => cek(d, t, 'diterima'))}>Terima</button><button type="button" className="sdl-progar__mini" onClick={() => kembalikan(d, t)}>Kembalikan</button></span>) : null}
         extra={RINGKASAN_JENIS.includes(d.jenis) ? <RingkasanRealisasi docId={d.id} stamp={d.version} jenisLabel={labelJenis} />
           : REVISI_ANGGARAN.includes(d.jenis) ? <RevisiAnggaran doc={d} canEdit={canManage} jenisLabel={labelJenis} onChanged={() => { showToast('Daftar perubahan disimpan.', 'success'); void load() }} /> : null}
-        lampiranDok={!alurDokumen(d) ? undefined : { canEdit: lampiranTerbuka(d), busy: uploading === `lamp:${d.id}`, onAdd: () => pickLampiran(d), onDelete: l => void hapusLampiran(d, l) }}
+        lampiranDok={showExtras ? { canEdit: lampiranTerbuka(d), busy: uploading === `lamp:${d.id}`, onAdd: () => pickLampiran(d), onDelete: l => void hapusLampiran(d, l) } : undefined}
         onPreview={(url, name) => { if (/\.(xlsx|docx)$/i.test(name)) { const a = document.createElement('a'); a.href = url; a.download = name; a.click() } else setPreview({ url, name, mime: 'application/pdf' }) }} onRiwayat={(chainOf.get(d.id)?.length ?? 0) > 1 ? () => setRiwayat(chainOf.get(d.id)!) : undefined}
         actions={<>
           {canManage && tahapTerbuka(d) && punyaTahap(d) && <>
@@ -509,9 +510,9 @@ function orderedIsian(t: Tahap, katalog: Katalog | null): [string, string][] {
   return Object.entries(t.isian).sort((a, b) => rank(a[0]) - rank(b[0]))
 }
 
-function DetailDialog({ doc, lampiranDok, tanpaSah, showAnggaran, onAnggaran, katalog, blocked, statusOf, actions, extra, tautan, onClose, onPreview, onRiwayat, signed, tahapActions, onUbahTahap, onOpenSumber }: {
+function DetailDialog({ doc, lampiranDok, tanpaSah, showApprovalDetails, showAnggaran, onAnggaran, katalog, blocked, statusOf, actions, extra, tautan, onClose, onPreview, onRiwayat, signed, tahapActions, onUbahTahap, onOpenSumber }: {
   doc: Doc; lampiranDok?: { canEdit: boolean; busy: boolean; onAdd: () => void; onDelete: (l: LampiranDok) => void }; tanpaSah: boolean; showAnggaran: boolean; onAnggaran?: () => void; katalog: Katalog | null; blocked: boolean; statusOf: (d: Doc) => { cls: string; label: string }; actions: ReactNode; extra?: ReactNode; tautan?: ReactNode
-  signed: { t: Tahap; b: Tahap['berkas'][number] }[]; tahapActions: (t: Tahap) => ReactNode; onUbahTahap?: (t: Tahap) => void; onOpenSumber?: (s: Sumber) => void
+  showApprovalDetails: boolean; signed: { t: Tahap; b: Tahap['berkas'][number] }[]; tahapActions: (t: Tahap) => ReactNode; onUbahTahap?: (t: Tahap) => void; onOpenSumber?: (s: Sumber) => void
   onClose: () => void; onPreview: (url: string, name: string) => void; onRiwayat?: () => void
 }) {
   // Register tahap (2026-11-17): satu baris per tahap; menekan pekerjaannya membuka
@@ -598,15 +599,15 @@ function DetailDialog({ doc, lampiranDok, tanpaSah, showAnggaran, onAnggaran, ka
         <dt>Nomor</dt><dd>{doc.nomor || '–'}</dd>
         <dt>Tanggal</dt><dd className="sdl-progar__num">{tgl(doc.tanggal) || '–'}</dd>
         <dt>Diunggah</dt><dd>{doc.createdByName}, <span className="sdl-progar__num">{tgl(doc.createdAt.slice(0, 10))}</span></dd>
-        {doc.reviewedByName && <><dt>{doc.status === 'ditolak' ? 'Ditolak' : 'Disahkan'}</dt><dd>{doc.reviewedByName}, <span className="sdl-progar__num">{tgl(doc.reviewedAt?.slice(0, 10) ?? null)}</span>{doc.reviewNote && ` — “${doc.reviewNote}”`}</dd></>}
+        {doc.reviewedByName && (showApprovalDetails || doc.status === 'ditolak') && <><dt>{doc.status === 'ditolak' ? 'Ditolak' : 'Disahkan'}</dt><dd>{doc.reviewedByName}, <span className="sdl-progar__num">{tgl(doc.reviewedAt?.slice(0, 10) ?? null)}</span>{doc.reviewNote && ` — “${doc.reviewNote}”`}</dd></>}
         {doc.final && <><dt>{tanpaSah ? 'Selesai' : 'Final'}</dt><dd>{doc.finalByName}, <span className="sdl-progar__num">{tgl(doc.finalAt?.slice(0, 10) ?? null)}</span></dd></>}
-        {tanpaSah ? <><dt>Pengesahan</dt><dd className="sdl-progar__muted">Tidak diperlukan — dokumen ditandai Selesai setelah semua tahap diterima Kasubbagren.</dd></> : <><dt>PDF dokumen</dt><dd>{doc.berkas && <button type="button" className="sdl-progar__file" onClick={() => onPreview(`${BASE}/dokumen/${doc.id}/berkas`, doc.berkas!.filename)}>👁 {doc.berkas.filename}</button>}
+        {showApprovalDetails && (tanpaSah ? <><dt>Pengesahan</dt><dd className="sdl-progar__muted">Tidak diperlukan — dokumen ditandai Selesai setelah semua tahap diterima Kasubbagren.</dd></> : <><dt>PDF dokumen</dt><dd>{doc.berkas && <button type="button" className="sdl-progar__file" onClick={() => onPreview(`${BASE}/dokumen/${doc.id}/berkas`, doc.berkas!.filename)}>👁 {doc.berkas.filename}</button>}
           {signed.map(({ t, b }) => <button key={b.id} type="button" className="sdl-progar__file" onClick={() => onPreview(`${BASE}/dokumen/${doc.id}/tahap/${t.id}/lampiran/${b.id}`, b.filename)}>👁 {b.filename}</button>)}
           {!doc.berkas && !signed.length && <span className="sdl-progar__muted">{(() => {
             // R5H25: arahkan ke tahap pengesahan yang masih aktif; bila semuanya nonaktif, unggah langsung ke dokumen.
             const sah = (katalog?.jenis[doc.jenis] ?? []).find(p => !tahapNonaktif(katalog, doc.jenis, p) && katalog?.pekerjaan[p]?.berkas.some(s => s.slot === 'dokumen_sah'))
             return sah ? `Belum ada — lampirkan “Dokumen yang sudah ditandatangani” di tahap ${katalog!.pekerjaan[sah].label}` : katalog?.jenis[doc.jenis]?.length ? 'Belum ada — unggah PDF bertanda tangan ke dokumen ini' : 'Belum ada'
-          })()}</span>}</dd></>}
+          })()}</span>}</dd></>)}
         {doc.periode && <><dt>Periode</dt><dd>{periodeLabel(doc.periode)} {doc.tahun}</dd></>}
         {showAnggaran && <><dt>Anggaran (estimasi)</dt><dd className="sdl-progar__anggaran">
           <span>{doc.anggaran ? <strong className="sdl-progar__num">{rupiah(doc.anggaran)}</strong> : <span className="sdl-progar__muted">Belum diisi</span>}
