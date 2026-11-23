@@ -34,6 +34,7 @@ const pemeriksaanFields = [
   f('pihak', 'Bersama', 'text', 160, { half: true }),
 ]
 const catatanPemeriksaan = f('catatan', 'Catatan hasil', 'textarea', 2000)
+const berkasPemeriksaan = [{ slot: 'ba', label: 'Berita Acara / Catatan Hasil Reviu', utama: true }]
 
 export const FORMS = {
   undangan: {
@@ -144,7 +145,11 @@ export const FORMS = {
       f('baNomor', 'Nomor Berita Acara / CHR', 'text', 120),
       catatanPemeriksaan,
     ],
-    berkas: [{ slot: 'ba', label: 'Berita Acara / Catatan Hasil Reviu', utama: true }],
+    berkas: berkasPemeriksaan,
+  },
+  pemeriksaan_progar: {
+    fields: [...pemeriksaanFields, catatanPemeriksaan],
+    berkas: berkasPemeriksaan,
   },
   rapat_pemeriksaan: {
     fields: [...pemeriksaanFields, catatanPemeriksaan],
@@ -262,8 +267,8 @@ export const PEKERJAAN = {
   surat_usulan: { label: 'Surat usulan kepada Astamarena Kapolri', form: 'surat_keluar' },
   pengiriman: { label: 'Mengirim dokumen kepada Stamarena', form: 'surat_keluar' },
   input_aplikasi: { label: 'Input ke aplikasi SAKTI / e-jakstra', form: 'input_aplikasi' },
-  penelitian: { label: 'Penelitian dokumen bersama Stamarena', form: 'pemeriksaan', defaults: { pihak: 'Stamarena Polri' } },
-  reviu_apip: { label: 'Reviu bersama Tim APIP Itwasum', form: 'pemeriksaan', defaults: { pihak: 'APIP Itwasum Polri' } },
+  penelitian: { label: 'Penelitian dokumen bersama Stamarena', form: 'pemeriksaan_progar', defaults: { pihak: 'Stamarena Polri' } },
+  reviu_apip: { label: 'Reviu bersama Tim APIP Itwasum', form: 'pemeriksaan_progar', defaults: { pihak: 'APIP Itwasum Polri' } },
   penjabaran: { label: 'Surat penjabaran kepada Astamarena Kapolri', form: 'surat_keluar' },
   terima_dipa_petikan: { label: 'Menerima DIPA Petikan dari Kemenkeu', form: 'surat_masuk', defaults: { dari: 'Kementerian Keuangan' } },
   // R5H17: laporan DALGAR dan revisi anggaran.
@@ -379,9 +384,10 @@ export function slotOf(pekerjaan, slot) {
   return p ? FORMS[p.form].berkas.find((b) => b.slot === slot) ?? null : null
 }
 
-/** Abaikan nomor berita acara lama pada rapat Stamarena. */
+/** Abaikan nomor berita acara lama pada formulir yang sudah menghapus kolomnya. */
 export function isianTahapAktif(pekerjaan, isian) {
-  if (pekerjaan !== 'rapat_pemeriksaan' || !Object.hasOwn(isian, 'baNomor')) return isian
+  const form = PEKERJAAN[pekerjaan]?.form
+  if ((form !== 'pemeriksaan_progar' && form !== 'rapat_pemeriksaan') || !Object.hasOwn(isian, 'baNomor')) return isian
   const { baNomor, ...aktif } = isian
   return aktif
 }
