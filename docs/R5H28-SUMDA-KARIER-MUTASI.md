@@ -152,6 +152,8 @@ demo browser.
 ## Di luar cakupan
 
 - Cuti & perizinan, kesejahteraan/pensiun ("Proses Pensiun" R5H27), kinerja — menu terpisah berikutnya.
+- Diklat & kompetensi → dikerjakan di R5H29 (`docs/R5H29-SUMDA-DIKLAT-KOMPETENSI.md`); pola rollback sempit di
+  API-CONTRACT § R5H28 usang sejak R5H29.
 - Pengingat otomatis KGB/UKP berdasarkan TMT, email/notifikasi.
 - Persetujuan berjenjang ke Kabagrenmin atau integrasi tanda tangan elektronik.
 - Ekspor/impor CSV, integrasi SIPP/HRIS Polri.

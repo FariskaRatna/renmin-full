@@ -5,7 +5,7 @@
 | Suite | Menguji | Perintah | Status |
 |---|---|---|---|
 | Go | `apps/backend` (melayani produksi hari ini) | `bash ./scripts/security-test-r2d5.sh` | 21 subtest |
-| Express | `apps/backend-express` (akan menggantikannya) | `bash ./scripts/security-test-express.sh` | **24/24 LULUS, 2026-11-23** (21 skenario 1:1 + `x1_r5h25` + `x2_r5h27` + `x3_r5h28`) |
+| Express | `apps/backend-express` (akan menggantikannya) | `bash ./scripts/security-test-express.sh` | **25/25 LULUS, 2026-11-23** (21 skenario 1:1 + `x1_r5h25` + `x2_r5h27` + `x3_r5h28` + `x4_r5h29`) |
 
 Suite Express adalah port satu-lawan-satu dari yang Go, dengan nama skenario
 yang identik supaya kedua laporan bisa ditaruh berdampingan. Skenario berawalan
@@ -28,7 +28,9 @@ dicabut saat sesi sedang hidup.
 - (R5H27, 2026-11-23) membuat `PERMIT_SQL` Master Personel mengabaikan
   permission → `x2_r5h27_sumda_personel_guard` merah, dan hanya x2;
 - (R5H28, 2026-11-23) menghapus syarat "bukan pencatat" di UPDATE keputusan Karier →
-  `x3_r5h28_sumda_karier_guard` merah, dan hanya x3 (CHECK database tetap menahan, 400).
+  `x3_r5h28_sumda_karier_guard` merah, dan hanya x3 (CHECK database tetap menahan, 400);
+- (R5H29, 2026-11-23) menghapus syarat "pengunggah atau pemegang arsip" pada hapus lampiran
+  kegiatan Diklat → `x4_r5h29_sumda_diklat_guard` merah, dan hanya x4.
 
 Keduanya dipulihkan sesudahnya. Suite yang lulus pada percobaan pertama tanpa
 pernah dibuktikan bisa merah tidak membuktikan apa-apa.
