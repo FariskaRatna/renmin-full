@@ -1646,3 +1646,50 @@ Tahap Pekerjaan menampilkan galat muat. Baris nonaktif yang tersimpan tetap dite
 Express selama `/api/v1/subbagren/*` di Express. Bila `/api/v1/subbagren/*` kembali ke Go,
 seluruh PROGAR/DALGAR memang sudah tidak tersedia di Go; tabel 067 diabaikan. Skema tidak
 perlu dibalik.
+
+## R5H27 — Subbagsumda: Master Personel & Monitoring Pensiun (2026-11-23, EXPRESS SAJA)
+
+Migrasi `068_sumda_personel_pensiun.sql` (`sdl_sumda_personel`, `sdl_sumda_pensiun_tinjau`,
+permission `subbagsumda.personel.archive` dan `subbagsumda.pensiun.review`, salinan sekali dari
+registry personel R5B); rancangan `docs/R5H27-SUMDA-PERSONEL-PENSIUN.md`; uji
+`verify/r5h27-sumda-personel.js` dan skenario keamanan `x2_r5h27_sumda_personel_guard`.
+Semua endpoint di bawah guard operasional (**O**). Hak = permission pada grant aktif unit
+`subbagsumda` (scope apa pun; scope/klasifikasi tidak menyaring baris): `R`/`C`/`U`/`A` =
+`subbagsumda.personel.read`/`.create`/`.update`/`.archive`, `V` = `subbagsumda.pensiun.review`.
+Validasi strict: field asing → 400 `invalid_body`. Semua respons `Cache-Control: no-store`.
+
+| Method | Path | Hak | Catatan |
+|---|---|---|---|
+| GET | `/api/v1/subbagsumda/personel/capabilities` | O | `{canRead,canCreate,canUpdate,canArchive,canReview}` (tanpa hak → semua `false`, tetap 200) |
+| GET | `/api/v1/subbagsumda/personel` | R | `?q=&status=&unitKerja=&lengkap=belum&page=&size=` (size 5/10/50/100, bawaan 10) → `{items,total,page,size,unitKerja:[…]}`. Item: `{id,nrp,nama,jenis,pangkat,pangkatLabel,jabatan,unitKerja,tmtDinas,tanggalPensiun,status,catatan,version,salinan,perluDilengkapi,sisaHari,tahap,createdAt,updatedAt}` |
+| POST | `/api/v1/subbagsumda/personel` | C | `{nrp,nama,jenis,pangkat,jabatan,unitKerja,tmtDinas,tanggalPensiun,status,catatan}` → 201 `{item}` |
+| GET | `/api/v1/subbagsumda/personel/:id` | R | `{item}`; id bukan UUID/terarsip → 404 `not_found` |
+| PATCH | `/api/v1/subbagsumda/personel/:id` | U | Badan penuh + `version` → 200 `{item}`; 409 `version_conflict` |
+| DELETE | `/api/v1/subbagsumda/personel/:id?version=` | A | Arsip (soft delete) → 204; 409 `version_conflict` |
+| GET | `/api/v1/subbagsumda/pensiun/alert` | R | `?tahap=H-60\|H-30\|H-14\|H-7\|JATUH_TEMPO` → `{ringkas:{<tahap>:n},belumDitinjau,items:[{personel,sisaHari,tahap,ditinjau:{oleh,pada}\|null}]}` |
+| POST | `/api/v1/subbagsumda/pensiun/alert/tinjau` | V | `{items:[{personelId,tahap,tanggalPensiun}]}` (1–200 butir, kunci persis) → `{ditinjau:n}` (idempoten). Satu butir yang tahap/tanggalnya tidak cocok dengan keadaan sekarang → 409 `alert_berubah`, tidak ada yang tersimpan |
+| GET | `/api/v1/subbagsumda/dashboard` | R | `{totals:{personel,aktif,mpp,alert,belumDitinjau,belumLengkap,enamBulan},proyeksi:[{bulan:"YYYY-MM",jumlah}×6],alertTerdekat[≤5],terdekat[≤5],aktivitas[≤5]}` |
+
+Aturan isi: `nrp` 2–64, `nama` 3–200, `jenis` `Polri`\|`PNS` (wajib), `pangkat` kode rank master
+aktif (Polri) atau golongan `I/a`…`IV/e` (PNS) — pangkat lama yang sudah tersimpan boleh
+dipertahankan; `jabatan`/`unitKerja` ≤ 200, `catatan` ≤ 1000; `tmtDinas` 1950–2100,
+`tanggalPensiun` 2000–2100, wajib bila status `Aktif`/`MPP`; karakter kendali/surrogate tunggal
+ditolak. Kode galat: 400 `invalid_body` / `invalid_input` / `invalid_rank`; 403 `access_denied`;
+404 `not_found`; 409 `duplicate_nrp` / `version_conflict` / `alert_berubah`; 503 `database_unavailable`.
+
+Tahap dihitung di Postgres dengan `(now() AT TIME ZONE 'Asia/Jakarta')::date` (pool Express
+bersesi UTC): H-60 31–60 hari, H-30 15–30, H-14 8–14, H-7 1–7, `JATUH_TEMPO` ≤ 0; hanya status
+`Aktif`/`MPP` bertanggal. Audit `subbagsumda.personel.create|update|archive`,
+`subbagsumda.pensiun.review`, `subbagsumda.personel.salin_registry` (migrasi), metadata tanpa
+data pribadi.
+
+Tiga mount spesifik (`/subbagsumda/dashboard`, `/personel`, `/pensiun`), di bawah pola Caddy
+`/api/v1/subbagsumda/*` yang sudah ada. Endpoint registry R5B (§5.5), `/registry/ranks`, dan
+`/opsi-dropdown` tidak berubah; registry personel menjadi arsip de facto (tetap bisa ditulis
+lewat API lama, tanpa sinkronisasi ke Master Personel).
+
+**Rollback.** Bila `/api/v1/subbagsumda/*` kembali ke Go: registry dilayani Go, tiga endpoint
+baru dijawab chi 404 `text/plain`. Frontend menampilkan "Master Personel tidak tersedia" dan
+tombol "Buka data registry lama (darurat)". Tabel 068 diam; skema tidak perlu dibalik. Untuk
+mengembalikan registry saja, ganti pola dengan `/api/v1/subbagsumda/personel*
+/api/v1/subbagsumda/pensiun/* /api/v1/subbagsumda/dashboard /api/v1/subbagsumda/opsi-dropdown/*`.
