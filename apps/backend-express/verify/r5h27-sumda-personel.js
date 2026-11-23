@@ -257,6 +257,30 @@ async function main() {
     const upd = ev.filter((e) => e.event_key === 'subbagsumda.personel.update').map((e) => JSON.parse(e.m).fields)
     check('update mencatat nama field yang berubah', upd.some((f) => f?.includes('jabatan')) && upd.some((f) => f?.includes('tanggalPensiun')), JSON.stringify(upd))
 
+    log('\n10. Perbaikan review: nilai lama, ganti jenis, karakter tak terlihat, aktivitas')
+    // Baris "salinan" dengan NRP di luar set karakter baru dan pangkat bukan master.
+    const lama = (await sql.query(
+      `INSERT INTO sdl_sumda_personel(nrp,nama,jenis,pangkat,status,tanggal_pensiun,source_registry_id,created_by,updated_by)
+       VALUES($1,'Uji Salinan Lama','Polri','PANGKAT-LAMA','Aktif',$2::date,gen_random_uuid(),$3,$3) RETURNING id::text`,
+      [`${PREFIX}LAMA#1`, await tambahHari(today, 200), op.id])).rows[0].id
+    const cl = (await call(op, 'GET', `${PER}/${lama}`)).body.item
+    const isiLama = (extra = {}) => ({ nrp: cl.nrp, nama: cl.nama, jenis: 'Polri', pangkat: cl.pangkat, jabatan: '', unitKerja: '', tmtDinas: '', tanggalPensiun: cl.tanggalPensiun, status: 'Aktif', catatan: '', version: cl.version, ...extra })
+    const pJenis = await call(op, 'PATCH', `${PER}/${lama}`, isiLama({ jenis: 'PNS' }))
+    check('ganti jenis ke PNS dengan pangkat Polri lama → 400 invalid_rank', pJenis.status === 400 && pJenis.body?.error === 'invalid_rank', short(pJenis))
+    const pNrp = await call(op, 'PATCH', `${PER}/${lama}`, isiLama({ nrp: `${PREFIX}BARU#2` }))
+    check('NRP baru di luar set karakter → 400', pNrp.status === 400, short(pNrp))
+    const pTetap = await call(op, 'PATCH', `${PER}/${lama}`, isiLama({ jabatan: 'Staf Salinan' }))
+    check('NRP + pangkat lama dipertahankan → 200', pTetap.status === 200, short(pTetap))
+    for (const [label, b] of [['NRP zero-width', dasar(`${PREFIX}Z​1`, 'Uji Zero Width', { tanggalPensiun: today })],
+      ['nama pembalik arah', dasar(`${PREFIX}Z2`, 'Uji ‮balik', { tanggalPensiun: today })]]) {
+      check(`${label} → 400`, (await call(op, 'POST', PER, b)).status === 400)
+    }
+    const ar = await call(ka, 'DELETE', `${PER}/${lama}?version=${pTetap.body?.item?.version}`)
+    const akt = (await call(kabag, 'GET', DASH)).body.aktivitas
+    check('aktivitas arsip terbaru tanpa nama personel terarsip', ar.status === 204 && akt[0]?.personelId === lama && akt[0]?.personelNama === null, JSON.stringify(akt[0]))
+    const kunciBoleh = new Set(['fields', 'status', 'tahap', 'version', 'sumber', 'disalin'])
+    check('rincian aktivitas hanya kunci daftar putih', akt.every((a) => Object.keys(a.rincian).every((k) => kunciBoleh.has(k))))
+
     const hariAkhir = await hariIni()
     if (hariAkhir !== today) { fail++; log('  GAGAL  tanggal WIB berganti selama uji (lewat tengah malam) — ulangi') }
   } finally {

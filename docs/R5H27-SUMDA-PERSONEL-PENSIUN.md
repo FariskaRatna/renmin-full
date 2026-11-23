@@ -29,7 +29,7 @@ hanya tiga halaman pertama dari grup *Workspace Subbagsumda*: **Dashboard**, **M
 | # | Hal | Keputusan | Sumber |
 |---|---|---|---|
 | K1 | Tanggal pensiun | **Diisi manual** oleh petugas. Tanggal lahir **tidak** disimpan | Pemilik |
-| K2 | Akses | Semua akun dengan grant aktif Subbagsumda (scope apa pun) **melihat seluruh** master dan alert. **Tambah/ubah**: Operator & Kasubbagsumda. **Arsipkan**: Kasubbagsumda saja. **Kabagrenmin**: baca saja (dashboard, master, alert). Superadmin tetap ditolak | Pemilik |
+| K2 | Akses | Semua akun dengan grant aktif Subbagsumda (scope apa pun) **melihat seluruh** master dan alert. **Tambah/ubah**: Operator & Kasubbagsumda (Staf juga, lihat K5). **Arsipkan**: Kasubbagsumda saja. **Kabagrenmin**: baca saja (dashboard, master, alert). Superadmin tetap ditolak | Pemilik |
 | K3 | Menu lama "Data Administrasi Personel" | **Disembunyikan** dari navigasi Sumda. Entri personel registry yang masih aktif **disalin sekali** ke Master Personel. Endpoint registry lama tetap hidup (kontrak beku) dan tidak dihapus | Pemilik |
 | K4 | Tindak lanjut alert | **"Tandai tinjau" bersama satu unit**, per personel per tahap. Dicatat siapa dan kapan, plus audit. Tahap berikutnya muncul lagi sebagai *belum ditinjau*. **Tanpa email.** "Proses Pensiun" ditunda | Pemilik |
 | K5 | Staf Subbagsumda | Role `br_staf_subbagsumda` **sudah** punya `subbagsumda.personel.update`, jadi staf juga bisa mengubah. Usulan: dibiarkan (tidak mencabut hak yang sudah ada) | Usulan |
@@ -87,14 +87,14 @@ bukan Superadmin). Validasi strict: field asing → `400 invalid_body`.
 
 | Metode | Path | Hak | Isi |
 |---|---|---|---|
-| GET | `/api/v1/subbagsumda/dashboard` | read | `{ totals:{personel,aktif,alert,belumDitinjau,belumLengkap,enamBulan}, alertTerdekat[5], proyeksi[6]{bulan,jumlah}, terdekat[5], aktivitas[5] }` |
+| GET | `/api/v1/subbagsumda/dashboard` | read | `{ totals:{personel,aktif,mpp,alert,belumDitinjau,belumLengkap,enamBulan}, alertTerdekat[5], proyeksi[6]{bulan,jumlah}, terdekat[5], aktivitas[5] }` |
 | GET | `/api/v1/subbagsumda/personel/capabilities` | read | `{canRead,canCreate,canUpdate,canArchive,canReview}` (K17) |
-| GET | `/api/v1/subbagsumda/personel` | read | `?q=&status=&unitKerja=&page=&size=` → `{ items[], total, unitKerja[] }`. Tiap item membawa `sisaHari`, `tahap` |
+| GET | `/api/v1/subbagsumda/personel` | read | `?q=&status=&unitKerja=&lengkap=belum&page=&size=` → `{ items[], total, page, size, unitKerja[] }`. Tiap item membawa `sisaHari`, `tahap` |
 | POST | `/api/v1/subbagsumda/personel` | create | buat → `201 {item}` |
 | GET | `/api/v1/subbagsumda/personel/:id` | read | detail |
 | PATCH | `/api/v1/subbagsumda/personel/:id` | update | `{…field, version}` → `200 {item}` |
 | DELETE | `/api/v1/subbagsumda/personel/:id` | archive | `?version=` → soft delete, `204` |
-| GET | `/api/v1/subbagsumda/pensiun/alert` | read | `?tahap=H-60\|H-30\|H-14\|H-7\|JATUH_TEMPO` → `{ ringkas:{<tahap>:n}, items[]{personel, sisaHari, tahap, ditinjau:{oleh,pada}\|null} }` |
+| GET | `/api/v1/subbagsumda/pensiun/alert` | read | `?tahap=H-60\|H-30\|H-14\|H-7\|JATUH_TEMPO` → `{ ringkas:{<tahap>:n}, belumDitinjau, items[]{personel, sisaHari, tahap, ditinjau:{oleh,pada}\|null} }` |
 | POST | `/api/v1/subbagsumda/pensiun/alert/tinjau` | review | `{ items:[{personelId, tahap, tanggalPensiun}] }` (1–200 butir). Butir yang tahap/tanggalnya sudah tidak cocok dengan keadaan sekarang ditolak semuanya → `409 alert_berubah` |
 
 Hak (permission pada grant unit `subbagsumda`, pola `PERMIT_SQL` di `subbagren/progar.js`):
@@ -114,7 +114,7 @@ Kode galat: `400 invalid_body` · `400 invalid_input` · `403 access_denied` · 
 
 - `sdl_sumda_personel`: kolom sesuai tabel data di atas + `source_registry_id UUID NULL UNIQUE` (asal salinan
   K3), `created_by`, `updated_by`, `version`, `deleted_at`, `created_at`, `updated_at`. CHECK untuk enum dan
-  panjang. Indeks unik `lower(nrp) WHERE deleted_at IS NULL`; indeks `(tanggal_pensiun) WHERE deleted_at IS
+  panjang. Indeks unik `lower(btrim(nrp)) WHERE deleted_at IS NULL`; indeks `(tanggal_pensiun) WHERE deleted_at IS
   NULL AND status IN ('Aktif','MPP')`.
 - `sdl_sumda_pensiun_tinjau(personel_id, tahap, tanggal_pensiun, reviewed_by, reviewed_at)`, PK tiga kolom
   pertama (K8).
@@ -370,6 +370,9 @@ dua suite keamanan · `npm run build` · demo browser HTTPS (op, staf, kasubbag,
 6. Docs, `/verifikasi`, `/review`.
 7. Deploy: catat jumlah registry personel aktif di server (SQL baca saja), run workflow dengan migrasi 068,
    rebuild `api`/`api-express`/`frontend`, pastikan pola Caddy dan grant `subbagsumda` Kabagrenmin di produksi.
+   **Urutan wajib (temuan review):** migrasi 068 dijalankan SEBELUM `api` (Go) di-restart. `Verify()` Go
+   (`migrate.go:94-108`) menolak start bila berkas ter-embed belum diterapkan, dan Go masih melayani login,
+   `/admin/*`, dan worker email, sehingga urutan terbalik berarti padam total, bukan hanya Sumda.
 
 ### 9. Risiko dan keputusan
 
@@ -411,6 +414,38 @@ Semua tambahan kecil dan aditif; tidak ada yang mengubah keputusan K1–K21. Dic
 | D6 | Pangkat wajib dari master aktif | Pangkat yang **sudah tersimpan** boleh dipertahankan saat mengubah | Baris salinan bisa membawa pangkat non-master; tanpa ini baris itu tidak bisa disunting kecuali pangkatnya dikosongkan |
 | D7 | Totals dashboard | + `mpp` | Ringkasan "x aktif · y MPP" |
 | D8 | — | `security/env.js` menyimpan `this.config` | Diperlukan app kedua (mode demo Superadmin) di skenario x2, sesuai catatan rencana §7 |
+
+## Perbaikan hasil review (2026-11-23)
+
+`/review` (migration-guard + security-reviewer): tidak ada temuan wajib. Yang dikerjakan:
+
+| # | Temuan | Perbaikan |
+|---|---|---|
+| S2 | `?id=` dari URL masuk ke path API tanpa validasi (traversal sisi klien) | Frontend hanya memakai `?id=` berbentuk UUID, lalu `encodeURIComponent` |
+| S3 | Nama personel terarsip tetap tampil di "Aktivitas terakhir" | Join dashboard menyaring `deleted_at IS NULL` |
+| S4 | `rincian` meneruskan metadata audit mentah | Daftar putih kunci `fields,status,tahap,version,sumber,disalin` |
+| S5 | NRP/nama menerima karakter tak terlihat & homoglif | Semua isian menolak kategori Unicode `Cf`; NRP baru dibatasi `A-Z a-z 0-9 spasi . _ / ( ) [ ] -`. NRP lama hasil salinan boleh dipertahankan |
+| S6 | Pengecualian pangkat lama berlaku walau `jenis` diganti | Pangkat lama hanya dipertahankan bila `jenis` tidak berubah |
+| S8 | Dokumen rilis tertinggal dari API-CONTRACT | Disinkronkan (tabel endpoint, indeks, teks K2) |
+| S9 | Skenario x2 kurang lengkap | + PATCH/tinjau tanpa CSRF & Origin asing, Superadmin demo PATCH/DELETE/tinjau, capabilities kosong untuk unit lain, probe injeksi & query ganda, `Cache-Control: no-store`, body > 32 KB, NRP/nama tak terlihat. Verify bagian 10 menguji S3–S6 |
+
+**Tidak dikerjakan — S7** (urutan pilih NRP kembar saat salinan K3 tidak deterministik; saran `ORDER BY` + jumlah
+baris `penting` di audit). Berkas 068 sudah di-commit dan hook proyek memblokir pengeditannya (runner menolak
+checksum berubah). Diterima sebagai risiko: hanya berpengaruh bila registry produksi punya NRP kembar setelah
+`btrim`/huruf kecil. **Sebelum deploy**, pemilik bisa memeriksanya dengan SQL baca saja:
+
+```sql
+SELECT lower(btrim(s.ref_code)) AS nrp, count(*), array_agg(w.classification)
+  FROM sdl_sumda_registry s JOIN sdl_unit_work_records w ON w.id=s.work_record_id
+ WHERE s.kind='personel' AND s.deleted_at IS NULL AND w.deleted_at IS NULL AND w.unit_key='subbagsumda'
+ GROUP BY 1 HAVING count(*)>1;
+SELECT count(*) FILTER (WHERE w.classification='penting') AS penting, count(*) AS total
+  FROM sdl_sumda_registry s JOIN sdl_unit_work_records w ON w.id=s.work_record_id
+ WHERE s.kind='personel' AND s.deleted_at IS NULL AND w.deleted_at IS NULL AND w.unit_key='subbagsumda';
+```
+
+Bila hasil pertama tidak kosong dan urutan penting, alternatifnya adalah membatalkan commit 068 sebelum merge
+(keputusan pemilik; berkas belum pernah diterapkan di luar DB lokal).
 
 ## Sisa uji (lewat `/verifikasi`)
 

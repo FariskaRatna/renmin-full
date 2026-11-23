@@ -1670,11 +1670,11 @@ Validasi strict: field asing → 400 `invalid_body`. Semua respons `Cache-Contro
 | POST | `/api/v1/subbagsumda/pensiun/alert/tinjau` | V | `{items:[{personelId,tahap,tanggalPensiun}]}` (1–200 butir, kunci persis) → `{ditinjau:n}` (idempoten). Satu butir yang tahap/tanggalnya tidak cocok dengan keadaan sekarang → 409 `alert_berubah`, tidak ada yang tersimpan |
 | GET | `/api/v1/subbagsumda/dashboard` | R | `{totals:{personel,aktif,mpp,alert,belumDitinjau,belumLengkap,enamBulan},proyeksi:[{bulan:"YYYY-MM",jumlah}×6],alertTerdekat[≤5],terdekat[≤5],aktivitas[≤5]}` |
 
-Aturan isi: `nrp` 2–64, `nama` 3–200, `jenis` `Polri`\|`PNS` (wajib), `pangkat` kode rank master
+Aturan isi: `nrp` 2–64 dari `A-Z a-z 0-9 spasi . _ / ( ) [ ] -` (NRP lama yang sudah tersimpan boleh dipertahankan), `nama` 3–200, `jenis` `Polri`\|`PNS` (wajib), `pangkat` kode rank master
 aktif (Polri) atau golongan `I/a`…`IV/e` (PNS) — pangkat lama yang sudah tersimpan boleh
-dipertahankan; `jabatan`/`unitKerja` ≤ 200, `catatan` ≤ 1000; `tmtDinas` 1950–2100,
+dipertahankan selama `jenis` tidak diganti; `jabatan`/`unitKerja` ≤ 200, `catatan` ≤ 1000; `tmtDinas` 1950–2100,
 `tanggalPensiun` 2000–2100, wajib bila status `Aktif`/`MPP`; karakter kendali/surrogate tunggal
-ditolak. Kode galat: 400 `invalid_body` / `invalid_input` / `invalid_rank`; 403 `access_denied`;
+ditolak, begitu pula karakter format tak terlihat (Unicode `Cf`: zero-width, pembalik arah) di semua isian. Daftar `aktivitas` dashboard tidak memuat nama personel terarsip, dan `rincian` hanya memuat kunci `fields,status,tahap,version,sumber,disalin`. Kode galat: 400 `invalid_body` / `invalid_input` / `invalid_rank`; 403 `access_denied`;
 404 `not_found`; 409 `duplicate_nrp` / `version_conflict` / `alert_berubah`; 503 `database_unavailable`.
 
 Tahap dihitung di Postgres dengan `(now() AT TIME ZONE 'Asia/Jakarta')::date` (pool Express

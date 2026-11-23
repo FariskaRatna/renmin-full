@@ -37,6 +37,7 @@ type Mode = 'dashboard' | 'master' | 'pensiun'
 export type SumdaNav = (menu: 'personel' | 'pensiun', opts?: { recordID?: string }) => void
 
 const BASE = '/api/v1/subbagsumda'
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const STATUS: Status[] = ['Aktif', 'MPP', 'Pensiun', 'Nonaktif']
 const TAHAP: { key: Tahap; label: string; rentang: string }[] = [
   { key: 'H-60', label: '2 bulan lagi', rentang: '31–60 hari' },
@@ -249,7 +250,10 @@ function MasterView({ initialID, onLost }: { initialID?: string; onLost: () => v
 
   useEffect(() => {
     if (!initialID) return
-    api<{ item: Personel }>(`/personel/${initialID}`).then(r => setDetail(r.item)).catch(e => { if (e instanceof TidakTersedia) onLost(); else showToast((e as Error).message, 'error') })
+    // ?id= datang dari URL yang bisa dibuat orang lain: hanya UUID yang boleh masuk ke path API,
+    // supaya tautan seperti ?id=../../urmin/registry tidak memanggil endpoint lain atas nama korban.
+    if (!UUID_RE.test(initialID)) { showToast('Tautan personel tidak valid.', 'error'); return }
+    api<{ item: Personel }>(`/personel/${encodeURIComponent(initialID)}`).then(r => setDetail(r.item)).catch(e => { if (e instanceof TidakTersedia) onLost(); else showToast((e as Error).message, 'error') })
   }, [initialID, onLost])
 
   const pager: PagerState = useMemo(() => {

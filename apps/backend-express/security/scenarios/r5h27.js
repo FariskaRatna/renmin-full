@@ -88,12 +88,18 @@ export async function verifyR5H27SumdaPersonel({ env }) {
     status(await demo.call('POST', '/api/v1/auth/verify-otp', { challenge, code }, true), 200, 'login Superadmin di app demo')
     for (const path of [PER, ALERT, DASH]) status(await demo.call('GET', path), 403, `Superadmin demo GET ${path}`)
     status(await demo.call('POST', PER, isi('SEC-DEMO'), true), 403, 'Superadmin demo POST')
+    // Izin diperiksa SEBELUM baris dicari: UUID fiktif pun harus 403, bukan 404.
+    const palsu = '00000000-0000-4000-8000-000000000000'
+    status(await demo.call('PATCH', `${PER}/${palsu}`, { ...isi('SEC-DEMO'), version: 1 }, true), 403, 'Superadmin demo PATCH')
+    status(await demo.call('DELETE', `${PER}/${palsu}?version=1`, null, true), 403, 'Superadmin demo DELETE')
+    status(await demo.call('POST', `${ALERT}/tinjau`, { items: [{ personelId: palsu, tahap: 'H-7', tanggalPensiun: '2030-01-01' }] }, true), 403, 'Superadmin demo tinjau')
     contains(await demo.call('GET', `${PER}/capabilities`), '"canRead":false', 'Superadmin demo capabilities kosong')
   } finally {
     await new Promise((resolve) => demoServer.close(resolve))
   }
 
   for (const [b, label] of [[sLuar, 'grant di unit lain'], [sTanpa, 'tanpa keanggotaan unit']]) {
+    contains(await b.call('GET', `${PER}/capabilities`), '"canRead":false,"canCreate":false,"canUpdate":false,"canArchive":false,"canReview":false', `${label} capabilities kosong`)
     status(await b.call('GET', PER), 403, `${label} GET`)
     status(await b.call('POST', PER, isi('SEC-LUAR'), true), 403, `${label} POST`)
   }
@@ -114,6 +120,36 @@ export async function verifyR5H27SumdaPersonel({ env }) {
   status(await op.call('DELETE', `${PER}/${item.id}?version=${item.version}`, null, true), 403, 'operator tanpa archive DELETE')
   status(await op.call('GET', `${PER}/${item.id}`), 200, 'baris tetap ada setelah DELETE ditolak')
   status(await ka.call('DELETE', `${PER}/${item.id}?version=${item.version}`, null, false), 403, 'DELETE tanpa CSRF')
+  const patchBody = { ...isi('SEC-001'), version: item.version }
+  status(await op.call('PATCH', `${PER}/${item.id}`, patchBody, false), 403, 'PATCH tanpa CSRF')
+  status(await op.call('PATCH', `${PER}/${item.id}`, patchBody, true, { origin: 'https://evil.example' }), 403, 'PATCH dengan Origin asing')
+  status(await op.call('POST', `${ALERT}/tinjau`, tinjau, false), 403, 'tinjau tanpa CSRF')
+  status(await op.call('POST', `${ALERT}/tinjau`, tinjau, true, { origin: 'https://evil.example' }), 403, 'tinjau dengan Origin asing')
+
+  // ---- 2b. Query dan header ----
+  const total = () => op.call('GET', `${PER}?size=100`).then((r) => JSON.parse(r.text).total)
+  const semua = await total()
+  for (const q of ["%' OR 1=1 --", '\\', '%_', "SEC-001' --"]) {
+    const r = await op.call('GET', `${PER}?q=${encodeURIComponent(q)}`)
+    status(r, 200, `pencarian harfiah ${JSON.stringify(q)}`)
+    equal(JSON.parse(r.text).total, 0, `pencarian ${JSON.stringify(q)} tidak mencocokkan semua baris`)
+  }
+  // Parser query Express 5 ("simple") tidak mengenal `q[]=`; array muncul dari parameter ganda.
+  for (const qs of ['size=10;DROP', 'size=7', 'page=0', 'page=1e3', 'q=a&q=b', 'unitKerja=a&unitKerja=b', 'status=Aktif&status=MPP']) {
+    status(await op.call('GET', `${PER}?${qs}`), 400, `query ${qs}`)
+  }
+  equal(await total(), semua, 'jumlah baris tidak berubah setelah probe')
+  for (const [label, r] of [
+    ['daftar', await op.call('GET', PER)], ['detail', await op.call('GET', `${PER}/${item.id}`)],
+    ['capabilities', await op.call('GET', `${PER}/capabilities`)], ['alert', await op.call('GET', ALERT)],
+    ['dashboard', await op.call('GET', DASH)],
+  ]) equal(r.headers.get('cache-control'), 'no-store', `Cache-Control ${label}`)
+  const besar = await op.call('POST', PER, { ...isi('SEC-BESAR'), catatan: 'x'.repeat(33000) }, true)
+  status(besar, 400, 'body > 32 KB'); contains(besar, 'invalid_body', 'body > 32 KB ditolak di batas ukuran')
+  for (const [label, nrp] of [['zero-width', 'SEC​001'], ['pembalik arah', 'SEC‮100'], ['huruf non-ASCII', 'SЕC-001']]) {
+    status(await op.call('POST', PER, isi(nrp), true), 400, `NRP ${label}`)
+  }
+  status(await op.call('POST', PER, isi('SEC-NAMA', { nama: 'Nama​Tersembunyi' }), true), 400, 'nama zero-width')
 
   // ---- 3. Pencabutan hak di tengah jalan ----
   const opId = users.op_r5h27.id

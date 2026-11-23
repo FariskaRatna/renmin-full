@@ -42,6 +42,11 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const KENDALI = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/
 // eslint-disable-next-line no-control-regex
 const KENDALI_SEBARIS = /[\u0000-\u001F\u007F]/
+// Karakter format tak terlihat (zero-width, pembalik arah U+202E, BOM, …) ditolak di semua isian,
+// supaya nama/NRP tidak bisa tampil sama padahal berbeda, atau tampil terbalik.
+const FORMAT_TAK_TERLIHAT = /\p{Cf}/u
+// NRP/NIP: ASCII sempit. NRP lama (hasil salinan registry) yang sudah tersimpan boleh dipertahankan.
+const NRP_RE = /^[A-Za-z0-9 ._/()[\]-]+$/
 
 export const STATUS = Object.freeze(['Aktif', 'MPP', 'Pensiun', 'Nonaktif'])
 export const STATUS_DIPANTAU = Object.freeze(['Aktif', 'MPP']) // K7
@@ -129,7 +134,7 @@ function teks(v, min, max, { multiline = false } = {}) {
   if (v === undefined || v === null) v = ''
   if (typeof v !== 'string') throw new HttpError(400, 'invalid_input')
   const t = v.trim()
-  if ((multiline ? KENDALI : KENDALI_SEBARIS).test(t) || !t.isWellFormed()) throw new HttpError(400, 'invalid_input')
+  if ((multiline ? KENDALI : KENDALI_SEBARIS).test(t) || FORMAT_TAK_TERLIHAT.test(t) || !t.isWellFormed()) throw new HttpError(400, 'invalid_input')
   const n = [...t].length
   if (n < min || n > max) throw new HttpError(400, 'invalid_input')
   return t
@@ -159,10 +164,11 @@ function idParam(raw) {
 const FIELD_INPUT = ['nrp', 'nama', 'jenis', 'pangkat', 'jabatan', 'unitKerja', 'tmtDinas', 'tanggalPensiun', 'status', 'catatan']
 
 /**
- * Validasi badan penuh (POST dan PATCH, K18). `pangkatLama` = pangkat yang sudah
- * tersimpan: boleh dipertahankan walau sudah tidak aktif di master.
+ * Validasi badan penuh (POST dan PATCH, K18). `lama` = baris yang sudah tersimpan (PATCH):
+ * NRP lama di luar NRP_RE boleh dipertahankan, begitu pula pangkat lama yang sudah tidak aktif
+ * atau tidak dikenal — tetapi pangkat hanya selama `jenis` tidak diganti.
  */
-async function validasi(c, b, pangkatLama = null) {
+async function validasi(c, b, lama = null) {
   const v = {
     nrp: teks(b.nrp, 2, 64),
     nama: teks(b.nama, 3, 200),
@@ -177,7 +183,9 @@ async function validasi(c, b, pangkatLama = null) {
   }
   // K1: tanggal pensiun diisi manual, wajib bagi personel yang masih dipantau.
   if (STATUS_DIPANTAU.includes(v.status) && !v.tanggalPensiun) throw new HttpError(400, 'invalid_input')
-  if (v.pangkat !== '' && v.pangkat !== pangkatLama) {
+  if (!NRP_RE.test(v.nrp) && v.nrp !== lama?.nrp) throw new HttpError(400, 'invalid_input')
+  const pangkatTetap = lama !== null && v.pangkat === lama.pangkat && v.jenis === lama.jenis
+  if (v.pangkat !== '' && !pangkatTetap) {
     if (v.jenis === 'PNS') {
       if (!GOLONGAN_PNS.includes(v.pangkat)) throw new HttpError(400, 'invalid_rank')
     } else {
@@ -296,7 +304,7 @@ export function createSumdaPersonelRouter({ pool }) {
            FROM sdl_sumda_personel WHERE id=$1::uuid AND deleted_at IS NULL FOR UPDATE`, [id])).rows[0]
       if (!cur) throw new HttpError(404, 'not_found')
       if (cur.version !== b.version) throw new HttpError(409, 'version_conflict')
-      const v = await validasi(c, b, cur.pangkat)
+      const v = await validasi(c, b, cur)
       const lama = {
         nrp: cur.nrp, nama: cur.nama, jenis: cur.jenis, pangkat: cur.pangkat, jabatan: cur.jabatan, unitKerja: cur.unit_kerja,
         tmtDinas: cur.tmt_dinas, tanggalPensiun: cur.tanggal_pensiun, status: cur.status, catatan: cur.catatan,
@@ -406,6 +414,14 @@ export function createSumdaPensiunRouter({ pool }) {
   return router
 }
 
+/** Hanya kunci metadata tanpa data pribadi yang diteruskan ke klien (termasuk Kabagrenmin). */
+const RINCIAN_KUNCI = ['fields', 'status', 'tahap', 'version', 'sumber', 'disalin']
+function rincianAman(m) {
+  const out = {}
+  for (const k of RINCIAN_KUNCI) if (m && Object.hasOwn(m, k)) out[k] = m[k]
+  return out
+}
+
 const AKTIVITAS_EVENT = [
   'subbagsumda.personel.create', 'subbagsumda.personel.update', 'subbagsumda.personel.archive',
   'subbagsumda.pensiun.review', 'subbagsumda.personel.salin_registry',
@@ -440,7 +456,7 @@ export function createSumdaDashboardRouter({ pool }) {
       SELECT e.event_key, e.subject_id, e.metadata, e.created_at, u.display_name, p.nama
         FROM sdl_audit_events e
         LEFT JOIN sdl_users u ON u.id=e.actor_id
-        LEFT JOIN sdl_sumda_personel p ON p.id::text=e.subject_id
+        LEFT JOIN sdl_sumda_personel p ON p.id::text=e.subject_id AND p.deleted_at IS NULL
        WHERE e.subject_type='subbagsumda.personel' AND e.event_key = ANY($1::text[])
        ORDER BY e.created_at DESC, e.id DESC LIMIT 5`, [AKTIVITAS_EVENT])).rows
     respond(res, 200, {
@@ -458,7 +474,7 @@ export function createSumdaDashboardRouter({ pool }) {
         personelNama: a.nama ?? null,
         oleh: a.display_name ?? 'Sistem (migrasi)',
         pada: a.created_at,
-        rincian: a.metadata ?? {},
+        rincian: rincianAman(a.metadata),
       })),
     })
   }))
