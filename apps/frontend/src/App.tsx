@@ -30,6 +30,7 @@ import MyProfile from './MyProfile'
 import UnitWorkR5A from './UnitWorkR5A'
 import SumdaR5B from './SumdaR5B'
 import SumdaPersonelR5H27 from './SumdaPersonelR5H27'
+import SumdaKarierR5H28 from './SumdaKarierR5H28'
 import BinfungR5C from './BinfungR5C'
 import UrminR5D from './UrminR5D'
 import SmartUnitDashboard from './SmartUnitDashboard'
@@ -150,7 +151,7 @@ const units: Unit[] = [
   {id:'sumda',title:'SUBBAGSUMDA',name:'Subbagian Sumber Daya',subtitle:'Administrasi personel dan pengelolaan logistik',description:'Administrasi SDM, layanan kepegawaian, pendidikan, BMN dan pemeliharaan.',icon:'users',accent:'#956db9',soft:'#f3effd',modules:[
     {id:'personel',title:'Master Personel',icon:'users',description:'Data dasar personel, status kepegawaian, dan tanggal pensiun.',columns:['Personel','Pangkat / Jabatan','Unit Kerja','Tanggal Pensiun','Status']},
     {id:'pensiun',title:'Monitoring Pensiun',icon:'clock',description:'Alert otomatis H-60, H-30, H-14, H-7, dan jatuh tempo berdasarkan tanggal pensiun.',columns:['Personel','Unit Kerja','Tanggal Pensiun','Tahap','Tinjau']},
-    {id:'layanan',title:'Pelayanan Kepegawaian',icon:'file',description:'Tracking cuti, UKP, KGB, mutasi, pensiun.',columns:['Pemohon','Layanan','Tanggal','Target','Status']},
+    {id:'karier',title:'Karier & Mutasi',icon:'file',description:'Usulan kenaikan pangkat (UKP), kenaikan gaji berkala (KGB), mutasi, dan penyesuaian jabatan.',columns:['Personel','Jenis','Usulan','Tanggal','Status']},
     {id:'pendidikan',title:'Pendidikan & Pengembangan SDM',icon:'graduation',description:'Pendidikan, pelatihan dan kompetensi.',columns:['Jenis','Peserta','Tanggal','Penyelenggara','Status']},
     {id:'inventaris',title:'Inventaris & BMN',icon:'package',description:'Barang milik negara, kondisi dan penanggung jawab.',columns:['Kode Aset','Kategori','Kondisi','Lokasi','Status']},
     {id:'pemeliharaan',title:'Pemeliharaan Logistik',icon:'wrench',description:'Permohonan dan monitoring pemeliharaan.',columns:['Aset','Tindakan','Tanggal','Target','Status']}
@@ -595,6 +596,7 @@ function App() {
           : unit.id==='urmin'&&workMenu==='surat-masuk'&&activeTab==='riwayat'
           ? <><p className="sdl-r5f5-context">Riwayat distribusi yang telah diterima oleh akun Anda. Detail setiap surat menampilkan perjalanan penerimaannya.</p><InboxDistribusi key="history" workspaceMode="history"/></>
           : workMenu==='__unitwork' ? <UnitWorkR5A key={unit.id} unit={{urmin:'urmin',ren:'subbagren',sumda:'subbagsumda',binfung:'subbagbinfung'}[unit.id] as 'urmin'|'subbagren'|'subbagsumda'|'subbagbinfung'} userID={account.id} initialRecordID={effectiveScreen.recordID} demoAdmin={isSuperadmin&&demoAdminEnabled}/>
+          : unit.id==='sumda'&&chosenModule?.id==='karier' ? <SumdaKarierR5H28 key={`karier:${effectiveScreen.recordID??''}`} initialID={effectiveScreen.recordID} userId={account.id}/>
           : unit.id==='sumda'&&(chosenModule?.id==='personel'||chosenModule?.id==='pensiun') ? <SumdaPersonelR5H27 key={`${chosenModule.id}:${effectiveScreen.recordID??''}`} mode={chosenModule.id==='pensiun'?'pensiun':'master'} initialID={effectiveScreen.recordID} onNavigate={(menu,o)=>navigate({view:'workspace',unit:'sumda',menu,recordID:o?.recordID})} legacy={<SumdaR5B kind="personel" openFiles={recordID=>navigate({view:'workspace',unit:'sumda',menu:'__unitwork',recordID})}/>}/>
           : unit.id==='sumda'&&['pendidikan','inventaris'].includes(chosenModule?.id||'') ? <SumdaR5B key={chosenModule?.id} kind={chosenModule!.id as 'personel'|'pendidikan'|'inventaris'} openFiles={recordID=>navigate({view:'workspace',unit:'sumda',menu:'__unitwork',recordID})}/>
           : unit.id==='urmin'&&['surat-keluar','agenda','arsip'].includes(chosenModule?.id||'') ? <UrminR5D key={chosenModule?.id} initialID={effectiveScreen.recordID} initialCreate={effectiveScreen.create} kind={({'surat-keluar':'surat_keluar',agenda:'agenda',arsip:'arsip'} as Record<string,'surat_keluar'|'agenda'|'arsip'>)[chosenModule!.id]} openFiles={recordID=>navigate({view:'workspace',unit:'urmin',menu:'__unitwork',recordID})} isKabagrenmin={isKabagrenmin}/>

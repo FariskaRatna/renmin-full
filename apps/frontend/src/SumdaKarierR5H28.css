@@ -1,0 +1,32 @@
+/* R5H28: Karier & Mutasi. Memakai kelas R5H27 (sdl-sumda__*) dan dialog sdl-progar__*. */
+.sdl-karier__status{display:inline-block;font-size:11px;font-weight:750;padding:2px 8px;border-radius:6px;white-space:nowrap}
+.sdl-karier__status.is-diajukan{background:#eef2f7;color:#3d5370}
+.sdl-karier__status.is-diproses{background:#fdf2dc;color:#8a5a06}
+.sdl-karier__status.is-disetujui{background:#e6eefb;color:#2b4f8a}
+.sdl-karier__status.is-selesai{background:#e3f4ec;color:#1d6a48}
+.sdl-karier__status.is-ditolak{background:#fbe6e4;color:#9b2c22}
+.sdl-karier__status.is-dibatalkan{background:#eef2f7;color:#5d6b7e;text-decoration:line-through}
+
+.sdl-karier__picked{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:10px;font-size:13px}
+.sdl-karier__hasil{list-style:none;margin:4px 0 0;padding:0;border:1px solid var(--border);border-radius:10px;max-height:220px;overflow:auto}
+.sdl-karier__hasil button{all:unset;box-sizing:border-box;width:100%;display:flex;gap:8px;align-items:baseline;padding:8px 10px;cursor:pointer;font-size:12.5px;color:var(--ink)}
+.sdl-karier__hasil button small{margin-left:auto;color:var(--muted)}
+.sdl-karier__hasil li+li{border-top:1px dashed var(--border)}
+.sdl-karier__hasil button:hover,.sdl-karier__hasil button:focus-visible{background:var(--subtle);outline:none;box-shadow:inset 3px 0 0 #c9a227}
+
+.sdl-karier__banding{width:100%;border-collapse:collapse;font-size:12.5px;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sdl-karier__banding th,.sdl-karier__banding td{padding:8px 10px;text-align:left;border-bottom:1px solid var(--border)}
+.sdl-karier__banding thead th{font-size:11px;color:var(--muted);background:var(--subtle)}
+.sdl-karier__banding tbody th{font-weight:700;color:var(--muted);width:150px}
+.sdl-karier__banding tbody tr:last-child>*{border-bottom:0}
+
+:root[data-theme=dark] .sdl-karier__status.is-diajukan,:root[data-theme=dark] .sdl-karier__status.is-dibatalkan{background:#22324a;color:#9fb0c4}
+:root[data-theme=dark] .sdl-karier__status.is-diproses{background:#3b2f14;color:#f0c46c}
+:root[data-theme=dark] .sdl-karier__status.is-disetujui{background:#1d2c47;color:#8fb0e6}
+:root[data-theme=dark] .sdl-karier__status.is-selesai{background:#173a2b;color:#8fd6b0}
+:root[data-theme=dark] .sdl-karier__status.is-ditolak{background:#3e1f1c;color:#f0a39b}
+
+.sdl-sumda__riwayat ol.sdl-karier__lampiran li{grid-template-columns:minmax(0,1fr) auto auto;align-items:center}
+.sdl-karier__lampiran .sdl-sumda__link{overflow-wrap:anywhere;text-align:left}
+.sdl-karier__lampiran .btn{min-height:30px;padding:4px 10px}
+@media(max-width:560px){.sdl-sumda__riwayat ol.sdl-karier__lampiran li{grid-template-columns:1fr;gap:4px}.sdl-karier__lampiran .sdl-sumda__link{overflow-wrap:break-word}}
