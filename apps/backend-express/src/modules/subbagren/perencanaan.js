@@ -9,7 +9,7 @@ import { BODY_LIMITS, rawBody } from '../../http/payload.js'
 import { buildXlsx } from '../../http/xlsx.js'
 import { HttpError, PERMIT_SQL, audit, body, handle, id, text, version } from './progar.js'
 import { parseDateOnly, parseGoInt, respond } from './shared.js'
-import { JENIS_LABEL, JENIS_TAHAP, PEKERJAAN, TANPA_SAH, bisaSumber, cleanIsian, cleanPeriode, katalog, slotOf } from './tahap-katalog.js'
+import { JENIS_LABEL, JENIS_TAHAP, PEKERJAAN, TANPA_SAH, bisaSumber, cleanIsian, cleanPeriode, isianTahapAktif, katalog, slotOf } from './tahap-katalog.js'
 import { tahapNonaktif, tolakNonaktif } from './master-tahap.js'
 import { zipNames } from './myinterest-xlsx.js'
 import { MAX_BUTIR_REVISI, REVISI_JENIS, RINGKASAN_JENIS, cekTotalRpd, cleanRpd, hitungRingkasan, lockPosAktif, rpdMap, terapkanRevisi, verifiedSum } from './dalgar.js'
@@ -190,7 +190,7 @@ export function createPerencanaanRouter({ pool, config }) {
     for (const t of tahapRows) {
       if (!tahapBy.has(t.dokumen_id)) tahapBy.set(t.dokumen_id, [])
       tahapBy.get(t.dokumen_id).push({
-        id: t.id, pekerjaan: t.pekerjaan, pekerjaanLabel: PEKERJAAN[t.pekerjaan]?.label ?? t.pekerjaan, isian: t.isian,
+        id: t.id, pekerjaan: t.pekerjaan, pekerjaanLabel: PEKERJAAN[t.pekerjaan]?.label ?? t.pekerjaan, isian: isianTahapAktif(t.pekerjaan, t.isian),
         version: t.version, createdAt: t.created_at, updatedAt: t.updated_at, updatedByName: t.updated_name, berkas: t.berkas,
         createdBy: t.created_by, updatedBy: t.updated_by, cekStatus: t.cek_status, cekNote: t.cek_note, cekAt: t.cek_at ?? null, cekByName: t.cek_name ?? null,
         sumber: t.sumber_jenis ? { jenis: t.sumber_jenis, id: t.sumber_id, label: t.sumber_label ?? '(sumber tidak ditemukan)' } : null,

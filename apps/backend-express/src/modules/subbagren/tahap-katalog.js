@@ -29,6 +29,12 @@ const f = (key, label, type, max, extra = {}) => ({ key, label, type, max, ...ex
 const CARA = ['Fisik (dijilid)', 'Surat dinas', 'Elektronik']
 const APLIKASI = ['SAKTI', 'e-jakstra', 'SAKTI dan e-jakstra', 'Lainnya']
 
+const pemeriksaanFields = [
+  f('tanggal', 'Tanggal', 'date', 10, { required: true, half: true }),
+  f('pihak', 'Bersama', 'text', 160, { half: true }),
+]
+const catatanPemeriksaan = f('catatan', 'Catatan hasil', 'textarea', 2000)
+
 export const FORMS = {
   undangan: {
     fields: [
@@ -134,12 +140,15 @@ export const FORMS = {
   },
   pemeriksaan: {
     fields: [
-      f('tanggal', 'Tanggal', 'date', 10, { required: true, half: true }),
-      f('pihak', 'Bersama', 'text', 160, { half: true }),
+      ...pemeriksaanFields,
       f('baNomor', 'Nomor Berita Acara / CHR', 'text', 120),
-      f('catatan', 'Catatan hasil', 'textarea', 2000),
+      catatanPemeriksaan,
     ],
     berkas: [{ slot: 'ba', label: 'Berita Acara / Catatan Hasil Reviu', utama: true }],
+  },
+  rapat_pemeriksaan: {
+    fields: [...pemeriksaanFields, catatanPemeriksaan],
+    berkas: [{ slot: 'ba', label: 'Berita Acara Penelitian', utama: true }],
   },
   draf: {
     fields: [
@@ -265,7 +274,7 @@ export const PEKERJAAN = {
   susun_laporan: { label: 'Menyusun laporan dan surat pengantar', form: 'laporan' },
   unduh_myinterest: { label: 'Mengunduh realisasi dari myinterest', form: 'unduh_myinterest' },
   ttd_kadensus: { label: 'Mengajukan persetujuan dan tanda tangan Kadensus', form: 'ttd' },
-  rapat_pemeriksaan: { label: 'Rapat dan pemeriksaan bersama Stamarena Polri', form: 'pemeriksaan', defaults: { pihak: 'Stamarena Polri' } },
+  rapat_pemeriksaan: { label: 'Rapat dan pemeriksaan bersama Stamarena Polri', form: 'rapat_pemeriksaan', defaults: { pihak: 'Stamarena Polri' } },
   kirim_laporan: { label: 'Mengirim surat dan laporan kepada Astamarena Kapolri', form: 'kirim' },
   rapat_bahan: { label: 'Menghadiri rapat penyusunan tingkat Polri (membawa laporan satker)', form: 'rapat' },
   terima_permintaan_revisi: { label: 'Menerima disposisi Kadensus atas permintaan revisi dari subsatker', form: 'surat_masuk', defaults: { dari: 'Sub Satker' } },
@@ -370,6 +379,13 @@ export function slotOf(pekerjaan, slot) {
   return p ? FORMS[p.form].berkas.find((b) => b.slot === slot) ?? null : null
 }
 
+/** Abaikan nomor berita acara lama pada rapat Stamarena. */
+export function isianTahapAktif(pekerjaan, isian) {
+  if (pekerjaan !== 'rapat_pemeriksaan' || !Object.hasOwn(isian, 'baNomor')) return isian
+  const { baNomor, ...aktif } = isian
+  return aktif
+}
+
 /**
  * Validasi isian: hanya kunci yang dikenal, semua string, panjang dibatasi,
  * tanggal sah, angka bulat 0..99999, pilihan dari daftar, wajib terisi.
@@ -378,12 +394,13 @@ export function slotOf(pekerjaan, slot) {
 export function cleanIsian(pekerjaan, raw) {
   const p = PEKERJAAN[pekerjaan]
   if (!p || raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const isian = isianTahapAktif(pekerjaan, raw)
   const fields = FORMS[p.form].fields
   const known = new Set(fields.map((x) => x.key))
-  for (const k of Object.keys(raw)) if (!known.has(k)) return null
+  for (const k of Object.keys(isian)) if (!known.has(k)) return null
   const out = {}
   for (const fd of fields) {
-    const v = raw[fd.key]
+    const v = isian[fd.key]
     if (v === undefined || v === null || v === '') { if (fd.required) return null; continue }
     if (typeof v !== 'string') return null
     const s = v.trim()
