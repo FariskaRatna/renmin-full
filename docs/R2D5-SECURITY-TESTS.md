@@ -5,7 +5,7 @@
 | Suite | Menguji | Perintah | Status |
 |---|---|---|---|
 | Go | `apps/backend` (melayani produksi hari ini) | `bash ./scripts/security-test-r2d5.sh` | 21 subtest |
-| Express | `apps/backend-express` (akan menggantikannya) | `bash ./scripts/security-test-express.sh` | **22/22 LULUS, 2026-11-22** (21 skenario 1:1 + `x1_r5h25`) |
+| Express | `apps/backend-express` (akan menggantikannya) | `bash ./scripts/security-test-express.sh` | **23/23 LULUS, 2026-11-23** (21 skenario 1:1 + `x1_r5h25` + `x2_r5h27`) |
 
 Suite Express adalah port satu-lawan-satu dari yang Go, dengan nama skenario
 yang identik supaya kedua laporan bisa ditaruh berdampingan. Skenario berawalan
@@ -24,7 +24,9 @@ dicabut saat sesi sedang hidup.
 
 - menghapus pemeriksaan allowlist `Origin` → skenario 03 merah, dan hanya 03;
 - menghapus penolakan Superadmin dari endpoint operasional → **7 skenario**
-  merah sekaligus (08, 09b, 09c, 09d, 09f, 09g, 09i).
+  merah sekaligus (08, 09b, 09c, 09d, 09f, 09g, 09i);
+- (R5H27, 2026-11-23) membuat `PERMIT_SQL` Master Personel mengabaikan
+  permission → `x2_r5h27_sumda_personel_guard` merah, dan hanya x2.
 
 Keduanya dipulihkan sesudahnya. Suite yang lulus pada percobaan pertama tanpa
 pernah dibuktikan bisa merah tidak membuktikan apa-apa.
