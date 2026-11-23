@@ -1,0 +1,139 @@
+/* R5H27: Subbagsumda Dashboard, Master Personel, Monitoring Pensiun.
+   Gaya "buku register" (docs/DESIGN-BRIEF.md): tabel, angka tabular, emas hanya untuk perhatian,
+   ungu Sumda hanya sebagai penanda kecil. Dialog memakai kelas sdl-progar__ (ProgarR5H11.css). */
+.sdl-sumda{display:grid;gap:14px;min-width:0}
+/* Item grid default min-width:auto ikut melebar sebesar tabel (650px); paksa agar tabel yang menggulir. */
+.sdl-sumda>*,.sdl-sumda__split>*{min-width:0}
+/* Label sr-only (position:absolute) di header tabel harus terpotong wadah gulirnya, bukan melebarkan halaman. */
+.sdl-sumda .table-scroll{position:relative}
+.sdl-sumda__mono{font-variant-numeric:tabular-nums}
+.sdl-sumda__muted{color:var(--muted);font-size:12.5px;margin:0}
+.sdl-sumda__grow{flex:1 1 auto}
+.sdl-sumda__sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* Ringkasan satu baris: angka + konteks, dipisah garis tipis, bukan kartu. */
+.sdl-sumda__summary{margin:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border:1px solid var(--border);border-radius:10px;background:var(--card);overflow:hidden}
+.sdl-sumda__summary>div{padding:12px 16px;display:grid;gap:2px;border-left:3px solid transparent}
+.sdl-sumda__summary>div+div{border-left:1px solid var(--border)}
+.sdl-sumda__summary>div:first-child{border-left:3px solid #956db9}
+.sdl-sumda__summary>div.is-attention{box-shadow:inset 0 -2px 0 #c9a227}
+.sdl-sumda__summary dt{font-size:11.5px;font-weight:700;color:var(--muted)}
+.sdl-sumda__summary dd{margin:0;font-size:22px;font-weight:800;color:var(--ink);font-variant-numeric:tabular-nums;line-height:1.2}
+.sdl-sumda__summary small{font-size:11px;color:var(--muted)}
+
+.sdl-sumda__split{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:14px}
+.sdl-sumda__block{padding:14px 16px;display:grid;gap:10px;align-content:start;min-width:0}
+.sdl-sumda__block header{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.sdl-sumda__block h2{margin:0;font-size:14px;font-weight:800;color:var(--ink)}
+.sdl-sumda__link{all:unset;cursor:pointer;font-size:12px;font-weight:700;color:#3d68b0}
+.sdl-sumda__link:hover{text-decoration:underline}
+.sdl-sumda__link:focus-visible,.sdl-sumda__rowlink:focus-visible{outline:2px solid #c9a227;outline-offset:2px;border-radius:4px}
+
+/* .data-table global tidak memberi padding pada td dan memaksa min-width 650px. */
+.sdl-sumda__table th{padding:10px 14px}
+.sdl-sumda__table td{vertical-align:top;padding:10px 14px;border-bottom:1px solid var(--border);font-size:12.5px}
+.sdl-sumda__table tbody tr:last-child td{border-bottom:0}
+.sdl-sumda__block .sdl-sumda__table{min-width:0}
+.sdl-sumda__block .sdl-sumda__table th:first-child,.sdl-sumda__block .sdl-sumda__table td:first-child{padding-left:0}
+.sdl-sumda__block .sdl-sumda__table th:last-child,.sdl-sumda__block .sdl-sumda__table td:last-child{padding-right:0}
+.sdl-sumda__block .sdl-sumda__table th{background:transparent;border-bottom:1px solid var(--border)}
+.sdl-sumda__table td small,.sdl-sumda__sub{display:block;font-size:11px;color:var(--muted);margin-top:3px}
+.sdl-sumda__table .is-num{text-align:right;white-space:nowrap}
+.sdl-sumda__click{cursor:pointer}
+.sdl-sumda__click:hover td{background:var(--subtle)}
+.sdl-sumda__who{display:grid;gap:1px}
+.sdl-sumda__who strong{font-weight:700;color:var(--ink)}
+.sdl-sumda__who span{font-size:11px;color:var(--muted)}
+.sdl-sumda__rowlink{all:unset;cursor:pointer;display:block}
+.sdl-sumda__rowlink:hover strong{text-decoration:underline}
+.sdl-sumda__empty{padding:22px 12px!important;text-align:center;color:var(--muted);font-size:12.5px}
+.sdl-sumda__actions{text-align:right;white-space:nowrap}
+.sdl-sumda__actions .btn{min-height:30px;padding:5px 10px}
+
+/* Tahap: makin dekat makin tegas. Hanya pil kecil, tanpa latar besar. */
+.sdl-sumda__tahap,.sdl-sumda__status,.sdl-sumda__flag{display:inline-block;font-size:11px;font-weight:750;padding:2px 8px;border-radius:6px;white-space:nowrap;border:1px solid transparent}
+.sdl-sumda__tahap.is-h-60{background:#eef2f7;color:#3d5370}
+.sdl-sumda__tahap.is-h-30,.sdl-sumda__tahap.is-h-14{background:#fdf2dc;color:#8a5a06}
+.sdl-sumda__tahap.is-h-7{background:#fbe6e4;color:#9b2c22}
+.sdl-sumda__tahap.is-due{background:#9b2c22;color:#fff}
+.sdl-sumda__status.is-aktif{background:#e3f4ec;color:#1d6a48}
+.sdl-sumda__status.is-mpp{background:#fdf2dc;color:#8a5a06}
+.sdl-sumda__status.is-pensiun,.sdl-sumda__status.is-nonaktif{background:#eef2f7;color:#5d6b7e}
+.sdl-sumda__flag{border-color:#c9a227;color:#8a6a10;background:transparent;margin-top:4px}
+.sdl-sumda__done{display:grid;font-size:12px;font-weight:700;color:#1d6a48}
+.sdl-sumda__done small{font-weight:500;color:var(--muted);font-size:11px}
+
+/* Proyeksi: tabel batang horizontal (data tetap terbaca sebagai teks). */
+.sdl-sumda__bars{width:100%;border-collapse:collapse;font-size:12px}
+.sdl-sumda__bars th{text-align:left;font-weight:700;color:var(--ink);width:64px;padding:5px 0}
+.sdl-sumda__bars td{padding:5px 0}
+.sdl-sumda__bars td:last-child{width:32px;text-align:right;font-weight:800}
+.sdl-sumda__bar{display:block;height:10px;min-width:2px;border-radius:2px;background:#956db9}
+
+.sdl-sumda__log{list-style:none;margin:0;padding:0;display:grid}
+.sdl-sumda__log li{display:grid;grid-template-columns:118px minmax(0,1fr);gap:10px;padding:7px 0;border-bottom:1px dashed var(--border);font-size:12.5px}
+.sdl-sumda__log li:last-child{border-bottom:0}
+.sdl-sumda__log li>span:first-child{color:var(--muted);font-size:11.5px}
+.sdl-sumda__log strong{font-weight:600;color:var(--ink);display:block}
+.sdl-sumda__log small{font-size:11px;color:var(--muted)}
+
+/* Master */
+.sdl-sumda__toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.sdl-sumda__toolbar input[type=search],.sdl-sumda__toolbar select{font:inherit;font-size:12.5px;color:var(--ink);background:var(--card);border:1px solid var(--border);border-radius:8px;padding:8px 10px;min-height:36px;box-sizing:border-box}
+.sdl-sumda__search{flex:1 1 280px;max-width:420px}
+.sdl-sumda__search input{width:100%}
+.sdl-sumda__check{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink);cursor:pointer}
+.sdl-sumda__toolbar :focus-visible{outline:2px solid #c9a227;outline-offset:1px}
+
+/* Pensiun */
+.sdl-sumda__tabs{display:flex;flex-wrap:wrap;gap:6px;border-bottom:1px solid var(--border);padding-bottom:8px}
+.sdl-sumda__tabs button{font:inherit;font-size:12px;font-weight:700;cursor:pointer;border:1px solid var(--border);background:var(--card);color:var(--ink);border-radius:8px;padding:6px 10px;display:flex;gap:8px;align-items:center}
+.sdl-sumda__tabs button span{font-variant-numeric:tabular-nums;color:var(--muted);font-weight:800}
+.sdl-sumda__tabs button.is-on{border-color:#c9a227;box-shadow:inset 0 -2px 0 #c9a227}
+.sdl-sumda__tabs button:focus-visible{outline:2px solid #c9a227;outline-offset:2px}
+.sdl-sumda__rule{margin:0;font-size:12px;color:var(--muted);line-height:1.55}
+.sdl-sumda__panelhead{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;padding:10px 14px;font-size:12.5px;color:var(--muted);border-bottom:1px solid var(--border)}
+
+/* Detail & form */
+.sdl-sumda__notice{margin:0;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--subtle);font-size:12.5px;line-height:1.5;color:var(--ink)}
+.sdl-sumda__notice.is-warn{border-color:#c9a227}
+.panel.sdl-sumda__notice{display:grid;gap:8px;justify-items:start;padding:16px}
+.panel.sdl-sumda__notice p{margin:0;color:var(--muted)}
+.sdl-sumda__dialog{width:min(640px,100%)}
+.sdl-sumda__dialog footer{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.sdl-sumda__form{display:grid;gap:16px}
+.sdl-sumda__detail{margin:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.sdl-sumda__detail>div{padding:9px 12px;border-bottom:1px solid var(--border);display:grid;gap:2px}
+.sdl-sumda__detail>div:nth-child(odd){border-right:1px solid var(--border)}
+.sdl-sumda__detail>div:nth-last-child(-n+2){border-bottom:0}
+.sdl-sumda__detail dt{font-size:11px;font-weight:700;color:var(--muted)}
+.sdl-sumda__detail dd{margin:0;font-size:13px;color:var(--ink)}
+.sdl-sumda__catatan p{margin:4px 0 0;font-size:12.5px;white-space:pre-wrap;color:var(--ink)}
+.sdl-sumda__catatan strong{font-size:11px;color:var(--muted)}
+.sdl-progar__fields.sdl-sumda__grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+/* ProgarR5H11.css melebarkan setiap label satu baris penuh (kecuali .is-half). */
+.sdl-progar__fields.sdl-sumda__grid label{grid-column:auto}
+.sdl-progar__fields.sdl-sumda__grid label.sdl-sumda__wide{grid-column:1/-1}
+.sdl-sumda__grid select{font:inherit;font-size:13px;color:var(--ink);background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;width:100%;box-sizing:border-box}
+
+@media(max-width:900px){
+  .sdl-sumda__split{grid-template-columns:1fr}
+  .sdl-sumda__summary{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .sdl-sumda__summary>div:nth-child(3){border-left:3px solid transparent}
+  .sdl-sumda__summary>div:nth-child(n+3){border-top:1px solid var(--border)}
+}
+@media(max-width:560px){
+  .sdl-progar__fields.sdl-sumda__grid,.sdl-sumda__detail{grid-template-columns:1fr}
+  .sdl-sumda__detail>div:nth-child(odd){border-right:0}
+  .sdl-sumda__detail>div:nth-last-child(2){border-bottom:1px solid var(--border)}
+  .sdl-sumda__log li{grid-template-columns:1fr;gap:2px}
+  .sdl-sumda__search{max-width:none}
+}
+
+:root[data-theme=dark] .sdl-sumda__tahap.is-h-60,:root[data-theme=dark] .sdl-sumda__status.is-pensiun,:root[data-theme=dark] .sdl-sumda__status.is-nonaktif{background:#22324a;color:#9fb0c4}
+:root[data-theme=dark] .sdl-sumda__tahap.is-h-30,:root[data-theme=dark] .sdl-sumda__tahap.is-h-14,:root[data-theme=dark] .sdl-sumda__status.is-mpp{background:#3b2f14;color:#f0c46c}
+:root[data-theme=dark] .sdl-sumda__tahap.is-h-7{background:#3e1f1c;color:#f0a39b}
+:root[data-theme=dark] .sdl-sumda__status.is-aktif{background:#173a2b;color:#8fd6b0}
+:root[data-theme=dark] .sdl-sumda__flag{color:#e3c46a}
+:root[data-theme=dark] .sdl-sumda__done{color:#8fd6b0}
+:root[data-theme=dark] .sdl-sumda__link{color:#8fb0e6}
