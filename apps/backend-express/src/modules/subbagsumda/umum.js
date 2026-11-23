@@ -3,7 +3,8 @@ import { fail } from '../subbagren/shared.js'
 
 /**
  * Helper bersama modul Subbagsumda (R5H27 Master Personel, R5H28 Karier & Mutasi).
- * Diekstrak dari personel.js tanpa mengubah perilaku, supaya validasi dan otorisasi
+ * Diekstrak dari personel.js (R5H28). Satu perubahan perilaku yang disengaja: galat FK (23503)
+ * kini 400 invalid_input, bukan 503 — juga untuk Master Personel. Tujuannya supaya validasi dan otorisasi
  * hanya punya SATU salinan. `handle()` memakai `instanceof HttpError`, jadi semua modul
  * Sumda WAJIB memakai kelas HttpError dari berkas ini.
  *

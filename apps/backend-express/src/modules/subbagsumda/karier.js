@@ -78,6 +78,17 @@ async function nilaiUsulan(c, raw, jenis, jenisPersonel) {
   return v
 }
 
+/**
+ * Content-Disposition aman untuk nama berkas Unicode (RFC 6266/5987): `filename` ASCII sebagai cadangan,
+ * `filename*` UTF-8 untuk nama asli. Nama ASCII murni tetap memakai bentuk lama (contentDisposition).
+ */
+function disposisi(nama) {
+  if (/^[\x20-\x7e]*$/.test(nama)) return contentDisposition('attachment', nama)
+  const ascii = nama.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_')
+  const utf8 = encodeURIComponent(nama).replace(/['()*]/g, (ch) => `%${ch.charCodeAt(0).toString(16).toUpperCase()}`)
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${utf8}`
+}
+
 function versi(v) {
   if (!Number.isSafeInteger(v) || v < 1) throw new HttpError(400, 'invalid_input')
   return v
@@ -86,7 +97,7 @@ function versi(v) {
 /** Audit tanpa data pribadi: hanya kunci daftar putih (pelajaran R5H27 S4). */
 async function audit(c, actor, event, type, subject, meta = {}) {
   const out = {}
-  for (const k of ['jenis', 'status', 'fields', 'version']) if (Object.hasOwn(meta, k)) out[k] = meta[k]
+  for (const k of ['jenis', 'status', 'fields', 'version', 'dikoreksi']) if (Object.hasOwn(meta, k)) out[k] = meta[k]
   await c.query(
     'INSERT INTO sdl_audit_events(actor_id,event_key,subject_type,subject_id,metadata) VALUES($1,$2,$3,$4,$5)',
     [actor, event, type, subject, out])
@@ -144,19 +155,26 @@ async function ambil(c, id) {
 /** Kunci pengajuan (selalu lebih dulu dari personel). */
 async function kunci(c, id) {
   const r = await c.query(
-    `SELECT k.id::text,k.personel_id::text,k.jenis,k.status,k.version,k.created_by::text,k.updated_by::text,k.tanggal_efektif::text
+    `SELECT k.id::text,k.personel_id::text,k.jenis,k.status,k.version,k.created_by::text,k.updated_by::text,k.tanggal_efektif::text,
+            k.usulan_pangkat,k.usulan_jabatan,k.usulan_unit_kerja
        FROM sdl_sumda_karier k WHERE k.id=$1::uuid FOR UPDATE`, [id])
   if (r.rowCount !== 1) throw new HttpError(404, 'not_found')
   return r.rows[0]
 }
 
-async function naikVersi(c, id) {
-  await c.query('UPDATE sdl_sumda_karier SET version=version+1,updated_at=now() WHERE id=$1::uuid', [id])
+/**
+ * K22 + perluasan K19 (review R5H28 W1): menambah/menghapus lampiran menaikkan versi DAN mencatat
+ * pengubahnya, sehingga orang yang mengganti berkas dasar keputusan tidak bisa memutus pengajuan itu.
+ */
+async function naikVersi(c, id, actor) {
+  await c.query('UPDATE sdl_sumda_karier SET version=version+1,updated_by=$2,updated_at=now() WHERE id=$1::uuid', [id, actor])
 }
 
 /** K26: pengajuan milik personel terarsip hanya bisa dibatalkan. */
 async function tolakBilaTerarsip(c, personelId) {
-  const r = await c.query('SELECT deleted_at IS NOT NULL AS terarsip FROM sdl_sumda_personel WHERE id=$1::uuid', [personelId])
+  // FOR SHARE: arsip personel yang berjalan bersamaan menunggu transaksi ini (review S3).
+  // Urutan tetap karier (sudah dikunci pemanggil) lalu personel, jadi tidak membentuk deadlock.
+  const r = await c.query('SELECT deleted_at IS NOT NULL AS terarsip FROM sdl_sumda_personel WHERE id=$1::uuid FOR SHARE', [personelId])
   if (r.rows[0]?.terarsip) throw new HttpError(409, 'personel_terarsip')
 }
 
@@ -281,15 +299,15 @@ export function createSumdaKarierRouter({ pool, config }) {
     const id = idParam(req.params.id)
     const b = body(req, ['aksi', 'catatan', 'version', 'tanggalEfektif', 'terapkan'])
     const aksi = pilihan(b.aksi, ['proses', 'setujui', 'tolak', 'batalkan', 'selesai'])
+    // Hak diperiksa sebelum isian lain divalidasi (konsisten dengan route lain, review S8).
+    if (aksi === 'setujui' || aksi === 'tolak') await need(req, P.approve)
+    else await need(req, P.manage)
+    if (aksi === 'selesai') await need(req, P.personelUpdate)
     if (aksi !== 'selesai' && (b.terapkan !== undefined || b.tanggalEfektif !== undefined)) throw new HttpError(400, 'invalid_input')
     const version = versi(b.version)
     const catatan = teks(b.catatan, 0, 1000, { multiline: true })
     // K24: tolak/batalkan wajib beralasan.
     if ((aksi === 'tolak' || aksi === 'batalkan') && [...catatan].length < 8) throw new HttpError(400, 'invalid_input')
-
-    if (aksi === 'setujui' || aksi === 'tolak') await need(req, P.approve)
-    else await need(req, P.manage)
-    if (aksi === 'selesai') await need(req, P.personelUpdate)
     const isApprover = aksi === 'batalkan' ? await can(req.actor, P.approve) : false
 
     const item = await withTransaction(pool, async (c) => {
@@ -343,6 +361,7 @@ export function createSumdaKarierRouter({ pool, config }) {
 
     let diterapkan = {}
     let berubah = []
+    let dikoreksi = []
     if (k.jenis !== 'KGB') {
       const t = b.terapkan
       if (t === null || typeof t !== 'object' || Array.isArray(t)) throw new HttpError(400, 'invalid_input')
@@ -361,7 +380,10 @@ export function createSumdaKarierRouter({ pool, config }) {
           [p.id, p.version, req.actor, ...berubah.map((f) => fields[f].baru)])
         if (r.rowCount !== 1) throw new HttpError(409, 'personel_berubah')
       }
-      diterapkan = { fields, personelVersion: { lama: p.version, baru: berubah.length ? p.version + 1 : p.version } }
+      // Review S4: nilai yang berbeda dari usulan yang disetujui ditandai, supaya "Disetujui" tidak menyesatkan.
+      const usulan = { pangkat: k.usulan_pangkat, jabatan: k.usulan_jabatan, unitKerja: k.usulan_unit_kerja }
+      dikoreksi = FIELD_JENIS[k.jenis].filter((f) => v[f] !== usulan[f])
+      diterapkan = { fields, personelVersion: { lama: p.version, baru: berubah.length ? p.version + 1 : p.version }, ...(dikoreksi.length ? { dikoreksi } : {}) }
     } else if (b.terapkan !== undefined) {
       throw new HttpError(400, 'invalid_input')
     }
@@ -370,7 +392,7 @@ export function createSumdaKarierRouter({ pool, config }) {
               updated_at=now(),version=version+1 WHERE id=$1::uuid AND status='Disetujui'`,
       [k.id, tglEfektif, diterapkan, req.actor])
     await riwayat(c, k.id, 'Disetujui', 'Selesai', catatan, req.actor)
-    await audit(c, req.actor, 'subbagsumda.karier.selesai', 'subbagsumda.karier', k.id, { jenis: k.jenis, status: 'Selesai', fields: berubah })
+    await audit(c, req.actor, 'subbagsumda.karier.selesai', 'subbagsumda.karier', k.id, { jenis: k.jenis, status: 'Selesai', fields: berubah, ...(dikoreksi.length ? { dikoreksi } : {}) })
     // K23: perubahan master juga tercatat sebagai perubahan personel (Aktivitas terakhir R5H27).
     if (berubah.length) await audit(c, req.actor, 'subbagsumda.personel.update', 'subbagsumda.personel', p.id, { fields: berubah, version: p.version + 1 })
   }
@@ -378,9 +400,15 @@ export function createSumdaKarierRouter({ pool, config }) {
   /* ------------------------------------------------------------ Lampiran */
 
   async function cekTerbuka(c, id, lock) {
-    const r = await c.query(`SELECT status FROM sdl_sumda_karier WHERE id=$1::uuid${lock ? ' FOR UPDATE' : ''}`, [id])
+    const r = await c.query(`SELECT status,personel_id::text FROM sdl_sumda_karier WHERE id=$1::uuid${lock ? ' FOR UPDATE' : ''}`, [id])
     if (r.rowCount !== 1) throw new HttpError(404, 'not_found')
     if (!TERBUKA.includes(r.rows[0].status)) throw new HttpError(409, 'status_tidak_sesuai')
+    // K26 juga untuk lampiran (review S2). Di dalam transaksi dengan FOR SHARE, di luar cukup baca biasa.
+    if (lock) await tolakBilaTerarsip(c, r.rows[0].personel_id)
+    else {
+      const p = await c.query('SELECT deleted_at IS NOT NULL AS terarsip FROM sdl_sumda_personel WHERE id=$1::uuid', [r.rows[0].personel_id])
+      if (p.rows[0]?.terarsip) throw new HttpError(409, 'personel_terarsip')
+    }
     return r.rows[0].status
   }
 
@@ -412,7 +440,7 @@ export function createSumdaKarierRouter({ pool, config }) {
       const r = (await c.query(
         `INSERT INTO sdl_sumda_karier_lampiran(karier_id,filename,size_bytes,sha256,body,uploaded_by)
          VALUES($1::uuid,$2,$3,$4,$5,$6) RETURNING id::text`, [id, filename, blob.length, digest, sealed, req.actor])).rows[0]
-      await naikVersi(c, id) // K22
+      await naikVersi(c, id, req.actor) // K22 + W1
       await audit(c, req.actor, 'subbagsumda.karier.lampiran.add', 'subbagsumda.karier', id)
       return r
     })
@@ -424,10 +452,11 @@ export function createSumdaKarierRouter({ pool, config }) {
     const id = idParam(req.params.id); const lid = idParam(req.params.lid)
     const isApprover = await can(req.actor, P.approve)
     await withTransaction(pool, async (c) => {
-      const r0 = await c.query('SELECT status FROM sdl_sumda_karier WHERE id=$1::uuid FOR UPDATE', [id])
+      const r0 = await c.query('SELECT status,personel_id::text FROM sdl_sumda_karier WHERE id=$1::uuid FOR UPDATE', [id])
       if (r0.rowCount !== 1) throw new HttpError(404, 'not_found')
       // K12: hapus hanya sebelum Disetujui.
       if (!['Diajukan', 'Diproses'].includes(r0.rows[0].status)) throw new HttpError(409, 'status_tidak_sesuai')
+      await tolakBilaTerarsip(c, r0.rows[0].personel_id) // K26 (review S2)
       const r = await c.query(
         `DELETE FROM sdl_sumda_karier_lampiran WHERE id=$1::uuid AND karier_id=$2::uuid AND (uploaded_by=$3::uuid OR $4::boolean)`,
         [lid, id, req.actor, isApprover])
@@ -435,7 +464,7 @@ export function createSumdaKarierRouter({ pool, config }) {
         const ada = await c.query('SELECT 1 FROM sdl_sumda_karier_lampiran WHERE id=$1::uuid AND karier_id=$2::uuid', [lid, id])
         throw ada.rowCount ? new HttpError(403, 'access_denied') : new HttpError(404, 'not_found')
       }
-      await naikVersi(c, id) // K22
+      await naikVersi(c, id, req.actor) // K22 + W1
       await audit(c, req.actor, 'subbagsumda.karier.lampiran.delete', 'subbagsumda.karier', id)
     })
     respond(res, 200, { ok: true })
@@ -450,12 +479,14 @@ export function createSumdaKarierRouter({ pool, config }) {
     let plain
     try { plain = openEvidence(evidenceKey, r.rows[0].body) } catch { throw new HttpError(503, 'evidence_integrity_failure') }
     if (createHash('sha256').update(plain).digest('hex') !== r.rows[0].sha256) throw new HttpError(503, 'evidence_integrity_failure')
-    await withTransaction(pool, (c) => audit(c, req.actor, 'subbagsumda.karier.lampiran.download', 'subbagsumda.karier', id))
+    // Header dipasang LEBIH DULU (review S1): nama non-Latin-1 tidak boleh membuat setHeader melempar
+    // setelah audit unduhan terlanjur tercatat.
     res.set('Content-Type', 'application/octet-stream')
-    res.set('Content-Disposition', contentDisposition('attachment', r.rows[0].filename))
+    res.set('Content-Disposition', disposisi(r.rows[0].filename))
     res.set('X-Content-Type-Options', 'nosniff')
     res.set('Content-Security-Policy', 'sandbox')
     res.set('Cache-Control', 'no-store')
+    await withTransaction(pool, (c) => audit(c, req.actor, 'subbagsumda.karier.lampiran.download', 'subbagsumda.karier', id))
     res.status(200).end(plain)
   }))
 

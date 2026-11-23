@@ -481,6 +481,23 @@ Tambahan kecil; tidak ada yang mengubah keputusan K1–K28.
 | D7 | Alasan tolak/batal | Dialog alasan sendiri (bukan `window.prompt`) | Sesuai design brief |
 | D8 | — | `.sdl-progar__fields.sdl-sumda__grid label{align-content:start}` di CSS R5H27 | Tinggi input tidak meregang bila label sebelah punya teks bantuan (juga memperbaiki form personel) |
 
+## Perbaikan hasil review (2026-11-23)
+
+`/review` (migration-guard + security-reviewer): satu temuan wajib (W1), dikerjakan bersama saran S1–S8 atas
+persetujuan pemilik (termasuk perluasan K19).
+
+| # | Temuan | Perbaikan |
+|---|---|---|
+| W1 | Maker-checker bisa dielakkan: approver mengganti lampiran operator lalu menyetujui | Unggah/hapus lampiran kini juga mengisi `updated_by` (perluasan **K19**: pengubah lampiran termasuk "pengubah terakhir") |
+| S1 | Nama berkas non-Latin-1 bisa membuat unduhan 503 setelah audit tercatat | `Content-Disposition` dengan `filename*=UTF-8''…` (RFC 5987); header dipasang sebelum audit. Catatan: busboy membaca nama multipart sebagai Latin-1, jadi nama UTF-8 umumnya tertolak di validasi nama (400); frontend kini mengganti karakter non-ASCII dengan `_` sebelum unggah |
+| S2 | K26 belum berlaku untuk lampiran | Unggah dan hapus lampiran menolak `personel_terarsip` |
+| S3 | Cek "personel terarsip" pada proses/setujui/tolak tanpa kunci | `FOR SHARE` (urutan karier → personel tetap) |
+| S4 | Nilai Selesai yang berbeda dari usulan tidak terlihat | `diterapkan.dikoreksi` + metadata audit `selesai` (nama field saja) + penanda "Dikoreksi saat selesai" di UI |
+| S5 | Bagian R5H27 di API-CONTRACT tanpa rujukan R5H28 | Rujukan silang `riwayatKarier`, `karierMenunggu`, 23503, dan pola rollback ditandai usang |
+| S6 | Komentar `umum.js` mengklaim tanpa perubahan perilaku | Dikoreksi (menyebut 23503 → 400) |
+| S7 | Skenario x3 kurang | + K19 via PATCH, W1 via lampiran, `terapkan` strict (7 varian), KGB + `terapkan`, K26 lampiran, nama non-ASCII tanpa 503, penanda `dikoreksi` |
+| S8 | `/aksi` memvalidasi isian sebelum cek hak | Cek hak lebih dulu |
+
 ## Sisa uji (lewat `/verifikasi`)
 
 - `scripts/security-test-r2d5.sh` (suite Go; 069 ter-embed) dan `go test ./...` penuh (sejauh ini migrasi + seed + build image `api`).

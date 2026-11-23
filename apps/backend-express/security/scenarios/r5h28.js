@@ -40,7 +40,7 @@ async function appLain(env, configLain) {
 export async function verifyR5H28SumdaKarier({ env }) {
   const BACA = 'subbagsumda.personel.read'
   const roles = {
-    br_r5h28_penuh: [BACA, 'subbagsumda.personel.create', 'subbagsumda.personel.update', 'subbagsumda.karier.manage', 'subbagsumda.karier.approve'],
+    br_r5h28_penuh: [BACA, 'subbagsumda.personel.create', 'subbagsumda.personel.update', 'subbagsumda.personel.archive', 'subbagsumda.karier.manage', 'subbagsumda.karier.approve'],
     br_r5h28_op: [BACA, 'subbagsumda.personel.update', 'subbagsumda.karier.manage'],
     br_r5h28_optanpaupd: [BACA, 'subbagsumda.karier.manage'],
     br_r5h28_baca: [BACA],
@@ -157,6 +157,79 @@ export async function verifyR5H28SumdaKarier({ env }) {
   for (const qs of ['size=7', 'page=0', 'status=Aktif', 'jenis=X', 'personelId=x', 'q=a&q=b']) status(await op.call('GET', `${K}?${qs}`), 400, `query ${qs}`)
   equal(Object.getOwnPropertyNames(Object.prototype).filter((k) => !PROTO_ASLI.has(k)).join(','), '', 'prototipe Object tidak tercemar')
   for (const path of [K, `${K}/${k3.id}`, `${K}/capabilities`]) equal((await op.call('GET', path)).headers.get('cache-control'), 'no-store', `no-store ${path}`)
+
+  // ---- 5b. Perbaikan review R5H28 ----
+  // Tiap kasus memakai personel sendiri supaya tidak bentrok dengan K11 (satu pengajuan terbuka per jenis).
+  let urut = 0
+  const perBaru = async () => {
+    urut += 1
+    const r = await ka.call('POST', PER, { nrp: `SEC-K-1${String(urut).padStart(2, '0')}`, nama: `Personel Uji Review ${urut}`, jenis: 'Polri', pangkat: '', jabatan: '', unitKerja: '', tmtDinas: '', tanggalPensiun: '2040-01-01', status: 'Aktif', catatan: '' }, true)
+    status(r, 201, `buat personel uji review ${urut}`)
+    return JSON.parse(r.text).item
+  }
+  const ambil = async (id) => JSON.parse((await op.call('GET', `${K}/${id}`)).text).item
+
+  // K19 lewat PATCH: Kasubbag menyunting pengajuan operator, lalu tidak boleh memutusnya.
+  const pA = await perBaru()
+  const a0 = item(await op.call('POST', K, isi('MUTASI', { personelId: pA.id, usulan: { unitKerja: 'Unit A' } }), true))
+  const a1 = item(await ka.call('PATCH', `${K}/${a0.id}`, { nomorReferensi: 'EDIT', tanggalUsulan: '2026-11-01', tanggalEfektif: '', usulan: { unitKerja: 'Unit B' }, catatan: '', version: a0.version }, true))
+  const a2 = item(await aksi(op, a1, 'proses'))
+  const sA = await aksi(ka, a2, 'setujui'); status(sA, 403, 'K19: pengubah via PATCH menyetujui'); contains(sA, 'self_review_forbidden', 'kode K19 PATCH')
+  equal((await ambil(a0.id)).status, 'Diproses', 'status tetap Diproses setelah K19 ditolak')
+
+  // W1: approver mengganti lampiran operator lalu menyetujui → harus ditolak.
+  const pB = await perBaru()
+  const b0 = item(await op.call('POST', K, isi('MUTASI', { personelId: pB.id, usulan: { unitKerja: 'Unit W1' } }), true))
+  const lB = JSON.parse((await op.upload(`${K}/${b0.id}/lampiran`, { filename: 'bukti.pdf', data: PDF })).text).id
+  await aksi(op, await ambil(b0.id), 'proses')
+  status(await ka.call('DELETE', `${K}/${b0.id}/lampiran/${lB}`, null, true), 200, 'approver menghapus lampiran operator')
+  status(await ka.upload(`${K}/${b0.id}/lampiran`, { filename: 'pengganti.pdf', data: PDF }), 201, 'approver mengunggah lampiran pengganti')
+  const sB = await aksi(ka, await ambil(b0.id), 'setujui'); status(sB, 403, 'W1: pengubah lampiran menyetujui'); contains(sB, 'self_review_forbidden', 'kode W1')
+  const bOk = item(await aksi(appr, await ambil(b0.id), 'setujui')); equal(bOk.status, 'Disetujui', 'approver lain tetap bisa menyetujui')
+
+  // terapkan strict pada selesai (bOk: MUTASI Disetujui).
+  const pvB = JSON.parse((await op.call('GET', `${PER}/${pB.id}`)).text).item.version
+  const selesai = (t) => op.call('POST', `${K}/${b0.id}/aksi`, raw(`{"aksi":"selesai","catatan":"","version":${bOk.version},"tanggalEfektif":"2026-12-01","terapkan":${t}}`), true)
+  for (const [label, t] of [
+    ['terapkan __proto__', `{"__proto__":{"x":1},"unitKerja":"U","personelVersion":${pvB}}`],
+    ['terapkan kunci asing (pangkat pada MUTASI)', `{"pangkat":"X","unitKerja":"U","personelVersion":${pvB}}`],
+    ['terapkan nilai angka', `{"unitKerja":123,"personelVersion":${pvB}}`],
+    ['terapkan nilai objek', `{"unitKerja":{"a":1},"personelVersion":${pvB}}`],
+    ['personelVersion string', '{"unitKerja":"U","personelVersion":"1"}'],
+    ['personelVersion pecahan', '{"unitKerja":"U","personelVersion":1.5}'],
+    ['terapkan array', '[1,2]'],
+  ]) status(await selesai(t), 400, label)
+  equal(Object.getOwnPropertyNames(Object.prototype).filter((k) => !PROTO_ASLI.has(k)).join(','), '', 'prototipe bersih setelah probe terapkan')
+  equal((await ambil(b0.id)).status, 'Disetujui', 'probe terapkan tidak mengubah status')
+  // Koreksi saat selesai ditandai (review S4).
+  const dB = item(await selesai(`{"unitKerja":"Unit W1 Dikoreksi","personelVersion":${pvB}}`))
+  equal(JSON.stringify(dB.diterapkan.dikoreksi), '["unitKerja"]', 'diterapkan.dikoreksi saat nilai berbeda dari usulan')
+
+  // KGB tidak menerima terapkan.
+  const pC = await perBaru()
+  const c0 = item(await op.call('POST', K, isi('KGB', { personelId: pC.id }), true))
+  await aksi(op, c0, 'proses')
+  const c2 = item(await aksi(appr, await ambil(c0.id), 'setujui'))
+  status(await op.call('POST', `${K}/${c0.id}/aksi`, { aksi: 'selesai', catatan: '', version: c2.version, tanggalEfektif: '2026-12-01', terapkan: { personelVersion: 1 } }, true), 400, 'KGB dengan terapkan')
+
+  // K26 untuk lampiran (review S2): personel terarsip → unggah, hapus, proses 409.
+  const pD = await perBaru()
+  const d0 = item(await op.call('POST', K, isi('KGB', { personelId: pD.id }), true))
+  const lD = JSON.parse((await op.upload(`${K}/${d0.id}/lampiran`, { filename: 'a.pdf', data: PDF })).text).id
+  status(await ka.call('DELETE', `${PER}/${pD.id}?version=${pD.version}`, null, true), 204, 'arsipkan personel uji')
+  const uD = await op.upload(`${K}/${d0.id}/lampiran`, { filename: 'b.pdf', data: PDF }); status(uD, 409, 'unggah untuk personel terarsip'); contains(uD, 'personel_terarsip', 'kode terarsip unggah')
+  status(await op.call('DELETE', `${K}/${d0.id}/lampiran/${lD}`, null, true), 409, 'hapus lampiran untuk personel terarsip')
+  status(await aksi(op, await ambil(d0.id), 'proses'), 409, 'proses untuk personel terarsip')
+
+  // Review S1: nama berkas non-ASCII tidak boleh berujung 503. busboy membaca nama multipart sebagai
+  // Latin-1, jadi nama UTF-8 biasanya tertolak di validasi nama (400); bila lolos, unduhan wajib 200.
+  const pE = await perBaru()
+  const e0 = item(await op.call('POST', K, isi('KGB', { personelId: pE.id }), true))
+  for (const nama of ['Surat ğ 文件.pdf', 'Laporan é.pdf']) {
+    const uE = await op.upload(`${K}/${e0.id}/lampiran`, { filename: nama, data: PDF })
+    if (uE.status === 201) status(await op.call('GET', `${K}/${e0.id}/lampiran/${JSON.parse(uE.text).id}`), 200, `unduh ${nama}`)
+    else status(uE, 400, `unggah ${nama} ditolak rapi`)
+  }
 
   // ---- 6. Pencabutan ----
   const opId = users.op_r5h28.id

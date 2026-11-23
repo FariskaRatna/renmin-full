@@ -22,7 +22,7 @@ type PersonelRingkas = { id: string; nrp: string; nama: string; jenis: '' | 'Pol
 type Nilai = { pangkat: string; jabatan: string; unitKerja: string }
 type Karier = {
   id: string; jenis: Jenis; nomorReferensi: string; tanggalUsulan: string; tanggalEfektif: string; status: Status; catatan: string; version: number
-  usulan: Nilai & { pangkatLabel: string }; ringkas: string; diterapkan: { fields?: Record<string, { lama: string; baru: string }> } | null
+  usulan: Nilai & { pangkatLabel: string }; ringkas: string; diterapkan: { fields?: Record<string, { lama: string; baru: string }>; dikoreksi?: string[] } | null
   createdBy: string; createdByName: string; updatedBy: string; decidedByName: string | null; decidedAt: string | null; selesaiAt: string | null
   personel: PersonelRingkas
 }
@@ -266,7 +266,8 @@ function DetailPengajuan({ id, caps, userId, onClose, onChanged, onLost }: { id:
 
   async function unggah(f: File) {
     if (f.size > MAKS_PDF) { showToast(ERRORS.file_too_large, 'error'); return }
-    const fd = new FormData(); fd.append('file', f, f.name)
+    // Server membaca nama multipart sebagai Latin-1; karakter non-ASCII diganti '_' supaya tidak tertolak.
+    const fd = new FormData(); fd.append('file', f, f.name.replace(/[^\x20-\x7e]/g, '_'))
     setBusy(true)
     try { await api(`/karier/${encodeURIComponent(k.id)}/lampiran`, 'POST', fd); showToast('Lampiran diunggah.') } catch (e) { showToast((e as Error).message, 'error') }
     finally { setBusy(false); if (fileRef.current) fileRef.current.value = ''; void muat() }
@@ -292,7 +293,8 @@ function DetailPengajuan({ id, caps, userId, onClose, onChanged, onLost }: { id:
         const usul = f === 'pangkat' ? k.usulan.pangkatLabel : k.usulan[f]
         // Pangkat disimpan sebagai kode; tampilkan label bila kode baru sama dengan usulan.
         const baru = ditr && f === 'pangkat' && ditr.baru === k.usulan.pangkat ? k.usulan.pangkatLabel : ditr?.baru
-        return <tr key={f}><th scope="row">{FIELD_LABEL[f]}</th><td>{now || '—'}</td><td>{ditr ? `${ditr.lama || '—'} → ${baru}` : usul || '—'}</td></tr>
+        const koreksi = k.diterapkan?.dikoreksi?.includes(f)
+        return <tr key={f}><th scope="row">{FIELD_LABEL[f]}</th><td>{now || '—'}</td><td>{ditr ? `${ditr.lama || '—'} → ${baru}` : usul || '—'}{koreksi && <small className="sdl-sumda__flag" title="Nilai yang diterapkan berbeda dari usulan yang disetujui">Dikoreksi saat selesai</small>}</td></tr>
       })}</tbody></table>}
     <dl className="sdl-sumda__detail">
       <div><dt>Tanggal usulan</dt><dd className="sdl-sumda__mono">{tgl(k.tanggalUsulan)}</dd></div>
