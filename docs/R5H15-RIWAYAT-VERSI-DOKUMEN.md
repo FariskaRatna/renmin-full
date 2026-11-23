@@ -9,7 +9,7 @@ status, pengunggah, keputusan, pratinjau PDF tiap versi), disusun di layar dari
 `penggantiDari` pada daftar yang sudah ada. Centang "Tampilkan versi lama"
 dihapus. Sisa rancangan di bawah (PDF tidak ditimpa, Perbaiki setelah ditolak,
 satu baris per rantai selama revisi diproses, definisi `digantikan` per rantai)
-tetap butuh backend + migrasi 070. Lanjutan R5H13 (Dokumen Perencanaan) dan menyentuh
+tetap butuh backend + migrasi 071. Lanjutan R5H13 (Dokumen Perencanaan) dan menyentuh
 R5H14 (pagu berdasar DIPA sah).
 
 ## Kebutuhan (kata pemilik)
@@ -103,7 +103,7 @@ bagian R5H15.
 
 ## Migrasi
 
-`070_riwayat_versi_dokumen.sql` (baru; **051 tidak disentuh**). Daftarkan di
+`071_riwayat_versi_dokumen.sql` (baru; **051 tidak disentuh**). Daftarkan di
 **kedua** manifes — `apps/backend/internal/migrations/migrate_test.go` dan
 `apps/backend-express/src/migrations/index.js` — dalam commit yang sama dengan
 file SQL-nya (pelajaran insiden 050, 2026-11-13).
@@ -166,7 +166,7 @@ disahkan. Sudah begitu sejak R5H13; perlu keputusan terpisah.
    bukan record baru).
 
 Gerbang: `bash scripts/security-test-express.sh` tetap 21/21; build image Go
-(`migrate_test.go` memuat 070); `npm run build` frontend. Demo browser:
+(`migrate_test.go` memuat 071); `npm run build` frontend. Demo browser:
 unggah 3 PDF → sahkan → buat revisi → tolak → perbaiki → sahkan, lihat daftar
 tetap satu baris dan riwayat lengkap.
 
