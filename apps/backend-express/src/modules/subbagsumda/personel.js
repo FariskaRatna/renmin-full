@@ -199,7 +199,22 @@ export function createSumdaPersonelRouter({ pool }) {
 
   router.get('/:id', handle(async (req, res) => {
     await need(req, P.read)
-    respond(res, 200, { item: await ambil(pool, idParam(req.params.id)) })
+    const id = idParam(req.params.id)
+    const item = await ambil(pool, id)
+    // R5H28 K13/K28 (aditif, hanya di GET ini): riwayat karier & mutasi personel, terbaru di atas.
+    const rk = (await pool.query(
+      `SELECT k.id::text,k.jenis,k.status,k.tanggal_usulan::text AS tanggal_usulan,k.tanggal_efektif::text AS tanggal_efektif,
+              k.usulan_pangkat,coalesce(ur.short_name,k.usulan_pangkat) AS usulan_pangkat_label,k.usulan_jabatan,k.usulan_unit_kerja
+         FROM sdl_sumda_karier k
+         JOIN sdl_sumda_personel p ON p.id=k.personel_id
+         LEFT JOIN sdl_polri_rank_master ur ON p.jenis IS DISTINCT FROM 'PNS' AND ur.code=k.usulan_pangkat
+        WHERE k.personel_id=$1::uuid ORDER BY k.created_at DESC, k.id LIMIT 50`, [id])).rows
+    item.riwayatKarier = rk.map((r) => ({
+      id: r.id, jenis: r.jenis, status: r.status, tanggalUsulan: r.tanggal_usulan, tanggalEfektif: r.tanggal_efektif ?? '',
+      ringkas: r.jenis === 'UKP' ? `Pangkat → ${r.usulan_pangkat_label}` : r.jenis === 'MUTASI' ? [r.usulan_jabatan, r.usulan_unit_kerja].filter(Boolean).join(' · ')
+        : r.jenis === 'PENYESUAIAN_JABATAN' ? `Jabatan → ${r.usulan_jabatan}` : 'Kenaikan gaji berkala',
+    }))
+    respond(res, 200, { item })
   }))
 
   router.patch('/:id', json, handle(async (req, res) => {
@@ -349,7 +364,9 @@ export function createSumdaDashboardRouter({ pool }) {
              (SELECT count(*) FROM sdl_sumda_personel WHERE deleted_at IS NULL AND status='MPP') AS mpp,
              (SELECT count(*) FROM sdl_sumda_personel p WHERE p.deleted_at IS NULL AND ${BELUM_LENGKAP}) AS belum_lengkap,
              (SELECT count(*) FROM a) AS alert,
-             (SELECT count(*) FROM a WHERE reviewed_at IS NULL) AS belum_ditinjau`)).rows[0]
+             (SELECT count(*) FROM a WHERE reviewed_at IS NULL) AS belum_ditinjau,
+             (SELECT count(*) FROM sdl_sumda_karier k JOIN sdl_sumda_personel kp ON kp.id=k.personel_id
+               WHERE k.status='Diproses' AND kp.deleted_at IS NULL) AS karier_menunggu`)).rows[0]
     // K19: kartu "Pensiun 6 bulan" = jumlah grafik proyeksi (bulan berjalan s.d. +5).
     const proyeksi = (await pool.query(`
       SELECT to_char(b.m,'YYYY-MM') AS bulan, count(p.id)::int AS jumlah
@@ -373,6 +390,7 @@ export function createSumdaDashboardRouter({ pool }) {
         personel: Number(tot.personel), aktif: Number(tot.aktif), mpp: Number(tot.mpp),
         alert: Number(tot.alert), belumDitinjau: Number(tot.belum_ditinjau), belumLengkap: Number(tot.belum_lengkap),
         enamBulan: proyeksi.reduce((s, b) => s + b.jumlah, 0),
+        karierMenunggu: Number(tot.karier_menunggu), // R5H28 K14 (aditif)
       },
       proyeksi,
       alertTerdekat,
