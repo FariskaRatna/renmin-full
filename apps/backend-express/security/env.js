@@ -109,6 +109,9 @@ export class SecurityEnv {
     // email_delivery_unavailable — perilaku fail-closed yang diuji kasus 06.
     const mailer = new Mailer({ host: '', port: 587, username: '', password: '', from: '' })
 
+    // Disimpan supaya skenario bisa menyalakan app kedua dengan satu flag berbeda
+    // (R5H27: workspace demo Superadmin), tanpa merakit konfigurasi karangan.
+    this.config = config
     const app = createApp({ pool: this.pool, config, mailer })
     this.server = createServer(app)
     await new Promise((resolve) => this.server.listen(0, '127.0.0.1', resolve))
