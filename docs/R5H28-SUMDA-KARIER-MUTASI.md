@@ -1,7 +1,7 @@
 # R5H28 — Subbagsumda: Karier & Mutasi
 
 Status: **DIIMPLEMENTASI (2026-11-23), branch `feat/r5h28-sumda-karier`, belum di-push.** K1–K28 disetujui pemilik.
-Khusus Express. Migrasi **069** (R5H15 → **070**). Lulus: `go test` (migrasi + seed), gladi 069 + uji CHECK, verify
+Khusus Express. Migrasi **069** (R5H15 → **070**; digeser lagi ke **071** di R5H29). Lulus: `go test` (migrasi + seed), gladi 069 + uji CHECK, verify
 R5H28 + R5H27, suite keamanan Express 24/24 (+ uji mutasi x3), `npm run build`, demo browser alur UKP penuh (op →
 Kasubbag → op, Master Personel berubah). Belum: lihat "Sisa uji".
 Lanjutan R5H27 (Master Personel): setiap pengajuan merujuk satu baris `sdl_sumda_personel`.

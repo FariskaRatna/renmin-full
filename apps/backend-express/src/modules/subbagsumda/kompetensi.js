@@ -69,12 +69,12 @@ function nilai(b) {
 }
 
 const KOLOM = `k.id::text,k.personel_id::text,k.nama,k.kategori,k.nomor,k.penerbit,k.tanggal_terbit::text AS tanggal_terbit,
-  k.berlaku_sampai::text AS berlaku_sampai,k.catatan,k.version,k.dari_peserta_id::text,ps.diklat_id::text AS dari_diklat_id,
+  k.berlaku_sampai::text AS berlaku_sampai,k.catatan,k.version,k.dari_peserta_id::text,d.id::text AS dari_diklat_id,
   d.nama AS dari_diklat_nama,p.nrp,p.nama AS personel_nama,p.status AS personel_status,p.deleted_at IS NOT NULL AS terarsip,
   ${sisaKompetensiSql()} AS sisa_hari,${tahapKompetensiSql()} AS tahap,k.created_at,k.updated_at`
 const DARI = `FROM sdl_sumda_kompetensi k JOIN sdl_sumda_personel p ON p.id=k.personel_id
   LEFT JOIN sdl_sumda_diklat_peserta ps ON ps.id=k.dari_peserta_id
-  LEFT JOIN sdl_sumda_diklat d ON d.id=ps.diklat_id`
+  LEFT JOIN sdl_sumda_diklat d ON d.id=ps.diklat_id AND d.deleted_at IS NULL`
 
 function map(r) {
   return {
@@ -126,11 +126,14 @@ export function createSumdaKompetensiRouter({ pool, config }) {
     await need(req, P.read)
     const tahap = String(req.query.tahap ?? '')
     if (tahap !== '' && !TAHAP_KOMPETENSI.includes(tahap)) throw new HttpError(400, 'invalid_input')
-    const rows = (await pool.query(`SELECT ${KOLOM} ${DARI} WHERE ${tahapKompetensiSql()} IS NOT NULL
-      ORDER BY sisa_hari, lower(p.nama), k.id`)).rows.map(map)
+    // Review R5H29 C4: items dibatasi 500; ringkas tetap dihitung penuh di SQL.
+    const tahapSql = tahapKompetensiSql()
+    const hitung = (await pool.query(`SELECT ${tahapSql} AS tahap, count(*)::int AS n ${DARI} WHERE ${tahapSql} IS NOT NULL GROUP BY 1`)).rows
+    const rows = (await pool.query(`SELECT ${KOLOM} ${DARI} WHERE ${tahapSql} IS NOT NULL AND ($1 = '' OR ${tahapSql} = $1)
+      ORDER BY sisa_hari, lower(p.nama), k.id LIMIT 500`, [tahap])).rows.map(map)
     respond(res, 200, {
-      ringkas: Object.fromEntries(TAHAP_KOMPETENSI.map((t) => [t, rows.filter((a) => a.tahap === t).length])),
-      items: tahap === '' ? rows : rows.filter((a) => a.tahap === tahap),
+      ringkas: Object.fromEntries(TAHAP_KOMPETENSI.map((t) => [t, hitung.find((h) => h.tahap === t)?.n ?? 0])),
+      items: rows,
     })
   }))
 
@@ -203,7 +206,7 @@ export function createSumdaKompetensiRouter({ pool, config }) {
       `SELECT l.id::text,l.filename,l.size_bytes,l.uploaded_by::text,u.display_name,l.uploaded_at FROM sdl_sumda_diklat_lampiran l
          LEFT JOIN sdl_users u ON u.id=l.uploaded_by WHERE l.kompetensi_id=$1::uuid ORDER BY l.uploaded_at, l.id`, [id])).rows
     // K24: sertifikat peserta asal ditautkan, tidak disalin.
-    const sertifikat = item.dariPesertaId ? (await pool.query(
+    const sertifikat = item.dariDiklat ? (await pool.query(
       `SELECT l.id::text,l.filename,l.size_bytes FROM sdl_sumda_diklat_lampiran l WHERE l.peserta_id=$1::uuid ORDER BY l.uploaded_at, l.id`,
       [item.dariPesertaId])).rows : []
     respond(res, 200, {
@@ -243,9 +246,8 @@ export function createSumdaKompetensiRouter({ pool, config }) {
     const version = parseGoInt(String(req.query.version ?? ''))
     if (version === undefined || version < 1) throw new HttpError(400, 'invalid_input')
     await withTransaction(pool, async (c) => {
-      const r = await c.query('SELECT version FROM sdl_sumda_kompetensi WHERE id=$1::uuid AND deleted_at IS NULL FOR UPDATE', [id])
-      if (r.rowCount !== 1) throw new HttpError(404, 'not_found')
-      if (r.rows[0].version !== version) throw new HttpError(409, 'version_conflict')
+      const cur = await kunci(c, id) // K16, review R5H29 S1: personel terarsip -> 409
+      if (cur.version !== version) throw new HttpError(409, 'version_conflict')
       await c.query('UPDATE sdl_sumda_kompetensi SET deleted_at=now(),updated_by=$2,updated_at=now(),version=version+1 WHERE id=$1::uuid', [id, req.actor])
       await auditSumda(c, req.actor, 'subbagsumda.kompetensi.archive', 'subbagsumda.kompetensi', id, { version: version + 1 })
     })

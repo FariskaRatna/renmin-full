@@ -19,7 +19,7 @@ const KP = '/api/v1/subbagsumda/kompetensi'
 const PER = '/api/v1/subbagsumda/personel'
 const raw = (s) => Buffer.from(s, 'utf8')
 const PROTO_ASLI = new Set(Object.getOwnPropertyNames(Object.prototype))
-const PDF = Buffer.from('%PDF-1.4\n1 0 obj <<>> endobj\ntrailer <<>>\n%%EOF\n', 'latin1')
+const PDF = Buffer.from('%PDF-1.4\n1 0 obj <</Type/Catalog/Pages 2 0 R>> endobj\n2 0 obj <</Type/Pages/Kids[3 0 R]/Count 1>> endobj\n3 0 obj <</Type/Page/Parent 2 0 R/MediaBox[0 0 300 200]>> endobj\ntrailer <</Root 1 0 R>>\n%%EOF\n', 'latin1')
 const PALSU = '00000000-0000-4000-8000-000000000000'
 
 async function appLain(env, configLain) {
@@ -116,6 +116,50 @@ export async function verifyR5H29SumdaDiklat({ env }) {
   const dl = await baca.call('GET', `${D}/${k.id}/lampiran/${lid}`)
   status(dl, 200, 'baca saja unduh'); equal(dl.body.equals(PDF), true, 'unduhan byte-identik')
   for (const [h, want] of [['x-content-type-options', 'nosniff'], ['content-security-policy', 'sandbox'], ['cache-control', 'no-store']]) equal(dl.headers.get(h), want, `header ${h}`)
+
+  // ---- 4b. Review R5H29: PDF terenkripsi/rusak, rantai silang tiga pemilik, personel terarsip (K16) ----
+  const PDF_ENC = Buffer.from('%PDF-1.4\n1 0 obj <</Type/Catalog/Pages 2 0 R>> endobj\n2 0 obj <</Type/Pages/Kids[3 0 R]/Count 1>> endobj\n' +
+    '3 0 obj <</Type/Page/Parent 2 0 R/MediaBox[0 0 300 200]>> endobj\n4 0 obj <</Filter/Standard/V 1/R 2/O(x)/U(y)/P -4>> endobj\n' +
+    'trailer <</Root 1 0 R/Encrypt 4 0 R>>\n%%EOF\n', 'latin1')
+  for (const [label, data] of [['PDF terenkripsi', PDF_ENC], ['PDF sampah ber-%%EOF', raw('%PDF-1.4\nsampah\n%%EOF\n')]]) {
+    const r = await op.upload(`${D}/${k.id}/lampiran`, { filename: 'x.pdf', data })
+    status(r, 400, label); contains(r, 'invalid_file_type', `${label} kode`)
+  }
+  const per2 = item(await ka.call('POST', PER, { nrp: 'SEC-D-002', nama: 'Personel Uji Arsip', jenis: 'Polri', pangkat: '', jabatan: '', unitKerja: '', tmtDinas: '', tanggalPensiun: '2040-01-01', status: 'Aktif', catatan: '' }, true))
+  let k3 = item(await op.call('POST', D, isiK({ nama: 'Pelatihan Rantai', tanggalSelesai: '2026-11-05' }), true))
+  k3 = item(await op.call('POST', `${D}/${k3.id}/peserta`, { personelIds: [per2.id], version: k3.version }, true))
+  k3 = item(await op.call('POST', `${D}/${k3.id}/status`, { status: 'Berjalan', catatan: '', version: k3.version }, true))
+  k3 = item(await op.call('POST', `${D}/${k3.id}/status`, { status: 'Selesai', catatan: '', version: k3.version }, true))
+  equal(k3.status, 'Selesai', 'kegiatan rantai Selesai')
+  const pid = JSON.parse((await op.call('GET', `${D}/${k3.id}`)).text).peserta[0].id
+  const upP = await op.upload(`${D}/${k3.id}/peserta/${pid}/lampiran`, { filename: 'sert.pdf', data: PDF }); status(upP, 201, 'unggah sertifikat peserta')
+  const plid = JSON.parse(upP.text).id
+  const ko2 = item(await op.call('POST', KP, isiKo({ personelId: per2.id, nama: 'Sertifikat Arsip' }), true))
+  const upK = await op.upload(`${KP}/${ko2.id}/lampiran`, { filename: 'k.pdf', data: PDF }); status(upK, 201, 'unggah lampiran kompetensi')
+  const klid = JSON.parse(upK.text).id
+  for (const [label, m, path] of [
+    ['lampiran peserta via kegiatan lain', 'GET', `${D}/${k.id}/peserta/${pid}/lampiran/${plid}`],
+    ['lampiran kegiatan via jalur peserta', 'GET', `${D}/${k3.id}/peserta/${pid}/lampiran/${lid}`],
+    ['lampiran peserta via jalur kegiatan', 'GET', `${D}/${k3.id}/lampiran/${plid}`],
+    ['lampiran kompetensi via kompetensi lain', 'GET', `${KP}/${ko.id}/lampiran/${klid}`],
+    ['hapus lampiran kompetensi via kompetensi lain', 'DELETE', `${KP}/${ko.id}/lampiran/${klid}`],
+    ['lampiran kompetensi via jalur peserta', 'GET', `${D}/${k3.id}/peserta/${pid}/lampiran/${klid}`],
+  ]) status(await ka.call(m, path, null, m !== 'GET'), 404, label)
+  // Kegiatan lain belum Selesai: pemeriksaan status kegiatan (409) jalan sebelum rantai peserta; yang penting tidak terhapus.
+  const hapusSilang = await ka.call('DELETE', `${D}/${k.id}/peserta/${pid}/lampiran/${plid}`, null, true)
+  equal([404, 409].includes(hapusSilang.status), true, `hapus lampiran peserta via kegiatan lain ditolak (HTTP ${hapusSilang.status})`)
+  status(await ka.call('GET', `${D}/${k3.id}/peserta/${pid}/lampiran/${plid}`), 200, 'lampiran peserta masih ada setelah hapus silang')
+  let k4 = item(await op.call('POST', D, isiK({ nama: 'Pelatihan Terarsip' }), true))
+  k4 = item(await op.call('POST', `${D}/${k4.id}/peserta`, { personelIds: [per2.id], version: k4.version }, true))
+  const ps4 = JSON.parse((await op.call('GET', `${D}/${k4.id}`)).text).peserta[0]
+  const per2Kini = item(await ka.call('GET', `${PER}/${per2.id}`))
+  status(await ka.call('DELETE', `${PER}/${per2.id}?version=${per2Kini.version}`, null, true), 204, 'arsipkan personel peserta')
+  const keluar = await op.call('DELETE', `${D}/${k4.id}/peserta/${ps4.id}?version=${ps4.version}`, null, true)
+  status(keluar, 409, 'keluarkan peserta terarsip'); contains(keluar, 'personel_terarsip', 'kode keluarkan peserta terarsip')
+  const ko2Kini = JSON.parse((await ka.call('GET', `${KP}/${ko2.id}`)).text).item
+  const arsipKo = await ka.call('DELETE', `${KP}/${ko2.id}?version=${ko2Kini.version}`, null, true)
+  status(arsipKo, 409, 'arsip kompetensi personel terarsip'); contains(arsipKo, 'personel_terarsip', 'kode arsip kompetensi terarsip')
+  status(await baca.call('GET', `${D}/${k3.id}/peserta/${pid}/lampiran/${plid}`), 200, 'unduh sertifikat personel terarsip tetap boleh')
 
   // ---- 5. Bentuk ----
   status(await op.call('POST', D, { ...isiK(), x: 1 }, true), 400, 'field asing kegiatan')

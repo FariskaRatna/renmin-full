@@ -1723,7 +1723,8 @@ Kode galat: 400 `invalid_body`/`invalid_input`/`invalid_rank`/`invalid_file_type
 `personel_belum_lengkap`/`batas_lampiran`; 503 `evidence_encryption_unavailable`/`evidence_integrity_failure`/
 `database_unavailable`. Menambah/menghapus lampiran menaikkan `version` dan mencatat pengubahnya sebagai
 `updated_by`, sehingga orang yang mengganti lampiran tidak bisa memutus pengajuan itu (perluasan K19). Lampiran juga
-ditolak (409 `personel_terarsip`) bila personelnya sudah diarsipkan. Nama berkas Unicode diunduh dengan
+ditolak (409 `personel_terarsip`) bila personelnya sudah diarsipkan. **Sejak R5H29:** PDF terenkripsi atau rusak (gagal
+diparse pdf-lib / tanpa halaman) → 400 `invalid_file_type`. Nama berkas Unicode diunduh dengan
 `filename*=UTF-8''…` (RFC 5987). Bila nilai yang diterapkan saat Selesai berbeda dari usulan yang disetujui,
 `diterapkan.dikoreksi` memuat nama field-nya (juga di metadata audit `selesai`). Pengajuan milik personel terarsip hanya bisa
 dibatalkan.
@@ -1763,17 +1764,17 @@ pada grant aktif unit `subbagsumda`: `R` = `subbagsumda.personel.read`, `M` = `s
 | DELETE | `/api/v1/subbagsumda/diklat/:id?version=` | A | arsip; sesudahnya semua sub-endpoint 404; kompetensi turunan tetap |
 | POST | `/api/v1/subbagsumda/diklat/:id/peserta` | M | `{personelIds:[uuid…],version}`; 1–50 per kirim, total ≤ 200, all-or-nothing; personel Aktif/MPP; hanya Terjadwal/Berjalan |
 | PATCH | `/api/v1/subbagsumda/diklat/:id/peserta/:pid` | M | `{hasil,nomorSertifikat,keterangan,version}`; hanya saat Selesai; `nomorSertifikat` hanya untuk `Lulus`; Lulus→lainnya ditolak 409 `kompetensi_terkait` bila ada kompetensi turunan aktif |
-| DELETE | `/api/v1/subbagsumda/diklat/:id/peserta/:pid?version=` | M | versi peserta; hanya Terjadwal/Berjalan |
-| POST · GET · DELETE | `/api/v1/subbagsumda/diklat/:id/lampiran[/:lid]` | M · R · M | PDF kegiatan (pola R5H28: ≤ 5 MB, maks. 10, SDL1; hapus = pengunggah atau A) |
-| POST · GET · DELETE | `/api/v1/subbagsumda/diklat/:id/peserta/:pid/lampiran[/:lid]` | M · R · M | sertifikat peserta; rantai induk penuh diperiksa (id silang → 404) |
+| DELETE | `/api/v1/subbagsumda/diklat/:id/peserta/:pid?version=` | M | versi peserta; hanya Terjadwal/Berjalan; personel terarsip → 409 `personel_terarsip` |
+| POST · GET · DELETE | `/api/v1/subbagsumda/diklat/:id/lampiran` · `…/lampiran/:lid` · `…/lampiran/:lid` | M · R · M | PDF kegiatan: POST unggah, GET `:lid` unduh, DELETE `:lid` hapus (daftar ada di `GET /:id`). ≤ 5 MB, maks. 10, SDL1; PDF terenkripsi/rusak → 400 `invalid_file_type`; hapus = pengunggah atau A |
+| POST · GET · DELETE | `/api/v1/subbagsumda/diklat/:id/peserta/:pid/lampiran` · `…/:lid` · `…/:lid` | M · R · M | sertifikat peserta (sama); unggah/hapus hanya saat kegiatan Selesai dan personel belum terarsip; rantai induk penuh diperiksa (id silang → 404) |
 | GET | `/api/v1/subbagsumda/kompetensi/capabilities` | O | `{canRead,canManage,canArchive}` |
-| GET | `/api/v1/subbagsumda/kompetensi/alert` | R | `?tahap=` → `{ringkas:{"H-60","H-30","KEDALUWARSA"},items}`; hanya personel Aktif/MPP belum terarsip |
+| GET | `/api/v1/subbagsumda/kompetensi/alert` | R | `?tahap=` → `{ringkas:{"H-60","H-30","KEDALUWARSA"},items}`; hanya personel Aktif/MPP belum terarsip; `items` maks. 500 (terdekat dulu), `ringkas` hitungan penuh |
 | GET | `/api/v1/subbagsumda/kompetensi` | R | `?q=&personelId=&kategori=&tahap=&page=&size=`. Item: `{id,personelId,nama,kategori,nomor,penerbit,tanggalTerbit,berlakuSampai,catatan,version,dariPesertaId,dariDiklat:{id,nama}\|null,personel:{id,nrp,nama,status,terarsip},sisaHari,tahap}` |
 | POST | `/api/v1/subbagsumda/kompetensi` | M | `{personelId,nama,kategori,nomor,penerbit,tanggalTerbit,berlakuSampai,catatan,dariPesertaId?}` → 201; dengan `dariPesertaId`: peserta Lulus, kegiatan Selesai, personel sama (FK komposit), satu kompetensi aktif per peserta (409 `kompetensi_ganda`) |
-| GET | `/api/v1/subbagsumda/kompetensi/:id` | R | `{item,lampiran[],sertifikatPeserta:[{id,filename,size}]}` (tautan, tidak disalin) |
+| GET | `/api/v1/subbagsumda/kompetensi/:id` | R | `{item,lampiran[],sertifikatPeserta:[{id,filename,size}]}` (tautan, tidak disalin); bila kegiatan asal terarsip: `dariDiklat` null (`dariPesertaId` tetap) dan `sertifikatPeserta` kosong |
 | PATCH | `/api/v1/subbagsumda/kompetensi/:id` | M | badan penuh + `version`; personel terarsip → 409 `personel_terarsip` |
-| DELETE | `/api/v1/subbagsumda/kompetensi/:id?version=` | A | arsip |
-| POST · GET · DELETE | `/api/v1/subbagsumda/kompetensi/:id/lampiran[/:lid]` | M · R · M | sertifikat kompetensi |
+| DELETE | `/api/v1/subbagsumda/kompetensi/:id?version=` | A | arsip; personel terarsip → 409 `personel_terarsip` |
+| POST · GET · DELETE | `/api/v1/subbagsumda/kompetensi/:id/lampiran` · `…/:lid` · `…/:lid` | M · R · M | sertifikat kompetensi (sama) |
 
 Tahap kompetensi dihitung server dari `berlaku_sampai` terhadap hari WIB: `H-60` (31–60 hari), `H-30` (1–30),
 `KEDALUWARSA` (≤ 0); `null` bila tanpa batas, personel bukan Aktif/MPP/terarsip, atau ada kompetensi aktif lain dengan

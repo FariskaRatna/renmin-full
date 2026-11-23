@@ -255,7 +255,7 @@ function DetailKegiatan({ id, caps, userId, onClose, onChanged, onEdit, onLost, 
             <td className="sdl-sumda__actions">
               {caps?.canManage && k.status === 'Selesai' && !p.terarsip && <button type="button" className="btn" onClick={() => setDialog({ jenis: 'hasil', p })}>Hasil</button>}
               {caps?.canManage && k.status === 'Selesai' && p.hasil === 'Lulus' && !p.kompetensiId && !p.terarsip && <button type="button" className="btn" onClick={() => setDialog({ jenis: 'kompetensi', p })}>Jadikan kompetensi</button>}
-              {caps?.canManage && berjalan && <button type="button" className="btn sdl-progar__danger" onClick={() => void hapusPeserta(p)}>Keluarkan</button>}
+              {caps?.canManage && berjalan && !p.terarsip && <button type="button" className="btn sdl-progar__danger" onClick={() => void hapusPeserta(p)}>Keluarkan</button>}
             </td>
           </tr>)}</tbody>
         </table></div>}
@@ -478,7 +478,7 @@ function DetailKompetensi({ id, caps, userId, onClose, onChanged, onEdit, onLost
       <div><dt>Kategori</dt><dd>{x.kategori}</dd></div><div><dt>Nomor</dt><dd className="sdl-sumda__mono">{x.nomor || '—'}</dd></div>
       <div><dt>Penerbit</dt><dd>{x.penerbit || '—'}</dd></div><div><dt>Terbit</dt><dd className="sdl-sumda__mono">{tgl(x.tanggalTerbit)}</dd></div>
       <div><dt>Berlaku sampai</dt><dd className="sdl-sumda__mono">{x.berlakuSampai ? `${tgl(x.berlakuSampai)} (${sisaTeks(x.sisaHari)})` : 'Tanpa batas'}</dd></div>
-      <div><dt>Asal</dt><dd>{x.dariDiklat ? `Diklat: ${x.dariDiklat.nama}` : 'Dicatat langsung'}</dd></div>
+      <div><dt>Asal</dt><dd>{x.dariDiklat ? `Diklat: ${x.dariDiklat.nama}` : x.dariPesertaId ? 'Diklat (kegiatan sudah diarsipkan)' : 'Dicatat langsung'}</dd></div>
     </dl>
     {x.catatan && <div className="sdl-sumda__catatan"><strong>Catatan</strong><p>{x.catatan}</p></div>}
     {d.sertifikatPeserta.length > 0 && x.dariDiklat && <LampiranPdf judul="Sertifikat dari diklat (tautan)" items={d.sertifikatPeserta} maks={d.sertifikatPeserta.length}
@@ -488,7 +488,7 @@ function DetailKompetensi({ id, caps, userId, onClose, onChanged, onEdit, onLost
       unggah={async fd => { await api(`/kompetensi/${enc(x.id)}/lampiran`, 'POST', fd); void muat() }} hapus={async l => { await api(`/kompetensi/${enc(x.id)}/lampiran/${enc(l.id)}`, 'DELETE'); void muat() }}
       bisaUnggah={bolehUbah} bisaHapus={l => bolehUbah && (l.uploadedBy === userId || Boolean(caps?.canArchive))} />
     <footer>
-      {caps?.canArchive && <button type="button" className="btn sdl-progar__danger" onClick={() => void arsip()}>Arsipkan</button>}
+      {caps?.canArchive && !x.personel.terarsip && <button type="button" className="btn sdl-progar__danger" onClick={() => void arsip()}>Arsipkan</button>}
       <span className="sdl-sumda__grow" />
       <button type="button" className="btn" onClick={onClose}>Tutup</button>
       {bolehUbah && <button type="button" className="btn primary" onClick={() => onEdit(x)}>Ubah</button>}

@@ -31,7 +31,7 @@ const PER = '/api/v1/subbagsumda/personel'
 const DASH = '/api/v1/subbagsumda/dashboard'
 const PREFIX = 'UJI-R5H29-'
 const TAG = '[UJI-R5H29]'
-const PDF = Buffer.from('%PDF-1.4\n1 0 obj <<>> endobj\ntrailer <<>>\n%%EOF\n', 'latin1')
+const PDF = Buffer.from('%PDF-1.4\n1 0 obj <</Type/Catalog/Pages 2 0 R>> endobj\n2 0 obj <</Type/Pages/Kids[3 0 R]/Count 1>> endobj\n3 0 obj <</Type/Page/Parent 2 0 R/MediaBox[0 0 300 200]>> endobj\ntrailer <</Root 1 0 R>>\n%%EOF\n', 'latin1')
 
 async function actorFor(username) {
   const id = await db.userIdByUsername(username)
@@ -224,7 +224,9 @@ async function main() {
     check('aditif R5H27: riwayatDiklat & kompetensi di detail personel', pRiw.riwayatDiklat?.some((x) => x.diklatId === k1.id && x.hasil === 'Lulus') && pRiw.kompetensi?.some((x) => x.id === kid))
     check('Kasubbag arsip kegiatan → 204', (await call(ka, 'DELETE', `${D}/${k1.id}?version=${kNow.version}`)).status === 204)
     check('setelah arsip: GET 404, unduh peserta 404', (await call(op, 'GET', `${D}/${k1.id}`)).status === 404 && (await call(op, 'GET', `${D}/${k1.id}/peserta/${psA3.id}/lampiran/${upP.body?.id}`)).status === 404)
-    check('kompetensi turunan tetap ada (K33)', (await call(op, 'GET', `${KP}/${kid}`)).status === 200)
+    const turunan = (await call(op, 'GET', `${KP}/${kid}`))
+    check('kompetensi turunan tetap ada (K33)', turunan.status === 200)
+    check('review C2: kegiatan asal terarsip tidak ditampilkan (dariDiklat null, sertifikat tidak ditautkan)', turunan.body?.item?.dariDiklat === null && turunan.body?.item?.dariPesertaId && turunan.body?.sertifikatPeserta?.length === 0, short(turunan))
     check('kegiatan terarsip tidak tampil di riwayatDiklat', !(await call(kabag, 'GET', `${PER}/${pA.id}`)).body.item.riwayatDiklat.some((x) => x.diklatId === k1.id))
 
     log('\n8. Dashboard & audit')

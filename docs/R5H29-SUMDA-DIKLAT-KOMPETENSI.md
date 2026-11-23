@@ -488,10 +488,46 @@ Lulus + sertifikat PDF → Jadikan kompetensi → tab Kompetensi H-30; detail Ma
 
 Belum:
 
-- Suite Go `security-test-r2d5.sh` (wajib selama dua backend hidup).
-- Build image Go penuh + `npm run verify` Express di satu putaran `/verifikasi`.
 - Demo per akun: Kasubbag (Arsipkan muncul), staf, Kabagrenmin (baca saja), akun unit lain (403).
 - Simulasi rollback (frontend tanpa `SDL_API_UPSTREAM` → layar "tidak
   tersedia" + tombol registry darurat, K35).
-- Harness golden: 127/128 berubah (dashboard/personel aditif) → **rekam ulang oleh pemilik**.
-- Deploy: pra-cek tanggal registry `kind='pendidikan'` + `SDL_EVIDENCE_KEY`; **centang "Izinkan migrasi"**.
+- Harness golden: 127/128 berubah karena katalog permission/role bertambah (068–070; golden belum memuat 068/069
+  sekalipun) → **rekam ulang oleh pemilik**. Dashboard/personel R5H27 tidak direkam harness; 32–37 harus tetap cocok.
+- Deploy: pra-cek tanggal registry (di bawah) + `SDL_EVIDENCE_KEY`; **centang "Izinkan migrasi"**.
+
+**Pra-cek sebelum deploy (review S3).** 070 hanya memeriksa pola `19xx/20xx-MM-DD` sebelum `::date`; tanggal
+berpola benar tapi tidak sah (mis. `2024-02-30`) membuat seluruh `-migrate` gagal. Validator registry Go/Express
+menolaknya, jadi hanya data lama/SQL langsung yang berisiko. 070 sudah di-commit dan tidak boleh diedit; jalankan
+di database produksi, hasil **harus 0** (lokal: 0):
+
+```sql
+SELECT count(*) FROM sdl_sumda_registry s
+CROSS JOIN LATERAL (VALUES (btrim(s.fields->>'tanggalMulai')),(btrim(s.fields->>'tanggalSelesai'))) v(t)
+ WHERE s.kind='pendidikan' AND s.deleted_at IS NULL
+   AND v.t ~ '^(19|20)[0-9]{2}-[0-9]{2}-[0-9]{2}$' AND NOT pg_input_is_valid(v.t,'date');
+```
+
+Bila bukan 0: betulkan tanggal baris itu lewat UI registry lama (Go) sebelum deploy.
+
+## Perbaikan hasil review (2026-11-23)
+
+`/review` (migration-guard + security-reviewer): tidak ada temuan wajib. Yang dikerjakan atas persetujuan pemilik:
+
+| # | Temuan | Perbaikan |
+|---|---|---|
+| S1 | K16 tidak ditegakkan di hapus peserta dan arsip kompetensi | `DELETE …/peserta/:pid` dan `DELETE /kompetensi/:id` → 409 `personel_terarsip` bila personel terarsip; tombolnya disembunyikan di UI |
+| S2 | PDF terenkripsi/rusak diterima | `lampiran.js` memuat dengan pdf-lib (`ignoreEncryption`) dan menolak bila terenkripsi, gagal parse, atau tanpa halaman → 400 `invalid_file_type`. **Berlaku juga untuk Karier R5H28** (lebih ketat, Express-only, di luar 142 endpoint). Fixture PDF di verify/skenario r5h28 & r5h29 diganti PDF satu halaman yang sah |
+| S3 | 070 gagal pada tanggal tak sah | Pra-cek sebelum deploy (di atas); migrasi tidak diubah |
+| C2 | Detail kompetensi menampilkan kegiatan asal yang sudah terarsip | `dariDiklat` null dan sertifikat peserta tidak ditautkan bila kegiatan terarsip; UI menulis "Diklat (kegiatan sudah diarsipkan)" |
+| C4 | `/kompetensi/alert` tanpa batas | `items` maks. 500; `ringkas` tetap hitungan penuh dari SQL |
+| Docs | Alasan golden, notasi lampiran di kontrak, rujukan R5H15 di R5H28 | Diperbaiki |
+
+Skenario x4 ditambah: PDF terenkripsi dan PDF sampah → 400; rantai silang lampiran peserta/kompetensi (tujuh jalur
+→ 404; hapus silang via kegiatan yang belum Selesai boleh 409 karena cek status kegiatan jalan lebih dulu, berkas
+tetap utuh); personel terarsip → keluarkan peserta 409, arsip kompetensi 409, unduh sertifikat tetap 200. Verify R5H29
+menambah cek C2.
+
+Tidak dikerjakan (catatan, keputusan pemilik): C1 salinan `penting` terbaca semua pemegang `personel.read` (K17/K19);
+C3 salinan registry ber-karakter Cf tidak bisa di-PATCH (fungsional); C5 pemecahan `FOR SHARE OF d, ps`; C6 id
+lampiran di audit; race paralel batas peserta (diserialkan `FOR UPDATE` kegiatan, belum diuji paralel); CLAUDE.md
+(angka 25/25, 70 berkas SQL, R5H29) menunggu izin pemilik.

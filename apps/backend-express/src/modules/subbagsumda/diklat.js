@@ -382,6 +382,7 @@ export function createSumdaDiklatRouter({ pool, config }) {
       const k = await kunciKegiatan(c, id)
       if (!BERJALAN.includes(k.status)) throw new HttpError(409, 'status_tidak_sesuai') // K14
       const p = await kunciPeserta(c, id, pid)
+      if (p.terarsip) throw new HttpError(409, 'personel_terarsip') // K16, review R5H29 S1
       if (p.version !== version) throw new HttpError(409, 'version_conflict')
       await c.query('DELETE FROM sdl_sumda_diklat_peserta WHERE id=$1::uuid AND diklat_id=$2::uuid', [pid, id])
       await naikVersiKegiatan(c, id, req.actor)

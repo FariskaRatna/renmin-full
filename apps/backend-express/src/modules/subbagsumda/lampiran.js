@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto'
 
+import { PDFDocument } from 'pdf-lib'
+
 import { openEvidence, sealEvidence } from '../../crypto/evidence.js'
 import { contentDisposition, detectFileType, readSingleFile } from '../../http/multipart.js'
 import { BODY_LIMITS } from '../../http/payload.js'
@@ -38,6 +40,11 @@ export async function bacaPdf(req, evidenceKey) {
   const isPdf = SAFE_PDF_NAME.test(filename) && blob.length > 0 && detectFileType(blob) === 'application/pdf' &&
     blob.subarray(0, 5).toString('latin1') === '%PDF-' && tail.includes('%%EOF')
   if (!isPdf) throw new HttpError(400, 'invalid_file_type')
+  // Review R5H29 S2: PDF terenkripsi atau rusak (tanpa halaman terbaca) ditolak, pola unitwork/pdf-sign.js.
+  try {
+    const doc = await PDFDocument.load(blob, { ignoreEncryption: true, updateMetadata: false })
+    if (doc.isEncrypted || doc.getPageCount() < 1) throw new Error('pdf_tidak_terbaca')
+  } catch { throw new HttpError(400, 'invalid_file_type') }
   let sealed
   try { sealed = sealEvidence(evidenceKey, blob) } catch { throw new HttpError(503, 'evidence_encryption_unavailable') }
   return { blob, filename, sealed, digest: createHash('sha256').update(blob).digest('hex') }

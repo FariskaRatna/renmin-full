@@ -30,7 +30,9 @@ dicabut saat sesi sedang hidup.
 - (R5H28, 2026-11-23) menghapus syarat "bukan pencatat" di UPDATE keputusan Karier →
   `x3_r5h28_sumda_karier_guard` merah, dan hanya x3 (CHECK database tetap menahan, 400);
 - (R5H29, 2026-11-23) menghapus syarat "pengunggah atau pemegang arsip" pada hapus lampiran
-  kegiatan Diklat → `x4_r5h29_sumda_diklat_guard` merah, dan hanya x4.
+  kegiatan Diklat → `x4_r5h29_sumda_diklat_guard` merah, dan hanya x4;
+- (R5H29 perbaikan review) menghapus cek personel terarsip di hapus peserta, lalu terpisah menghapus
+  penolakan PDF terenkripsi/rusak → masing-masing hanya x4 merah.
 
 Keduanya dipulihkan sesudahnya. Suite yang lulus pada percobaan pertama tanpa
 pernah dibuktikan bisa merah tidak membuktikan apa-apa.
