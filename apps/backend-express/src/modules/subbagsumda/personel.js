@@ -3,7 +3,7 @@ import { Router } from 'express'
 import { withTransaction } from '../../db.js'
 import { BODY_LIMITS, rawBody } from '../../http/payload.js'
 import { parseGoInt, respond } from '../subbagren/shared.js'
-import { GOLONGAN_PNS, HttpError, UUID_RE, body, cekPangkat, idParam, makeHandle, permit, pilihan, tanggal, teks } from './umum.js'
+import { GOLONGAN_PNS, HARI_INI, HttpError, UUID_RE, hariDari, body, cekPangkat, idParam, makeHandle, permit, pilihan, tanggal, teks } from './umum.js'
 
 /**
  * R5H27: Subbagsumda — Master Personel, Monitoring Pensiun, Dashboard.
@@ -48,11 +48,8 @@ export { GOLONGAN_PNS }
 const UKURAN_HALAMAN = new Set([5, 10, 50, 100])
 const MAKS_TINJAU = 200
 
-/** Tanggal hari ini menurut Asia/Jakarta, dihitung di Postgres. */
-export const HARI_INI = "(now() AT TIME ZONE 'Asia/Jakarta')::date"
-
-/** Ekspresi tanggal WIB dari parameter timestamptz — dipakai verify untuk uji batas zona. */
-export const hariDari = (param) => `((${param})::timestamptz AT TIME ZONE 'Asia/Jakarta')::date`
+// HARI_INI/hariDari kini tinggal di umum.js (R5H29); di-re-export supaya verify R5H27 tetap utuh.
+export { HARI_INI, hariDari }
 
 /**
  * SATU-SATUNYA rumus tahap (K6/K7): dipakai daftar, alert, dashboard, dan tinjau.
