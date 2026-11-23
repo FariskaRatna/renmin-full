@@ -1634,7 +1634,7 @@ dan skenario keamanan `x1_r5h25_master_tahap_admin_guard`. `RE` = AuthorizeRoleE
 | GET | `/api/v1/admin/master/tahap-pekerjaan` | RE | `{version,jenis:[{key,label,kelompok:"progar"\|"dalgar",tahap:[{key,label,aktif,terkunci,alasanKunci?}]}]}` |
 | PUT | `/api/v1/admin/master/tahap-pekerjaan/:jenis` | RE | `{aktif:{<tahap>:bool},reason,version}` → `{version,changed}`. 400 `invalid_request` (field asing/bukan JSON), 400 `invalid_input` (jenis/tahap tidak dikenal, nilai bukan boolean, alasan < 8 / > 500 atau berisi karakter kendali/surrogate tunggal); 409 `tahap_terkunci` / `minimal_satu_tahap` / `version_conflict`. Tanpa perubahan nyata: 200 `changed:0`, versi & audit tidak berubah. Audit `master.tahap.update` |
 | GET | `/api/v1/subbagren/perencanaan/tahap-katalog` | R | Endpoint R5H16; **aditif**: `nonaktif:{<jenis>:[<tahap>]}`. `jenis` tetap daftar lengkap |
-| POST | `/api/v1/subbagren/perencanaan/dokumen/:id/tahap` | M | Endpoint R5H16; tahap nonaktif → 409 `tahap_nonaktif`. PUT/DELETE/lampiran/cek tahap lama tidak terpengaruh |
+| POST | `/api/v1/subbagren/perencanaan/dokumen/:id/tahap` | M | Endpoint R5H16; tahap nonaktif → 409 `tahap_nonaktif`. Jika masih ada tahap yang belum diterima Kasubbagren → 409 `tahap_belum_diterima` |
 
 Didaftarkan **sebelum** router `/master/:set` (R5G12) di `app.js` supaya tidak tertangkap
 sebagai himpunan tak dikenal. Path berada di bawah pola Caddy `/api/v1/admin/master/*`

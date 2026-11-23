@@ -8,6 +8,9 @@ on:
 permissions:
   contents: read
   pull-requests: write
+  # claude-code-action menukar token OIDC GitHub dengan token Claude GitHub App;
+  # tanpa izin ini ACTIONS_ID_TOKEN_REQUEST_URL tidak tersedia dan job gagal.
+  id-token: write
 concurrency:
   group: claude-review-${{ github.event.pull_request.number }}
   cancel-in-progress: true

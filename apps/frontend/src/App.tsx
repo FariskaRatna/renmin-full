@@ -144,7 +144,7 @@ const units: Unit[] = [
     {id:'dokumen-final',title:'Dokumen Final',icon:'fileCheck',description:'Dokumen yang sudah disahkan dan ditandai final, beserta tahap pekerjaan dan riwayat versinya.',columns:['Dokumen','Tahun','Referensi','Koordinator','Status']},
     {id:'myinterest',title:'Data myinterest (LRA)',icon:'chart',description:'Impor Realisasi Belanja per Jenis Kegiatan dari myinterest: acuan resmi LRA dan dashboard.',columns:['Data s.d.','Berkas','Realisasi','Diimpor']},
     {id:'laporan',title:'Laporan',icon:'clipboard',description:'LRA, Penggunaan Anggaran, EKA PN, Capaian Kinerja, LKIP dan Hibah: langkah, bukti, dan status selesai.',columns:['Jenis','Laporan','Tahap','Status']},
-    {id:'revisi-anggaran',title:'Revisi Anggaran (POK/RPD)',icon:'refresh',description:'Revisi POK dan RPD dari permintaan subsatker sampai DIPA baru terbit.',columns:['Jenis','Revisi','Tahap','Status']},
+    {id:'revisi-anggaran',title:'Revisi Anggaran',icon:'refresh',description:'Revisi DIPA, POK, dan RPD: dari permintaan subsatker sampai DIPA baru terbit.',columns:['Jenis','Revisi','Tahap','Status']},
     {id:'realisasi',title:'Realisasi Anggaran Dokumen',icon:'chart',description:'Catatan internal: realisasi yang memotong anggaran dokumen final, dengan bukti bayar dan verifikasi. Angka resmi LRA ada di Data myinterest.',columns:['Program','Periode','Pagu','Realisasi','Status']}
   ]},
   {id:'sumda',title:'SUBBAGSUMDA',name:'Subbagian Sumber Daya',subtitle:'Administrasi personel dan pengelolaan logistik',description:'Administrasi SDM, layanan kepegawaian, pendidikan, BMN dan pemeliharaan.',icon:'users',accent:'#956db9',soft:'#f3effd',modules:[
