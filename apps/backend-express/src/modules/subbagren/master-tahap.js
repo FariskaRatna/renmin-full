@@ -2,7 +2,7 @@ import { Router } from 'express'
 
 import { withTransaction } from '../../db.js'
 import { BODY_LIMITS, parsePayload, rawBody } from '../../http/payload.js'
-import { tahapPerluCek } from './dalgar.js'
+import { jenisDalgar } from './dalgar.js'
 import { HttpError } from './progar.js'
 import { JENIS_LABEL, JENIS_TAHAP, PEKERJAAN, TAHAP_WAJIB, tahapTerkunci } from './tahap-katalog.js'
 
@@ -78,7 +78,7 @@ export function createMasterTahapRouter({ pool }) {
          FROM sdl_ren_tahap_master_versi v LEFT JOIN sdl_ren_tahap_nonaktif n ON TRUE WHERE v.id=1 GROUP BY v.version`)).rows[0]
     const nonaktif = saringNonaktif(snap?.rows ?? [])
     const jenis = Object.entries(JENIS_TAHAP).map(([key, list]) => ({
-      key, label: JENIS_LABEL[key] ?? key, kelompok: tahapPerluCek(key) ? 'dalgar' : 'progar',
+      key, label: JENIS_LABEL[key] ?? key, kelompok: jenisDalgar(key) ? 'dalgar' : 'progar',
       tahap: list.map((p) => {
         const alasan = TAHAP_WAJIB[key]?.[p]
         return { key: p, label: PEKERJAAN[p].label, aktif: !(nonaktif[key] ?? []).includes(p), terkunci: Boolean(alasan), ...(alasan ? { alasanKunci: alasan } : {}) }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { SumberPicker, type Sumber } from './SumberSuratR5H22'
 import { confirmDialog } from './UIFeedback'
 
@@ -7,8 +7,8 @@ import { confirmDialog } from './UIFeedback'
  *
  * Formulir dokumen (Unggah / Ubah) dengan bagian TAHAP PEKERJAAN: setiap blok
  * memilih satu pekerjaan dari dropdown (sesuai jenis dokumen), lalu isian dan
- * lampiran PDF pekerjaan itu muncul. Setelah satu blok dipilih, tombol
- * "＋ Tambah Tahap Pekerjaan" muncul untuk blok berikutnya.
+ * lampiran PDF pekerjaan itu muncul. Simpan tahap untuk diperiksa Kasubbagren
+ * sebelum menambah tahap berikutnya.
  *
  * Daftar pekerjaan, field, dan slot berkas datang dari backend
  * (GET /tahap-katalog) supaya validasi dan tampilan memakai satu sumber.
@@ -58,8 +58,6 @@ export function DokumenDialog({ mode, kind = 'dokumen', tahun, doc, tahapId, kat
 }) {
   const [tahunDok, setTahunDok] = useState(tahun)
   const nowYear = new Date().getFullYear()
-  // Pengecekan Kasubbagren hanya untuk tahap DALGAR (laporan/revisi); PROGAR langsung berlaku (2026-11-18).
-  const cek = kind !== 'dokumen'
   const tahunOptions = [...new Set([nowYear - 1, nowYear, nowYear + 1, nowYear + 2, tahun])].sort((a, b) => a - b)
   const [meta, setMeta] = useState({ jenis: doc?.jenis ?? jenisOptions[0]?.[0] ?? 'renstra', periode: doc?.periode ?? '', judul: doc?.judul ?? '', nomor: doc?.nomor ?? '', tanggal: doc?.tanggal ?? '', keterangan: doc?.keterangan ?? '' })
   // Nomor tahap mengikuti urutan sebenarnya di dokumen; tahap baru melanjutkan
@@ -76,7 +74,6 @@ export function DokumenDialog({ mode, kind = 'dokumen', tahun, doc, tahapId, kat
   const [removed, setRemoved] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const lastRef = useRef<HTMLSelectElement | null>(null)
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !busy && !e.defaultPrevented) { e.preventDefault(); onClose() } }
@@ -111,10 +108,6 @@ export function DokumenDialog({ mode, kind = 'dokumen', tahun, doc, tahapId, kat
   function choose(key: string, pekerjaan: string) {
     const fields = katalog?.pekerjaan[pekerjaan]?.fields ?? []
     setBlock(key, b => ({ ...b, pekerjaan, isian: Object.fromEntries(fields.filter(f => f.default).map(f => [f.key, f.default!])), files: {}, dirty: true, sumber: null, sumberUbah: false }))
-  }
-  function addBlock() {
-    setBlocks(bs => [...bs, emptyBlock()])
-    setTimeout(() => lastRef.current?.focus(), 0)
   }
   function removeBlock(b: Block) {
     if (b.id) setRemoved(r => [...r, b.id!])
@@ -214,18 +207,18 @@ export function DokumenDialog({ mode, kind = 'dokumen', tahun, doc, tahapId, kat
         {blocks.map(b => {
           const no = nomorTahap(b)
           const p = b.pekerjaan ? katalog?.pekerjaan[b.pekerjaan] : undefined
-          const accepted = cek && Boolean(b.id) && doc?.tahap.find(t => t.id === b.id)?.cekStatus === 'diterima'
+          const accepted = Boolean(b.id) && doc?.tahap.find(t => t.id === b.id)?.cekStatus === 'diterima'
           const touched = b.dirty || b.drop.length > 0 || Object.values(b.files).some(l => l.length > 0)
           return <div key={b.key} className="sdl-progar__tahap-block">
             <div className="sdl-progar__tahap-top">
-              <strong>Tahap {no}{!b.id && <span className="sdl-progar__cek-mini"> · baru</span>}{b.id && (() => { const t = doc!.tahap.find(x => x.id === b.id)!; const u = ulangKe(doc!.tahap, t); return <span className="sdl-progar__cek-mini">{u.total > 1 && ` · ${t.pekerjaanLabel} ke-${u.ke}`}{cek && ` · ${cekLabel(t.cekStatus)}`}</span> })()}</strong>
+              <strong>Tahap {no}{!b.id && <span className="sdl-progar__cek-mini"> · baru</span>}{b.id && (() => { const t = doc!.tahap.find(x => x.id === b.id)!; const u = ulangKe(doc!.tahap, t); return <span className="sdl-progar__cek-mini">{u.total > 1 && ` · ${t.pekerjaanLabel} ke-${u.ke}`}{` · ${cekLabel(t.cekStatus)}`}</span> })()}</strong>
               {mode === 'create' && <button type="button" className="sdl-progar__tahap-x" aria-label={`Hapus tahap ${no}`} title="Hapus tahap ini" onClick={() => removeBlock(b)}>✕</button>}
             </div>
             {accepted && touched && <p className="sdl-progar__pending">Tahap ini sudah diterima. Setelah disimpan, perubahannya perlu dicek ulang Kasubbagren.</p>}
-            {cek && b.id && doc?.tahap.find(t => t.id === b.id)?.cekStatus === 'dikembalikan' && <p className="sdl-progar__rejected">Dikembalikan: “{doc.tahap.find(t => t.id === b.id)!.cekNote}” — perbaiki lalu Simpan untuk diperiksa lagi.</p>}
+            {b.id && doc?.tahap.find(t => t.id === b.id)?.cekStatus === 'dikembalikan' && <p className="sdl-progar__rejected">Dikembalikan: “{doc.tahap.find(t => t.id === b.id)!.cekNote}” — perbaiki lalu Simpan untuk diperiksa lagi.</p>}
             <div className="sdl-progar__fields">
               <label><span>Pekerjaan</span>
-                <select ref={b.key === blocks[blocks.length - 1].key ? lastRef : undefined} value={b.pekerjaan} disabled={Boolean(b.id)} onChange={e => choose(b.key, e.target.value)}>
+                <select value={b.pekerjaan} disabled={Boolean(b.id)} onChange={e => choose(b.key, e.target.value)}>
                   <option value="">— Pilih pekerjaan —</option>
                   {(b.id ? allowed : pilihan).map(k => { const n = b.id ? 0 : timesUsed(k, b.key); return <option key={k} value={k}>{katalog!.pekerjaan[k].label}{n > 0 ? ` (sudah ${n}×)` : ''}{b.id && tahapNonaktif(katalog, meta.jenis, k) ? ' (nonaktif di Master Data)' : ''}</option> })}
                 </select></label>
@@ -256,7 +249,7 @@ export function DokumenDialog({ mode, kind = 'dokumen', tahun, doc, tahapId, kat
             </div>
           </div>
         })}
-        {mode === 'create' && blocks.every(b => b.pekerjaan) && <button type="button" className="btn sdl-progar__tahap-add" onClick={addBlock}>＋ Tambah Tahap Pekerjaan</button>}
+        {mode === 'create' && blocks.some(b => b.pekerjaan) && <p className="sdl-progar__muted">Simpan tahap ini untuk diperiksa Kasubbagren sebelum menambah tahap berikutnya.</p>}
       </section>
         : mode !== 'tahap' && <p className="sdl-progar__tahap-help">Jenis ini tidak memakai tahap pekerjaan. Setelah disimpan, lampirkan PDF dokumennya dari daftar.</p>}
 
@@ -264,7 +257,7 @@ export function DokumenDialog({ mode, kind = 'dokumen', tahun, doc, tahapId, kat
 
       {error && <p className="sdl-progar__error" role="alert">{error}</p>}
       <footer>
-        {editing && (!cek || editing.cekStatus !== 'diterima') && <button type="button" className="btn sdl-progar__danger sdl-progar__footer-left" disabled={busy} onClick={() => void hapusTahap()}>Hapus Tahap</button>}
+        {editing && editing.cekStatus !== 'diterima' && <button type="button" className="btn sdl-progar__danger sdl-progar__footer-left" disabled={busy} onClick={() => void hapusTahap()}>Hapus Tahap</button>}
         <button type="button" className="btn" disabled={busy} onClick={onClose}>Batal</button>
         <button type="submit" className="btn primary" disabled={busy}>{busy ? 'Menyimpan…' : 'Simpan'}</button>
       </footer>

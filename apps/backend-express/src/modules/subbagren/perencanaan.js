@@ -12,7 +12,7 @@ import { parseDateOnly, parseGoInt, respond } from './shared.js'
 import { JENIS_LABEL, JENIS_TAHAP, PEKERJAAN, TANPA_SAH, bisaSumber, cleanIsian, cleanPeriode, katalog, slotOf } from './tahap-katalog.js'
 import { tahapNonaktif, tolakNonaktif } from './master-tahap.js'
 import { zipNames } from './myinterest-xlsx.js'
-import { MAX_BUTIR_REVISI, REVISI_JENIS, RINGKASAN_JENIS, cekTotalRpd, cleanRpd, hitungRingkasan, lockPosAktif, rpdMap, tahapPerluCek, terapkanRevisi, verifiedSum } from './dalgar.js'
+import { MAX_BUTIR_REVISI, REVISI_JENIS, RINGKASAN_JENIS, cekTotalRpd, cleanRpd, hitungRingkasan, lockPosAktif, rpdMap, terapkanRevisi, verifiedSum } from './dalgar.js'
 
 /**
  * R5H13: Dokumen Perencanaan + Monitoring Kinerja & LKIP (migrasi 051).
@@ -45,7 +45,7 @@ import { MAX_BUTIR_REVISI, REVISI_JENIS, RINGKASAN_JENIS, cekTotalRpd, cleanRpd,
  *          tahap (migrasi 063; maks 30). GET/DELETE /dokumen/:id/lampiran/:lid. Ubah hanya selama
  *          dokumen belum final (draft, atau sah belum final & belum digantikan); terkunci setelah Final.
  *   POST   /dokumen/:id/tahap/:tid/cek             {keputusan:"diterima"|"dikembalikan",catatan,version} (Kasubbagren; migrasi 056)
- *   Sejak 2026-11-18 pengecekan tahap HANYA untuk dokumen DALGAR (laporan/revisi anggaran).
+ *   Setiap tahap diperiksa Kasubbagren sebelum operator bisa menambah tahap berikutnya.
  *   Tahap dokumen PROGAR langsung berlaku: tidak ada antrean cek, tidak mengunci hapus,
  *   tidak menghalangi Final/Selesai, dan /cek menolaknya (409 tahap_tanpa_cek).
  *   Tahap DITERIMA tetap bisa diubah/ditambah lampirannya selama dokumen belum final;
@@ -464,8 +464,8 @@ export function createPerencanaanRouter({ pool, config }) {
     if (r.rowCount !== 1) throw new HttpError(404, 'not_found')
     return r.rows[0]
   }
-  /** Tahap DALGAR yang sudah diterima tidak boleh DIHAPUS (bukti yang sudah diperiksa); mengubahnya boleh. */
-  function notAccepted(t) { if (tahapPerluCek(t.jenis) && t.cek_status === 'diterima') throw new HttpError(409, 'tahap_sudah_diterima') }
+  /** Tahap yang sudah diterima tidak boleh DIHAPUS (bukti yang sudah diperiksa); mengubahnya boleh. */
+  function notAccepted(t) { if (t.cek_status === 'diterima') throw new HttpError(409, 'tahap_sudah_diterima') }
 
   router.post('/dokumen/:id/final', json, handle(async (req, res) => {
     await need(req, 'subbagren.progar.manage')
@@ -487,7 +487,7 @@ export function createPerencanaanRouter({ pool, config }) {
         throw new HttpError(409, 'tahap_kosong')
       }
       if (v.final === (o.final_at !== null)) throw new HttpError(409, v.final ? 'sudah_final' : 'belum_final')
-      if (v.final && tahapPerluCek(o.jenis) && (await c.query("SELECT 1 FROM sdl_ren_dokumen_tahap WHERE dokumen_id=$1::uuid AND cek_status<>'diterima' LIMIT 1", [did])).rowCount) {
+      if (v.final && await adaTahapBelumDiterima(c, did)) {
         throw new HttpError(409, 'tahap_belum_diterima')
       }
       // R5H19: revisi yang sudah mengubah anggaran/RPD tidak bisa dibuka kembali;
@@ -727,7 +727,6 @@ export function createPerencanaanRouter({ pool, config }) {
       const t = await tahapOf(c, did, tid, true)
       await lockForTahap(c, did, t.pekerjaan)
       if (t.version !== ver) throw new HttpError(409, 'version_conflict')
-      if (!tahapPerluCek(t.jenis)) throw new HttpError(409, 'tahap_tanpa_cek')
       if (t.cek_status !== 'menunggu') throw new HttpError(409, 'tahap_bukan_menunggu')
       // Pengubah terakhir tidak boleh mengecek entrinya sendiri (maker-checker).
       if (t.updated_by === req.actor) throw new HttpError(403, 'self_review_forbidden')
@@ -762,6 +761,11 @@ export function createPerencanaanRouter({ pool, config }) {
     return { jenis, id: raw.id }
   }
 
+  async function adaTahapBelumDiterima(c, did) {
+    const r = await c.query("SELECT 1 FROM sdl_ren_dokumen_tahap WHERE dokumen_id=$1::uuid AND cek_status<>'diterima' LIMIT 1", [did])
+    return r.rowCount > 0
+  }
+
   router.post('/dokumen/:id/tahap', json, handle(async (req, res) => {
     await need(req, 'subbagren.progar.manage')
     const did = id(req.params.id)
@@ -774,6 +778,7 @@ export function createPerencanaanRouter({ pool, config }) {
       // R5H25: tahap yang dinonaktifkan Superadmin tidak bisa DITAMBAHKAN; tahap lama
       // tetap bisa diubah/dihapus/dilampiri (pemeriksaan sengaja di luar lockForTahap).
       await tolakNonaktif(c, d.jenis, v.pekerjaan)
+      if (await adaTahapBelumDiterima(c, did)) throw new HttpError(409, 'tahap_belum_diterima')
       const sumber = await cekSumber(c, v.pekerjaan, v.sumber)
       const n = await c.query('SELECT count(*)::int AS n FROM sdl_ren_dokumen_tahap WHERE dokumen_id=$1::uuid', [did])
       if (n.rows[0].n >= 50) throw new HttpError(409, 'batas_tahap')

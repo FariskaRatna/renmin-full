@@ -87,7 +87,7 @@ const kegiatanFields: FieldDef[] = [
 // R5H14: dasar pagu WAJIB dipilih dari DIPA/Revisi DIPA yang sudah disahkan.
 const paguFields = (dipas: DipaOpt[]): FieldDef[] => [
   { key: 'jumlah', label: 'Jumlah Pagu (Rp)', type: 'rupiah', required: true, max: 16 },
-  { key: 'dokumenId', label: 'Dasar Pagu (DIPA sah)', type: 'select', required: true, max: 40, hint: 'Hanya DIPA/Revisi DIPA tahun ini yang sudah disahkan (tampil di Dokumen Final).',
+  { key: 'dokumenId', label: 'Dasar Pagu (DIPA sah)', type: 'select', required: true, max: 40, hint: 'Hanya DIPA/Revisi DIPA tahun ini yang sudah disahkan (DIPA di Dokumen Final, Revisi DIPA di Revisi Anggaran).',
     options: [{ value: '', label: '— Pilih DIPA —' }, ...dipas.map(d => ({ value: d.id, label: d.label }))] },
   { key: 'keterangan', label: 'Keterangan', type: 'textarea', max: 1000 },
 ]
@@ -192,7 +192,7 @@ export default function ProgarR5H11({ mode, userId, onOpenProgram, onOpenDokumen
 
     {mode === 'pagu' && tree && dipas.length === 0 && <div className="panel sdl-progar__notice" role="status">
       <strong>Belum ada DIPA yang sah untuk tahun {tahun}</strong>
-      <p>Pagu ditetapkan oleh DIPA. Unggah DIPA (atau Revisi DIPA) di Dokumen Perancangan dan minta Kasubbagren mengesahkannya; setelah sah ia pindah ke Dokumen Final, dan pagu bisa dicatat dengan merujuk DIPA tersebut.</p>
+      <p>Pagu ditetapkan oleh DIPA. Unggah DIPA di Dokumen Perancangan (Revisi DIPA di DALGAR → Revisi Anggaran) dan minta Kasubbagren mengesahkannya; setelah sah, pagu bisa dicatat dengan merujuk DIPA tersebut.</p>
       {onOpenDokumen && <button type="button" className="btn primary" onClick={onOpenDokumen}>Buka Dokumen Perancangan</button>}
     </div>}
 

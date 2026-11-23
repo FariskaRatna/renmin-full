@@ -132,7 +132,7 @@ async function main() {
     const t2 = await call(op, 'POST', `${R}/dokumen/${did}/tahap`, { pekerjaan: 'unduh_myinterest', isian: {} })
     check('tambah tahap nonaktif → 409 tahap_nonaktif', t2.status === 409 && t2.body?.error === 'tahap_nonaktif', short(t2))
     const t3 = await call(op, 'POST', `${R}/dokumen/${did}/tahap`, { pekerjaan: 'susun_laporan', isian: { tanggal: `${TAHUN}-02-03` } })
-    check('tahap lain tetap bisa ditambah → 201', t3.status === 201, short(t3))
+    check('tahap berikutnya menunggu persetujuan → 409 tahap_belum_diterima', t3.status === 409 && t3.body?.error === 'tahap_belum_diterima', short(t3))
     const list = async () => (await call(op, 'GET', `${R}/dokumen?tahun=${TAHUN}`)).body?.items?.find((d) => d.id === did)?.tahap?.find((t) => t.id === tid)
     const put = await call(op, 'PUT', `${R}/dokumen/${did}/tahap/${tid}`, { isian: { tanggal: `${TAHUN}-02-02`, catatan: 'dikoreksi' }, version: (await list())?.version })
     check('ubah tahap lama yang nonaktif → 200', put.status === 200, short(put))
