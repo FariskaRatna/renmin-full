@@ -1,6 +1,6 @@
 // R5F24-v5: remove obsolete R5F8 Executive frontend access gate.
 import UIFeedbackHost from './UIFeedback'
-import { useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
 import DevelopmentChecklist from './DevelopmentChecklist'
 import PortalV3R5F21 from './PortalV3R5F21'
 import DirectivesR5F23 from './DirectivesR5F23'
@@ -18,6 +18,7 @@ import UserManagement from './UserManagement'
 import SuratMasuk from './SuratMasuk'
 import { InboxDistribusi } from './InboxDistribusiR5F2'
 import { InboxSaya } from './InboxSayaR5H10'
+import { screenToUrl, urlToScreen } from './RouteR5H26'
 import RealisasiR5H12 from './RealisasiR5H12'
 import DokumenR5H13 from './DokumenR5H13'
 import MyinterestR5H20 from './MyinterestR5H20'
@@ -312,13 +313,16 @@ function App() {
   // R5F23 - leadership directives independent from URMIN
   const [,setDirectiveAlerts] = useState(0)
   const [executiveKind,setExecutiveKind] = useState<'leader'|'admin'|null>(null)
+  // R5H26: alamat /dashboard yang dibuka langsung baru bisa diputuskan setelah hak dashboard diketahui.
+  const [executiveChecked,setExecutiveChecked] = useState(false)
   useEffect(()=>{
-    if(!account){setExecutiveKind(null);return}
+    if(!account){setExecutiveKind(null);setExecutiveChecked(false);return}
     let active=true
     fetch('/api/v1/executive/v2/access',{credentials:'same-origin',cache:'no-store'})
       .then(async r=>r.ok?await r.json():null)
       .then((payload:{kind?:string}|null)=>{if(active)setExecutiveKind(payload?.kind==='leader'||payload?.kind==='admin'?payload.kind:null)})
       .catch(()=>{if(active)setExecutiveKind(null)})
+      .finally(()=>{if(active)setExecutiveChecked(true)})
     return()=>{active=false}
   },[account?.id])
   useEffect(() => { try{localStorage.setItem('sdl-theme',theme)}catch{} },[theme])
@@ -392,8 +396,10 @@ function App() {
     }
     if (destination.view==='workspace' && destination.unit==='urmin' && destination.menu==='__admin' && !isSuperadmin) return
     if (restrictedSuperadmin && !superadminViews.includes(destination.view)) return
-    if (destination.view==='workspace' && destination.unit) setLastWorkspaceUnit(destination.unit)
-    setScreen((destination.view==='inbox'||destination.view==='tasks')?{...destination,unit:lastWorkspaceUnit,sub:destination.sub??(screen.unit===lastWorkspaceUnit?renSubOf(screen):undefined)}:destination)
+    if (destination.unit && (destination.view==='workspace'||destination.view==='inbox'||destination.view==='tasks')) setLastWorkspaceUnit(destination.unit)
+    // R5H26: Inbox/Tasks dari alamat (/subbagren/inbox) membawa unitnya sendiri; dari header memakai unit terakhir.
+    const ctxUnit=destination.unit??lastWorkspaceUnit
+    setScreen((destination.view==='inbox'||destination.view==='tasks')?{...destination,unit:ctxUnit,sub:destination.sub??(screen.unit===ctxUnit?renSubOf(screen):undefined)}:destination)
     setMobileMenu(false)
     window.scrollTo({top:0,behavior:'auto'})
   }
@@ -410,6 +416,50 @@ function App() {
   }
   useEffect(()=>{refresh()},[])
   const effectiveScreen: Screen = restrictedSuperadmin && !superadminViews.includes(screen.view) ? {view:'portal'} : screen
+  // ---- R5H26: alamat bersih (RouteR5H26.ts) ----
+  // Alamat dibaca SEKALI setelah akun siap (termasuk setelah ganti password), lalu setiap
+  // perpindahan halaman menulis alamat baru (pushState) sehingga Back/Forward/refresh bekerja.
+  // Alamat yang diketik tetap lewat navigate(), jadi aturan pengalihan & batas Superadmin berlaku.
+  const routeReady=useRef(false)
+  const routeReplace=useRef(false)
+  // Dinaikkan setelah alamat dibaca: memaksa sinkronisasi walau halaman tidak berubah (alamat ditolak/tak dikenal -> '/').
+  const [routeTick,setRouteTick]=useState(0)
+  const navigateRef=useRef(navigate)
+  navigateRef.current=navigate
+  const menuIdsOf=(u:UnitKey)=>[...(u==='urmin'?urminNav.map(i=>i.id):[]),...(units.find(x=>x.id===u)?.modules.map(m=>m.id)??[])]
+  const routeTarget=account&&!account.mustChangePassword?urlToScreen(window.location.pathname,window.location.search,menuIdsOf):null
+  const waitExecutive=routeTarget?.view==='executive'&&!executiveChecked
+  useEffect(()=>{
+    if(!account||account.mustChangePassword){routeReady.current=false;return}
+    if(routeReady.current||waitExecutive)return
+    routeReady.current=true
+    routeReplace.current=true
+    const target=urlToScreen(window.location.pathname,window.location.search,menuIdsOf)
+    if(target&&target.view!=='portal')navigateRef.current(target as Screen)
+    else setScreen((target??{view:'portal'}) as Screen)
+    setRouteTick(n=>n+1)
+  },[account?.id,account?.mustChangePassword,waitExecutive]) // eslint-disable-line react-hooks/exhaustive-deps
+  const currentUrl=screenToUrl(effectiveScreen)
+  useEffect(()=>{
+    if(!routeReady.current)return
+    const here=window.location.pathname+window.location.search
+    const replace=routeReplace.current
+    routeReplace.current=false
+    if(currentUrl===here)return
+    if(replace)window.history.replaceState(null,'',currentUrl)
+    else window.history.pushState(null,'',currentUrl)
+  },[currentUrl,routeTick])
+  useEffect(()=>{
+    const onPop=()=>{
+      if(!routeReady.current)return
+      routeReplace.current=true
+      const target=urlToScreen(window.location.pathname,window.location.search,menuIdsOf)
+      navigateRef.current((target??{view:'portal'}) as Screen)
+      setRouteTick(n=>n+1)
+    }
+    window.addEventListener('popstate',onPop)
+    return()=>window.removeEventListener('popstate',onPop)
+  },[]) // eslint-disable-line react-hooks/exhaustive-deps
   const displayTheme: Theme = account && !account.mustChangePassword && effectiveScreen.view==='portal' ? portalTheme : theme
   useEffect(() => { document.documentElement.dataset.theme=displayTheme },[displayTheme])
   function toggleDisplayTheme() {
@@ -451,7 +501,7 @@ function App() {
     try {
       const c=await fetch('/api/v1/auth/csrf',{credentials:'same-origin',cache:'no-store'});
       if(c.ok){const data:{csrfToken:string}=await c.json();await fetch('/api/v1/auth/logout',{method:'POST',credentials:'same-origin',headers:{'X-CSRF-Token':data.csrfToken}})}
-    } finally {setAccount(null);navigate({view:'portal'})}
+    } finally {setAccount(null);navigate({view:'portal'});try{window.history.replaceState(null,'','/')}catch{/* R5H26 */}}
   }
   if(!account)return <div className="sdl-shell" data-theme={theme}><Authentication onAuthenticated={setAccount}/></div>
   if(account.mustChangePassword)return <div className="sdl-shell" data-theme={theme}><PasswordRotation onComplete={setAccount}/></div>
