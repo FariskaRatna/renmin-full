@@ -108,4 +108,7 @@ export const BODY_LIMITS = Object.freeze({
   // R5H7, Express saja: gambar tanda tangan (PNG <= 200 KB sebagai base64)
   // + penempatan + catatan.
   TTD: 320 * 1024,
+  // R5H27, Express saja: Master Personel (badan penuh) dan tinjau alert pensiun
+  // (maks. 200 butir, kira-kira 18 KB).
+  SUMDA: 32768,
 })

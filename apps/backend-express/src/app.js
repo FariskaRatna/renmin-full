@@ -19,6 +19,7 @@ import { createUnitWorkRouter } from './modules/unitwork/work.js'
 import { createPortalRouter } from './modules/portal/index.js'
 import { createBudgetRouter } from './modules/subbagren/budget.js'
 import { createProgarRouter } from './modules/subbagren/progar.js'
+import { createSumdaDashboardRouter, createSumdaPensiunRouter, createSumdaPersonelRouter } from './modules/subbagsumda/personel.js'
 import { createPerencanaanRouter } from './modules/subbagren/perencanaan.js'
 import { createUsulanRouter } from './modules/subbagren/usulan.js'
 import { createExecutiveRouter } from './modules/executive/index.js'
@@ -100,6 +101,12 @@ export function createApp({ pool, config, mailer: injectedMailer }) {
   v1.use('/urmin/opsi-dropdown', operational, createOpsiDropdownRouter({ pool, unit: 'urmin' }))
   v1.use('/subbagsumda/opsi-dropdown', operational, createOpsiDropdownRouter({ pool, unit: 'subbagsumda' }))
   v1.use('/subbagbinfung/opsi-dropdown', operational, createOpsiDropdownRouter({ pool, unit: 'subbagbinfung' }))
+  // R5H27: Master Personel + Monitoring Pensiun + Dashboard Sumda (migrasi 068, Express saja).
+  // Tiga mount spesifik, bukan satu '/subbagsumda', supaya request registry/opsi-dropdown
+  // tidak menjalankan guard dua kali. Semuanya di bawah pola Caddy /api/v1/subbagsumda/*.
+  v1.use('/subbagsumda/dashboard', operational, createSumdaDashboardRouter({ pool }))
+  v1.use('/subbagsumda/personel', operational, createSumdaPersonelRouter({ pool }))
+  v1.use('/subbagsumda/pensiun', operational, createSumdaPensiunRouter({ pool }))
   // R5H7: tanda tangan tersimpan Kabagrenmin (Express saja).
   v1.use('/urmin/ttd', operational, createTtdRouter({ pool, config }))
   v1.use('/unit-work', operational, createUnitWorkRouter({ pool, config }))
