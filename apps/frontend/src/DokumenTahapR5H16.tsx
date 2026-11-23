@@ -17,13 +17,18 @@ import { confirmDialog } from './UIFeedback'
 export type KField = { key: string; label: string; type: 'text' | 'textarea' | 'date' | 'number' | 'select'; max: number; required?: boolean; half?: boolean; hint?: string; default?: string; options?: string[] }
 /** jenis 'office': PDF, Excel (.xlsx), atau Word (.docx); selain itu PDF saja. */
 export type KSlot = { slot: string; label: string; utama?: boolean; jenis?: 'office' }
-export type Katalog = { jenis: Record<string, string[]>; pekerjaan: Record<string, { label: string; form: string; fields: KField[]; berkas: KSlot[] }>; tanpaSah?: string[]; periode?: Record<string, 'bulan' | 'triwulan'>
+export type Katalog = { jenis: Record<string, string[]>; pekerjaan: Record<string, { label: string; form: string; fields: KField[]; berkas: KSlot[]; berkasPerJenis?: Record<string, KSlot[]> }>; tanpaSah?: string[]; periode?: Record<string, 'bulan' | 'triwulan'>
   /** R5H22: form yang bisa menautkan sumber surat -> kunci isian yang diisi dari sumber. */
   sumber?: Record<string, Partial<Record<'nomor' | 'tanggal' | 'dari' | 'perihal', string>>>
   /** R5H25: tahap yang dinonaktifkan Superadmin di Master Data (jenis -> pekerjaan). Tidak ditawarkan untuk tahap BARU. */
   nonaktif?: Record<string, string[]> }
 /** R5H25: tahap ini dinonaktifkan di Master Data untuk jenis dokumen tersebut. */
 export const tahapNonaktif = (k: Katalog | null | undefined, jenis: string, pekerjaan: string) => Boolean(k?.nonaktif?.[jenis]?.includes(pekerjaan))
+export function slotLampiran(katalog: Katalog | null, pekerjaan: string, jenis: string): KSlot[] {
+  const tahap = katalog?.pekerjaan[pekerjaan]
+  return tahap?.berkasPerJenis?.[jenis] ?? tahap?.berkas ?? []
+}
+
 export type Tahap = { id: string; pekerjaan: string; pekerjaanLabel: string; isian: Record<string, string>; version: number; createdAt: string; updatedAt: string; updatedByName: string; berkas: { id: string; slot: string; filename: string; size: number }[]
   createdBy: string; updatedBy: string; cekStatus: 'menunggu' | 'diterima' | 'dikembalikan'; cekNote: string; cekAt: string | null; cekByName: string | null; sumber?: Sumber | null }
 export type DokMeta = { id: string; jenis: string; periode?: string; judul: string; nomor: string; tanggal: string | null; keterangan: string; version: number; tahap: Tahap[] }
@@ -129,7 +134,7 @@ export function DokumenDialog({ mode, kind = 'dokumen', tahun, doc, tahapId, kat
       const p = katalog!.pekerjaan[b.pekerjaan]
       for (const f of p.fields) if (f.required && !(b.isian[f.key] ?? '').trim()) { setError(`Tahap ${no} (${p.label}): ${f.label} wajib diisi.`); return }
       for (const [slot, list] of Object.entries(b.files)) {
-        const ks = p.berkas.find(s => s.slot === slot); const label = ks?.label
+        const ks = slotLampiran(katalog, b.pekerjaan, meta.jenis).find(s => s.slot === slot); const label = ks?.label
         const office = ks?.jenis === 'office'
         for (const file of list) {
           if (office ? !/\.(pdf|xlsx|docx)$/i.test(file.name) : !/\.pdf$/i.test(file.name)) { setError(`Tahap ${no}: ${label} "${file.name}" harus ${office ? 'PDF, Excel (.xlsx), atau Word (.docx)' : 'PDF'}.`); return }
@@ -234,7 +239,7 @@ export function DokumenDialog({ mode, kind = 'dokumen', tahun, doc, tahapId, kat
                   : <input type={f.type === 'date' ? 'date' : 'text'} inputMode={f.type === 'number' ? 'numeric' : undefined} maxLength={f.max} value={b.isian[f.key] ?? ''} onChange={e => { const v = f.type === 'number' ? e.target.value.replace(/\D/g, '') : e.target.value; setBlock(b.key, x => ({ ...x, isian: { ...x.isian, [f.key]: v }, dirty: true })) }} />}
                 {f.hint && <small>{f.hint}</small>}
               </label>)}
-              {p && p.berkas.map(s => <div key={s.slot} className="sdl-progar__tahap-file" role="group" aria-label={s.label}>
+              {slotLampiran(katalog, b.pekerjaan, meta.jenis).map(s => <div key={s.slot} className="sdl-progar__tahap-file" role="group" aria-label={s.label}>
                 <span>📎 {s.label}{s.utama && <em> · bukti utama</em>}</span>
                 <ul className="sdl-progar__lampiran">
                   {(b.existing[s.slot] ?? []).map(x => { const gone = b.drop.includes(x.id); return <li key={x.id} className={gone ? 'is-gone' : undefined}>

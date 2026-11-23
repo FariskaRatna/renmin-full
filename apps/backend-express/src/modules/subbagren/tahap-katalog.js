@@ -36,6 +36,21 @@ const pemeriksaanFields = [
 const catatanPemeriksaan = f('catatan', 'Catatan hasil', 'textarea', 2000)
 const berkasPemeriksaan = [{ slot: 'ba', label: 'Berita Acara / Catatan Hasil Reviu', utama: true }]
 
+const berkasRekap = { slot: 'rekap', label: 'Rekap / dokumen gabungan', utama: true }
+const berkasPendukungRevisi = [
+  { slot: 'rab', label: 'RAB' },
+  { slot: 'kak', label: 'KAK' },
+  { slot: 'rpd', label: 'RPD' },
+  { slot: 'kajian_teknis', label: 'Kajian Teknis (belanja modal)' },
+]
+const berkasTtd = { slot: 'ditandatangani', label: 'Surat pengantar dan laporan yang ditandatangani', utama: true }
+const berkasTtdRevisi = [berkasTtd, ...berkasPendukungRevisi]
+const berkasTtdPerJenis = {
+  revisi_dipa: [{ slot: 'dokumen_sah', label: 'Dokumen yang sudah ditandatangani', utama: true }, ...berkasPendukungRevisi],
+  revisi_pok: berkasTtdRevisi,
+  revisi_rpd: berkasTtdRevisi,
+}
+
 export const FORMS = {
   undangan: {
     fields: [
@@ -123,13 +138,7 @@ export const FORMS = {
       f('subsatker', 'Usulan yang sudah masuk', 'textarea', 2000, { hint: 'Subsatker yang usulannya sudah diterima, satu per baris.' }),
       f('catatan', 'Catatan', 'textarea', 1000),
     ],
-    berkas: [
-      { slot: 'rekap', label: 'Rekap / dokumen gabungan', utama: true },
-      { slot: 'rab', label: 'RAB' },
-      { slot: 'kak', label: 'KAK' },
-      { slot: 'rpd', label: 'RPD' },
-      { slot: 'kajian_teknis', label: 'Kajian Teknis (belanja modal)' },
-    ],
+    berkas: [berkasRekap, ...berkasPendukungRevisi],
   },
   input_aplikasi: {
     fields: [
@@ -198,7 +207,7 @@ export const FORMS = {
       f('pengantarNomor', 'Nomor surat pengantar', 'text', 120),
       f('catatan', 'Catatan / koreksi pimpinan', 'textarea', 1000),
     ],
-    berkas: [{ slot: 'ditandatangani', label: 'Surat pengantar dan laporan yang ditandatangani', utama: true }],
+    berkas: [berkasTtd],
   },
   kirim: {
     fields: [
@@ -275,10 +284,10 @@ export const PEKERJAAN = {
   terima_undangan_rapat: { label: 'Menerima undangan rapat penyusunan', form: 'surat_masuk' },
   terima_permintaan_laporan: { label: 'Menerima surat permintaan / undangan penyusunan laporan', form: 'surat_masuk' },
   permintaan_direktorat: { label: 'Surat permintaan laporan kepada subsatker / Direktorat', form: 'surat_keluar' },
-  kompilasi_laporan: { label: 'Mengompilasi laporan subsatker / Direktorat', form: 'kompilasi' },
+  kompilasi_laporan: { label: 'Mengompilasi laporan subsatker / Direktorat', form: 'kompilasi', berkas: [berkasRekap] },
   susun_laporan: { label: 'Menyusun laporan dan surat pengantar', form: 'laporan' },
   unduh_myinterest: { label: 'Mengunduh realisasi dari myinterest', form: 'unduh_myinterest' },
-  ttd_kadensus: { label: 'Mengajukan persetujuan dan tanda tangan Kadensus', form: 'ttd' },
+  ttd_kadensus: { label: 'Mengajukan persetujuan dan tanda tangan Kadensus', form: 'ttd', berkasPerJenis: berkasTtdPerJenis },
   rapat_pemeriksaan: { label: 'Rapat dan pemeriksaan bersama Stamarena Polri', form: 'rapat_pemeriksaan', defaults: { pihak: 'Stamarena Polri' } },
   kirim_laporan: { label: 'Mengirim surat dan laporan kepada Astamarena Kapolri', form: 'kirim' },
   rapat_bahan: { label: 'Menghadiri rapat penyusunan tingkat Polri (membawa laporan satker)', form: 'rapat' },
@@ -312,6 +321,7 @@ export const JENIS_TAHAP = {
   lap_capaian_kinerja: ['terima_permintaan_laporan', 'permintaan_direktorat', 'kompilasi_laporan', 'susun_laporan', 'ttd_kadensus', 'kirim_laporan', 'rapat_bahan'],
   lap_lkip: ['terima_permintaan_laporan', 'susun_laporan', 'ttd_kadensus', 'kirim_laporan', 'rapat_bahan'],
   lap_hibah: ['terima_undangan_rapat', 'susun_laporan', 'ttd_kadensus', 'rapat_pemeriksaan', 'kirim_laporan'],
+  revisi_dipa: ['ttd_kadensus'],
   // Revisi POK selesai setelah TTD Kadensus; revisi RPD berlanjut sampai DIPA baru.
   revisi_pok: ['terima_permintaan_revisi', 'data_dukung_revisi', 'ttd_kadensus'],
   revisi_rpd: ['terima_permintaan_revisi', 'data_dukung_revisi', 'ttd_kadensus', 'approval_eselon1', 'unggah_kanwil', 'penelaahan_djpb', 'dipa_baru'],
@@ -360,7 +370,8 @@ export function katalog(nonaktif = {}) {
     pekerjaan[key] = {
       label: p.label, form: p.form,
       fields: form.fields.map((x) => (p.defaults?.[x.key] !== undefined ? { ...x, default: p.defaults[x.key] } : x)),
-      berkas: form.berkas,
+      berkas: p.berkas ?? form.berkas,
+      ...(p.berkasPerJenis ? { berkasPerJenis: p.berkasPerJenis } : {}),
     }
   }
   return { jenis: JENIS_TAHAP, pekerjaan, tanpaSah: [...TANPA_SAH], periode: PERIODE, sumber: SUMBER_FORM, nonaktif }
@@ -379,9 +390,11 @@ export function bisaSumber(pekerjaan) {
   return Boolean(p && SUMBER_FORM[p.form])
 }
 
-export function slotOf(pekerjaan, slot) {
+export function slotOf(pekerjaan, slot, jenis) {
   const p = PEKERJAAN[pekerjaan]
-  return p ? FORMS[p.form].berkas.find((b) => b.slot === slot) ?? null : null
+  if (!p) return null
+  const slots = p.berkasPerJenis?.[jenis] ?? p.berkas ?? FORMS[p.form].berkas
+  return slots.find((b) => b.slot === slot) ?? null
 }
 
 /** Abaikan nomor berita acara lama pada formulir yang sudah menghapus kolomnya. */

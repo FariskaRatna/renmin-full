@@ -837,7 +837,7 @@ export function createPerencanaanRouter({ pool, config }) {
     const did = id(req.params.id); const tid = id(req.params.tid); const slot = String(req.params.slot)
     // Periksa kepemilikan dan slot SEBELUM membaca berkas besar.
     const t0 = await tahapOf(pool, did, tid)
-    const s0 = slotOf(t0.pekerjaan, slot)
+    const s0 = slotOf(t0.pekerjaan, slot, t0.jenis)
     if (!s0) throw new HttpError(400, 'invalid_input')
     // Slot berjenis 'office' (mis. hasil unduhan myinterest): PDF, .xlsx, atau .docx sebagai lampiran biasa.
     const { blob, filename, sealed, digest } = s0.jenis === 'office' ? await readLampiranDokumen(req) : await readPdf(req)
@@ -845,6 +845,7 @@ export function createPerencanaanRouter({ pool, config }) {
       await c.query('SELECT 1 FROM sdl_ren_dokumen WHERE id=$1::uuid FOR UPDATE', [did])
       const t = await tahapOf(c, did, tid, true)
       await lockForTahap(c, did, t.pekerjaan)
+      if (!slotOf(t.pekerjaan, slot, t.jenis)) throw new HttpError(400, 'invalid_input')
       const n = await c.query('SELECT count(*)::int AS n FROM sdl_ren_dokumen_tahap_lampiran WHERE tahap_id=$1::uuid AND slot=$2', [tid, slot])
       if (n.rows[0].n >= MAX_LAMPIRAN_PER_SLOT) throw new HttpError(409, 'batas_lampiran')
       const r = (await c.query(

@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type React
 import { SUMBER_LABEL, type Sumber } from './SumberSuratR5H22'
 import { LampiranPreviewR5F15 } from './LampiranPreviewR5F15'
 import { FormDialog, rupiah, type Dialog } from './ProgarR5H11'
-import { DokumenDialog, cekLabel, periodeLabel, ringkasTahap, tahapNonaktif, tanggalTahap, ulangKe, type Katalog, type Tahap } from './DokumenTahapR5H16'
+import { DokumenDialog, cekLabel, periodeLabel, ringkasTahap, slotLampiran, tahapNonaktif, tanggalTahap, ulangKe, type Katalog, type Tahap } from './DokumenTahapR5H16'
 import { confirmDialog, showToast } from './UIFeedback'
 import { REVISI_ANGGARAN, RINGKASAN_JENIS, RevisiAnggaran, RingkasanRealisasi } from './DalgarR5H19'
 import './ProgarR5H11.css'
@@ -443,7 +443,7 @@ export default function DokumenR5H13({ userId, mode = 'rancang', onOpenRancang, 
             <button type="button" className="btn" disabled={!semuaDiterima(d)} onClick={() => tambahTahap(d)}>＋ Tambah Tahap Pekerjaan</button>
             {!semuaDiterima(d) && <span className="sdl-progar__muted">Semua tahap sebelumnya harus diterima Kasubbagren sebelum menambah tahap.</span>}
           </>}
-          {canManage && d.status === 'draft' && !punyaTahap(d) && <button type="button" className="btn" disabled={uploading === d.id} onClick={() => pick(d)}>{uploading === d.id ? 'Mengunggah…' : d.berkas ? 'Ganti PDF Dokumen' : 'Lampirkan PDF Dokumen'}</button>}
+          {canManage && d.status === 'draft' && (!punyaTahap(d) || d.jenis === 'revisi_dipa') && <button type="button" className="btn" disabled={uploading === d.id} onClick={() => pick(d)}>{uploading === d.id ? 'Mengunggah…' : d.berkas ? 'Ganti PDF Dokumen' : 'Lampirkan PDF Dokumen'}</button>}
           {canManage && d.status === 'draft' && !d.final && <button type="button" className="btn" onClick={() => edit(d)}>Ubah Dokumen</button>}
           {d.status === 'draft' && canSahkan && d.createdBy !== userId && !tanpaSah(d) && <><button type="button" className="btn primary" disabled={!hasPdf(d)} title={hasPdf(d) ? undefined : (punyaTahap(d) ? 'Belum ada dokumen bertanda tangan di tahap pengesahan' : 'Belum ada PDF dokumen')} onClick={() => void sahkan(d)}>Sahkan</button>
             <button type="button" className="btn sdl-progar__danger" onClick={() => tolak(d)}>Tolak</button></>}
@@ -547,7 +547,7 @@ function DetailDialog({ doc, lampiranDok, tanpaSah, showApprovalDetails, showAng
   if (lihat && tv) {
     const nav = shown.includes(tv) ? shown : doc.tahap
     const i = nav.indexOf(tv); const prev = nav[i - 1]; const next = nav[i + 1]
-    const slots = katalog?.pekerjaan[tv.pekerjaan]?.berkas ?? []
+    const slots = slotLampiran(katalog, tv.pekerjaan, doc.jenis)
     const bySlot = [...slots.map(s => ({ s, files: tv.berkas.filter(b => b.slot === s.slot) })),
       ...[...new Set(tv.berkas.map(b => b.slot))].filter(x => !slots.some(s => s.slot === x)).map(x => ({ s: { slot: x, label: x } as { slot: string; label: string; utama?: boolean }, files: tv.berkas.filter(b => b.slot === x) }))]
     return <div className="sdl-progar__shade" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget && !blocked) onClose() }}>
@@ -605,7 +605,7 @@ function DetailDialog({ doc, lampiranDok, tanpaSah, showApprovalDetails, showAng
           {signed.map(({ t, b }) => <button key={b.id} type="button" className="sdl-progar__file" onClick={() => onPreview(`${BASE}/dokumen/${doc.id}/tahap/${t.id}/lampiran/${b.id}`, b.filename)}>👁 {b.filename}</button>)}
           {!doc.berkas && !signed.length && <span className="sdl-progar__muted">{(() => {
             // R5H25: arahkan ke tahap pengesahan yang masih aktif; bila semuanya nonaktif, unggah langsung ke dokumen.
-            const sah = (katalog?.jenis[doc.jenis] ?? []).find(p => !tahapNonaktif(katalog, doc.jenis, p) && katalog?.pekerjaan[p]?.berkas.some(s => s.slot === 'dokumen_sah'))
+            const sah = (katalog?.jenis[doc.jenis] ?? []).find(p => !tahapNonaktif(katalog, doc.jenis, p) && slotLampiran(katalog, p, doc.jenis).some(s => s.slot === 'dokumen_sah'))
             return sah ? `Belum ada — lampirkan “Dokumen yang sudah ditandatangani” di tahap ${katalog!.pekerjaan[sah].label}` : katalog?.jenis[doc.jenis]?.length ? 'Belum ada — unggah PDF bertanda tangan ke dokumen ini' : 'Belum ada'
           })()}</span>}</dd></>)}
         {doc.periode && <><dt>Periode</dt><dd>{periodeLabel(doc.periode)} {doc.tahun}</dd></>}
