@@ -1663,12 +1663,12 @@ Validasi strict: field asing → 400 `invalid_body`. Semua respons `Cache-Contro
 | GET | `/api/v1/subbagsumda/personel/capabilities` | O | `{canRead,canCreate,canUpdate,canArchive,canReview}` (tanpa hak → semua `false`, tetap 200) |
 | GET | `/api/v1/subbagsumda/personel` | R | `?q=&status=&unitKerja=&lengkap=belum&page=&size=` (size 5/10/50/100, bawaan 10) → `{items,total,page,size,unitKerja:[…]}`. Item: `{id,nrp,nama,jenis,pangkat,pangkatLabel,jabatan,unitKerja,tmtDinas,tanggalPensiun,status,catatan,version,salinan,perluDilengkapi,sisaHari,tahap,createdAt,updatedAt}` |
 | POST | `/api/v1/subbagsumda/personel` | C | `{nrp,nama,jenis,pangkat,jabatan,unitKerja,tmtDinas,tanggalPensiun,status,catatan}` → 201 `{item}` |
-| GET | `/api/v1/subbagsumda/personel/:id` | R | `{item}`; id bukan UUID/terarsip → 404 `not_found`. **+R5H28:** `item.riwayatKarier[]` (lihat § R5H28). **+R5H29:** `item.riwayatDiklat[]`, `item.kompetensi[]` (lihat § R5H29). **+R5H30:** `item.cutiTahunIni`, `item.riwayatKesejahteraan[]` (lihat § R5H30). **+R5H31:** `item.kinerja[]` (lihat § R5H31) |
+| GET | `/api/v1/subbagsumda/personel/:id` | R | `{item}`; id bukan UUID/terarsip → 404 `not_found`. **+R5H28:** `item.riwayatKarier[]` (lihat § R5H28). **+R5H29:** `item.riwayatDiklat[]`, `item.kompetensi[]` (lihat § R5H29). **+R5H30:** `item.cutiTahunIni`, `item.riwayatKesejahteraan[]` (lihat § R5H30). **+R5H31:** `item.kinerja[]` (lihat § R5H31). **+R5H32:** `item.arsip[]` (lihat § R5H32) |
 | PATCH | `/api/v1/subbagsumda/personel/:id` | U | Badan penuh + `version` → 200 `{item}`; 409 `version_conflict` |
 | DELETE | `/api/v1/subbagsumda/personel/:id?version=` | A | Arsip (soft delete) → 204; 409 `version_conflict` |
 | GET | `/api/v1/subbagsumda/pensiun/alert` | R | `?tahap=H-60\|H-30\|H-14\|H-7\|JATUH_TEMPO` → `{ringkas:{<tahap>:n},belumDitinjau,items:[{personel,sisaHari,tahap,ditinjau:{oleh,pada}\|null}]}` |
 | POST | `/api/v1/subbagsumda/pensiun/alert/tinjau` | V | `{items:[{personelId,tahap,tanggalPensiun}]}` (1–200 butir, kunci persis) → `{ditinjau:n}` (idempoten). Satu butir yang tahap/tanggalnya tidak cocok dengan keadaan sekarang → 409 `alert_berubah`, tidak ada yang tersimpan |
-| GET | `/api/v1/subbagsumda/dashboard` | R | **+R5H28:** `totals.karierMenunggu` (lihat § R5H28). **+R5H29:** `totals.kompetensiKedaluwarsa60`. **+R5H30:** `totals.cutiHariIni`, `totals.layananMenunggu`. **+R5H31:** `totals.pembinaanLewatTenggat`, `totals.pemeliharaanJatuhTempo14`. `{totals:{personel,aktif,mpp,alert,belumDitinjau,belumLengkap,enamBulan},proyeksi:[{bulan:"YYYY-MM",jumlah}×6],alertTerdekat[≤5],terdekat[≤5],aktivitas[≤5]}` |
+| GET | `/api/v1/subbagsumda/dashboard` | R | **+R5H28:** `totals.karierMenunggu` (lihat § R5H28). **+R5H29:** `totals.kompetensiKedaluwarsa60`. **+R5H30:** `totals.cutiHariIni`, `totals.layananMenunggu`. **+R5H31:** `totals.pembinaanLewatTenggat`, `totals.pemeliharaanJatuhTempo14`. **+R5H32:** `totals.arsipRetensi30`. `{totals:{personel,aktif,mpp,alert,belumDitinjau,belumLengkap,enamBulan},proyeksi:[{bulan:"YYYY-MM",jumlah}×6],alertTerdekat[≤5],terdekat[≤5],aktivitas[≤5]}` |
 
 Aturan isi: `nrp` 2–64 dari `A-Z a-z 0-9 spasi . _ / ( ) [ ] -` (NRP lama yang sudah tersimpan boleh dipertahankan), `nama` 3–200, `jenis` `Polri`\|`PNS` (wajib), `pangkat` kode rank master
 aktif (Polri) atau golongan `I/a`…`IV/e` (PNS) — pangkat lama yang sudah tersimpan boleh
@@ -1909,5 +1909,58 @@ status,kategori}` (bagi non-K1 hanya entri `DINILAI`, `kategori`/`status` null);
 selama rollback tidak tersalin ke `sdl_sumda_aset`** (input ulang manual setelah kembali). Rollback sempit:
 `/api/v1/subbagsumda/personel* /api/v1/subbagsumda/pensiun/* /api/v1/subbagsumda/dashboard /api/v1/subbagsumda/karier*
 /api/v1/subbagsumda/diklat* /api/v1/subbagsumda/kompetensi* /api/v1/subbagsumda/cuti* /api/v1/subbagsumda/kesejahteraan*
-/api/v1/subbagsumda/kinerja* /api/v1/subbagsumda/aset* /api/v1/subbagsumda/opsi-dropdown/*`. Catatan: executive v2
+/api/v1/subbagsumda/kinerja* /api/v1/subbagsumda/aset* /api/v1/subbagsumda/opsi-dropdown/*`. **Usang sejak R5H32** (belum memuat
+`/arsip*`, `/laporan*`; pakai pola di § R5H32). Catatan: executive v2
 `assets_care` tetap menghitung registry lama (kontrak beku, K49).
+
+## R5H32 — Subbagsumda: Persuratan & Arsip + Laporan & Analitik (2026-11-24, EXPRESS SAJA)
+
+Migrasi `073_sumda_arsip_laporan.sql` (`sdl_sumda_arsip` + `_riwayat`/`_lampiran`; `surat_id` **tanpa FK**; permission
+`subbagsumda.arsip.read|manage|restricted`, `subbagsumda.laporan.export`); rancangan `docs/R5H32-SUMDA-ARSIP-LAPORAN.md`;
+uji `verify/r5h32-sumda-arsip-laporan.js` dan skenario `x7_r5h32_sumda_arsip_laporan_guard`. Guard operasional (**O**).
+Hak: `R` = `subbagsumda.personel.read`, `Ra`/`Ma`/`Xa` = `arsip.read`/`.manage`/`.restricted`, `E` = `laporan.export`,
+`Ps` = `persuratan.read` pada grant `subbagsumda`, `Ri` = `inventaris.read`, `Rk` = `kinerja.read`. Validasi strict;
+semua respons `no-store`. Persuratan R5H21 (`/api/v1/persuratan/*`) tidak berubah; arsip hanya membaca tabel 064.
+
+**Visibilitas arsip TERBATAS (K29, diputus di SQL):** baris `kerahasiaan='TERBATAS'` hanya ada bagi pencatatnya dan
+pemegang `Xa`. Bagi akun lain baris itu tidak tampil, tidak dihitung (`total`, dashboard, analitik), tidak bisa dicari
+atau disaring, dan detail/unduh/PATCH/aksi/unggah/hapus lampiran → **404 `not_found` byte-identik dengan UUID fiktif**.
+
+| Method | Path | Hak | Catatan |
+|---|---|---|---|
+| GET | `/api/v1/subbagsumda/arsip/capabilities` | O | `{canRead,canManage,canRestricted,canTautSurat}` (`canTautSurat` = `Ps`) |
+| GET | `/api/v1/subbagsumda/arsip` | Ra | `?q=&jenis=&status=&tahun=&kerahasiaan=&retensi=1&page=&size=` → `{items,total,page,size}`. Item: `{id,nomor,jenis,perihal,tanggal,asalTujuan,kodeKlasifikasi,lokasiSimpan,retensiSampai,sisaRetensi,tahapRetensi,kerahasiaan,catatan,personel:{id,nama,nrp,terarsip}\|null,suratId,status,musnah:{olehNama,pada}\|null,createdBy,createdByName,version,createdAt,updatedAt,updatedBy,bertautSurat}` (`suratId` null tanpa Ps). `jenis` `SURAT_MASUK`\|`SURAT_KELUAR`\|`NOTA_DINAS`\|`SURAT_KEPUTUSAN`\|`BERITA_ACARA`\|`LAINNYA`; `status` `Aktif`\|`Inaktif`\|`Musnah` (tanpa saringan: semua); `tahapRetensi` `H-30`\|`JATUH_TEMPO` (WIB, Aktif/Inaktif) |
+| GET | `/api/v1/subbagsumda/arsip/surat-tertaut` | Ma + Ps | `{items:[{id,arah:masuk\|keluar,nomor,tanggal,perihal,unitPengirim,kodeArsip,tujuan[],dikirimPada}]}` maks. 200: surat `dikirim` oleh Sumda atau ditujukan ke Sumda dan sudah diterima, belum diarsipkan |
+| POST | `/api/v1/subbagsumda/arsip` | Ma (+Ps bila `suratId`) | `{nomor,jenis,perihal,tanggal,asalTujuan,kodeKlasifikasi,lokasiSimpan,retensiSampai,kerahasiaan,catatan,personelId,suratId}` → 201 Aktif. `retensiSampai` ≥ `tanggal`; `suratId` + `kerahasiaan:TERBATAS` tanpa Xa → 403 (K51); personel terarsip baru → 409 `personel_terarsip`; surat tidak sah → 400 `surat_tidak_berlaku`; surat sudah diarsip (termasuk arsip Musnah) → 409 `surat_sudah_diarsip` |
+| GET | `/api/v1/subbagsumda/arsip/:id` | Ra | `{item,surat,lampiran:[{id,peran,filename,size,uploadedBy,uploadedByName,uploadedAt}],riwayat[]}`; `surat` = `null` \| `{id,arah,nomor,tanggal,perihal,unitPengirim}` (Ps) \| `{dibatasi:true}` (tanpa Ps) \| `{hilang:true}` (surat sudah tidak ada atau tidak lagi sah) |
+| PATCH | `/api/v1/subbagsumda/arsip/:id` | Ma | badan penuh + `version` → 200 `{item}`, atau **`{item:null,tersembunyi:true}`** bila perubahan (naik ke TERBATAS oleh bukan pencatat tanpa Xa) membuat arsip tak terlihat lagi. Turun TERBATAS→BIASA butuh Xa (403); kunci `suratId` tidak dikirim = tautan dipertahankan; mengubah `suratId` butuh Ps (403); arsip bersurat menjadi TERBATAS atau tautan baru pada arsip TERBATAS tanpa Xa → 403 (K51); Musnah → 409 `status_tidak_sesuai` |
+| POST | `/api/v1/subbagsumda/arsip/:id/aksi` | Ma / Ma+Xa | `{aksi,catatan,version}`: `inaktifkan` (Aktif→Inaktif), `aktifkan` (Inaktif→Aktif), `musnahkan` (Ma+Xa; hanya dari Inaktif; alasan ≥ 8; ≥ 1 lampiran `BA_MUSNAH`, kalau tidak 409 `lampiran_wajib`) → Musnah (final, hanya-baca) |
+| POST · GET · DELETE | `/api/v1/subbagsumda/arsip/:id/lampiran` · `…/:lid` · `…/:lid` | Ma · Ra · Ma | PDF tersegel; POST `?peran=DOKUMEN\|BA_MUSNAH` (bawaan DOKUMEN); maks. 10 gabungan; unggah/hapus tidak saat Musnah; hapus oleh pengunggah atau Xa |
+| GET | `/api/v1/subbagsumda/laporan/capabilities` | O | `{canRead,canExport,modul:{personel,pensiun,karier,diklat,kompetensi,cuti,kesejahteraan,kinerja,aset,arsip}}` (`modul` = boleh ekspor) |
+| GET | `/api/v1/subbagsumda/laporan/ringkasan` | R | `?tahun=` (1950–2100; bawaan tahun WIB; kunci lain → 400) → `{tahun,tahunIni,hariIni,personel:{aktif,mpp,total,perUnit[≤16],perPangkat:{polri,pns},proyeksi[12]},pensiun30,layananBerjalan:{karier,cuti,kesejahteraan,total},cuti:{perBulan[12]},diklat:{perBulan[12]},register[],kinerja,aset,arsip}`. `kinerja` null tanpa Rk, `aset` null tanpa Ri, `arsip` null tanpa Ra (angka arsip atas baris terlihat; `arsip.terbatas` null tanpa Xa). Satu transaksi REPEATABLE READ READ ONLY, `statement_timeout` 5 s |
+| GET | `/api/v1/subbagsumda/laporan/ekspor/:modul` | E + hak modul | `200 text/csv; charset=utf-8`, `Content-Disposition: attachment; filename=sumda-<modul>-<YYYYMMDD WIB>.csv`, `nosniff`, `CSP: sandbox`. Hak modul: `aset` Ri, `arsip` Ra (+ baris terlihat), `kinerja` R (+ hanya baris pencatat/Rk), lainnya R. Saringan per modul: personel `status`; pensiun `tahap`; karier `tahun,status,jenis`; diklat `tahun,status`; kompetensi `tahap`; cuti `tahun,status,jenis`; kesejahteraan `tahun,status,jenis`; kinerja `tahun,status`; aset `status,kondisi`; arsip `tahun,status,jenis`. Kunci/nilai lain → 400 JSON; modul tak dikenal → 404 JSON; > 10.000 baris → 413 `terlalu_banyak`; transaksi baca dengan `statement_timeout` 10 s (→ 503) |
+
+**Format CSV (K20/K44):** UTF-8 + BOM, pemisah `;`, CRLF, semua sel berkutip (`"` → `""`); sel teks berawalan `=`, `+`,
+`-`, `@`, tab, CR, atau padanan lebar penuhnya diberi awalan `'`. Kolom = tabel daftar di layar, **tanpa** catatan/alasan,
+nama petugas, id, hash, atau nama berkas (K41; catatan cuti Sakit tidak pernah diekspor).
+
+Kode galat: 400 `invalid_body`/`invalid_input`/`invalid_file_type`/`one_file_required`/`surat_tidak_berlaku`; 413
+`file_too_large`/`terlalu_banyak`; 403 `access_denied`; 404 `not_found`; 409 `version_conflict`/`status_tidak_sesuai`/
+`surat_sudah_diarsip`/`lampiran_wajib`/`personel_terarsip`/`batas_lampiran`; 503 `evidence_*`/`database_unavailable`.
+
+Audit `subbagsumda.arsip.{create,update,inaktifkan,aktifkan,musnahkan,lampiran.add,lampiran.delete,lampiran.download}`
+(metadata `{status,jenis,kerahasiaan,fields,version}`, tanpa nomor/perihal/catatan/nama berkas) dan
+`subbagsumda.laporan.export` (`subject_type='subbagsumda.laporan'`, `subject_id`=modul, metadata `{modul,jumlah,filter}`),
+ditulis dalam transaksi sendiri **sebelum** berkas dikirim (gagal → 503 tanpa data); 400/403/404/413 tidak diaudit.
+
+**Aditif pada R5H27:** `GET /api/v1/subbagsumda/personel/:id` → `item.arsip[]` `{id,nomor,jenis,perihal,tanggal,status,
+kerahasiaan,retensiSampai,tahapRetensi}` (maks. 50, baris terlihat; `null` tanpa Ra); `GET /api/v1/subbagsumda/dashboard` →
+`totals.arsipRetensi30` (baris terlihat; `null` tanpa Ra). POST/PATCH personel tidak berubah.
+
+**Rollback.** Bila `/api/v1/subbagsumda/*` kembali ke Go, `/arsip*` dan `/laporan*` dijawab chi 404 `text/plain`; kedua
+layar menampilkan "tidak tersedia" (tanpa cadangan). Tabel 073 diam. Bila hanya `/api/v1/persuratan/*` yang
+dikembalikan, arsip tetap jalan (membaca tabel 064 langsung). Rollback sempit:
+`/api/v1/subbagsumda/personel* /api/v1/subbagsumda/pensiun/* /api/v1/subbagsumda/dashboard /api/v1/subbagsumda/karier*
+/api/v1/subbagsumda/diklat* /api/v1/subbagsumda/kompetensi* /api/v1/subbagsumda/cuti* /api/v1/subbagsumda/kesejahteraan*
+/api/v1/subbagsumda/kinerja* /api/v1/subbagsumda/aset* /api/v1/subbagsumda/arsip* /api/v1/subbagsumda/laporan*
+/api/v1/subbagsumda/opsi-dropdown/*`.

@@ -53,8 +53,8 @@ const handle = makeHandle()
 /** K38: satu-satunya rumus tindak lanjut lewat tenggat (WIB). */
 export const lewatTenggatSql = (t = 't', hari = HARI_INI) => `(${t}.tenggat < ${hari} AND ${t}.status IN ('Rencana','Berjalan'))`
 
-/** K1: syarat melihat isi — pencatat atau pemegang Rk. `actor`/`detail` = nomor parameter SQL. */
-const boleh = (actor, detail) => `(k.created_by=${actor}::uuid OR ${detail}::boolean)`
+/** K1: syarat melihat isi — pencatat atau pemegang Rk. `actor`/`detail` = nomor parameter SQL. Diekspor untuk ekspor R5H32. */
+export const boleh = (actor, detail) => `(k.created_by=${actor}::uuid OR ${detail}::boolean)`
 
 /** K1/K31: SATU-SATUNYA sumber kolom kinerja; selain pencatat/Rk menerima NULL + status ringkas. */
 export function kolomKinerja(actor, detail) {

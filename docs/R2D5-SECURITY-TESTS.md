@@ -5,7 +5,7 @@
 | Suite | Menguji | Perintah | Status |
 |---|---|---|---|
 | Go | `apps/backend` (melayani produksi hari ini) | `bash ./scripts/security-test-r2d5.sh` | 21 subtest |
-| Express | `apps/backend-express` (akan menggantikannya) | `bash ./scripts/security-test-express.sh` | **27/27 LULUS, 2026-11-24** (21 skenario 1:1 + `x1_r5h25` … `x5_r5h30` + `x6_r5h31`) |
+| Express | `apps/backend-express` (akan menggantikannya) | `bash ./scripts/security-test-express.sh` | **28/28 LULUS, 2026-11-24** (21 skenario 1:1 + `x1_r5h25` … `x6_r5h31` + `x7_r5h32`) |
 
 Suite Express adalah port satu-lawan-satu dari yang Go, dengan nama skenario
 yang identik supaya kedua laporan bisa ditaruh berdampingan. Skenario berawalan
@@ -42,6 +42,12 @@ dicabut saat sesi sedang hidup.
   syarat "pernah mengubah" di keputusan kinerja, dan menghapus `usulan_by<>actor` di penghapusan BMN →
   masing-masing hanya `x6_r5h31_sumda_kinerja_aset_guard` merah;
 - (R5H31 perbaikan review) mengirim angka pembinaan ke semua pembaca → hanya x6 merah.
+- (R5H32, 2026-11-24) menghapus predikat `bolehArsip` dari CTE daftar arsip, menghapusnya dari SQL unduh
+  lampiran arsip, menghapus `need(laporan.export)` dari ekspor, menghapus penangkal formula CSV, dan menghapus
+  syarat `arsip.restricted` dari `musnahkan` → masing-masing hanya `x7_r5h32_sumda_arsip_laporan_guard` merah.
+- (R5H32 perbaikan review) membuang syarat `arsip.restricted` saat menautkan surat ke arsip TERBATAS, mengirim
+  `suratId` ke pembaca tanpa `persuratan.read`, membuang syarat surat sah di detail, dan membuang normalisasi
+  penangkal formula CSV → masing-masing hanya x7 merah.
 
 Keduanya dipulihkan sesudahnya. Suite yang lulus pada percobaan pertama tanpa
 pernah dibuktikan bisa merah tidak membuktikan apa-apa.

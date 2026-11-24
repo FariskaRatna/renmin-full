@@ -27,6 +27,8 @@ import { createSumdaCutiRouter } from './modules/subbagsumda/cuti.js'
 import { createSumdaKesejahteraanRouter } from './modules/subbagsumda/kesejahteraan.js'
 import { createSumdaKinerjaRouter } from './modules/subbagsumda/kinerja.js'
 import { createSumdaAsetRouter } from './modules/subbagsumda/aset.js'
+import { createSumdaArsipRouter } from './modules/subbagsumda/arsip.js'
+import { createSumdaLaporanRouter } from './modules/subbagsumda/laporan.js'
 import { createPerencanaanRouter } from './modules/subbagren/perencanaan.js'
 import { createUsulanRouter } from './modules/subbagren/usulan.js'
 import { createExecutiveRouter } from './modules/executive/index.js'
@@ -126,6 +128,9 @@ export function createApp({ pool, config, mailer: injectedMailer }) {
   v1.use('/subbagsumda/kinerja', operational, createSumdaKinerjaRouter({ pool, config }))
   // R5H31: Inventaris & BMN (menggantikan registry inventaris di layar; registry R5B tetap utuh).
   v1.use('/subbagsumda/aset', operational, createSumdaAsetRouter({ pool, config }))
+  // R5H32: Persuratan & Arsip + Laporan & Analitik (migrasi 073, Express saja).
+  v1.use('/subbagsumda/arsip', operational, createSumdaArsipRouter({ pool, config }))
+  v1.use('/subbagsumda/laporan', operational, createSumdaLaporanRouter({ pool }))
   // R5H7: tanda tangan tersimpan Kabagrenmin (Express saja).
   v1.use('/urmin/ttd', operational, createTtdRouter({ pool, config }))
   v1.use('/unit-work', operational, createUnitWorkRouter({ pool, config }))

@@ -4,6 +4,7 @@ import { withTransaction } from '../../db.js'
 import { BODY_LIMITS, rawBody } from '../../http/payload.js'
 import { parseGoInt, respond } from '../subbagren/shared.js'
 import { PEMELIHARAAN_14_SQL } from './aset.js'
+import { arsipPersonel, arsipRetensi30Sql } from './arsip.js'
 import { CUTI_HARI_INI_SQL, cutiTahunIni } from './cuti.js'
 import { riwayatDiklatPersonel } from './diklat.js'
 import { LAYANAN_MENUNGGU_SQL, kesejahteraanPersonel } from './kesejahteraan.js'
@@ -69,6 +70,17 @@ export function tahapSql(alias = 'p', hari = HARI_INI) {
          WHEN ${sisa} <= 30 THEN 'H-30' WHEN ${sisa} <= 60 THEN 'H-60' END END`
 }
 export const sisaSql = (alias = 'p', hari = HARI_INI) => `(${alias}.tanggal_pensiun - ${hari})`
+
+/**
+ * K19 R5H27 / K37 R5H32: proyeksi pensiun per bulan mulai bulan berjalan (WIB). Dashboard memakai 6 bulan,
+ * Laporan & Analitik 12 bulan. Untuk bulan=6 string-nya identik dengan SQL dashboard sebelum R5H32 (diuji di verify).
+ */
+export const proyeksiPensiunSql = (bulan, hari = HARI_INI) => `
+      SELECT to_char(b.m,'YYYY-MM') AS bulan, count(p.id)::int AS jumlah
+        FROM generate_series(date_trunc('month', ${hari}), date_trunc('month', ${hari}) + interval '${bulan - 1} months', interval '1 month') AS b(m)
+        LEFT JOIN sdl_sumda_personel p ON p.deleted_at IS NULL AND p.status IN ('Aktif','MPP')
+             AND p.tanggal_pensiun >= b.m::date AND p.tanggal_pensiun < (b.m + interval '1 month')::date
+       GROUP BY b.m ORDER BY b.m`
 
 const P = {
   read: 'subbagsumda.personel.read',
@@ -224,6 +236,9 @@ export function createSumdaPersonelRouter({ pool }) {
     item.riwayatKesejahteraan = await kesejahteraanPersonel(pool, id)
     // R5H31 K16 (aditif): isi kinerja hanya untuk pencatat/kinerja.read — disamarkan di SQL.
     item.kinerja = await kinerjaPersonel(pool, id, req.actor, await can(req.actor, 'subbagsumda.kinerja.read'))
+    // R5H32 K24/K45 (aditif): arsip yang menautkan personel ini — hanya baris terlihat (Terbatas K29), null tanpa arsip.read.
+    item.arsip = (await can(req.actor, 'subbagsumda.arsip.read'))
+      ? await arsipPersonel(pool, id, req.actor, await can(req.actor, 'subbagsumda.arsip.restricted')) : null
     respond(res, 200, { item })
   }))
 
@@ -378,12 +393,7 @@ export function createSumdaDashboardRouter({ pool }) {
              (SELECT count(*) FROM sdl_sumda_karier k JOIN sdl_sumda_personel kp ON kp.id=k.personel_id
                WHERE k.status='Diproses' AND kp.deleted_at IS NULL) AS karier_menunggu`)).rows[0]
     // K19: kartu "Pensiun 6 bulan" = jumlah grafik proyeksi (bulan berjalan s.d. +5).
-    const proyeksi = (await pool.query(`
-      SELECT to_char(b.m,'YYYY-MM') AS bulan, count(p.id)::int AS jumlah
-        FROM generate_series(date_trunc('month', ${HARI_INI}), date_trunc('month', ${HARI_INI}) + interval '5 months', interval '1 month') AS b(m)
-        LEFT JOIN sdl_sumda_personel p ON p.deleted_at IS NULL AND p.status IN ('Aktif','MPP')
-             AND p.tanggal_pensiun >= b.m::date AND p.tanggal_pensiun < (b.m + interval '1 month')::date
-       GROUP BY b.m ORDER BY b.m`)).rows
+    const proyeksi = (await pool.query(proyeksiPensiunSql(6))).rows
     const alertTerdekat = (await pool.query(`${ALERT_SQL} ORDER BY sisa_hari, lower(p.nama), p.id LIMIT 5`)).rows.map(mapAlert)
     const terdekat = (await pool.query(
       `SELECT ${KOLOM} ${DARI} WHERE p.deleted_at IS NULL AND p.status IN ('Aktif','MPP') AND ${sisaSql()} >= 0
@@ -409,6 +419,9 @@ export function createSumdaDashboardRouter({ pool }) {
         pembinaanLewatTenggat: (await can(req.actor, 'subbagsumda.kinerja.read')) ? (await pool.query(PEMBINAAN_LEWAT_TENGGAT_SQL)).rows[0].n : null,
         // R5H31 K47: angka aset hanya bagi pemegang inventaris.read (dashboard sendiri memakai personel.read).
         pemeliharaanJatuhTempo14: (await can(req.actor, 'subbagsumda.inventaris.read')) ? (await pool.query(PEMELIHARAAN_14_SQL)).rows[0].n : null,
+        // R5H32 K25/K36: dihitung atas arsip TERLIHAT (Terbatas milik orang lain tidak menggerakkan angka); null tanpa arsip.read.
+        arsipRetensi30: (await can(req.actor, 'subbagsumda.arsip.read'))
+          ? (await pool.query(arsipRetensi30Sql(), [req.actor, await can(req.actor, 'subbagsumda.arsip.restricted')])).rows[0].n : null,
       },
       proyeksi,
       alertTerdekat,
