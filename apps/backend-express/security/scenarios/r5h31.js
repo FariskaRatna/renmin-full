@@ -116,6 +116,11 @@ export async function verifyR5H31SumdaKinerjaAset({ env }) {
   status(await op2.call('PATCH', `${K}/${k1.id}`, { ...isiK(), personelId: undefined, version: k1.version }, true), 403, 'bukan pencatat PATCH')
   status(await aksi(op2, K, k1, 'ajukan'), 403, 'bukan pencatat ajukan')
   status(await op2.upload(`${K}/${k1.id}/lampiran`, { filename: 'x.pdf', data: PDF }), 403, 'bukan pencatat unggah')
+  // Review C1: setuju tanpa kinerja.read tidak bisa membatalkan milik orang lain (403, bukan 404 setelah rollback).
+  status(await aksi(buta, K, k1, 'batalkan', { catatan: 'Coba batalkan tanpa baca isi' }), 403, 'setuju tanpa kinerja.read batalkan milik orang lain')
+  // Review S1: angka pembinaan hanya untuk pemegang kinerja.read.
+  for (const [s, label] of [[baca, 'baca saja'], [op2, 'kelola tanpa kinerja.read']]) equal(json(await s.call('GET', '/api/v1/subbagsumda/dashboard')).totals.pembinaanLewatTenggat, null, `${label}: pembinaanLewatTenggat null`)
+  equal(typeof json(await apr.call('GET', '/api/v1/subbagsumda/dashboard')).totals.pembinaanLewatTenggat, 'number', 'pemegang kinerja.read menerima angka pembinaan')
   k1 = item(await aksi(op, K, k1, 'ajukan'))
   status(await aksi(buta, K, k1, 'setujui'), 403, 'setuju tanpa kinerja.read tidak boleh memutus')
   status(await aksi(op2, K, k1, 'setujui'), 403, 'kelola tanpa setuju: setujui')

@@ -45,7 +45,7 @@ type Alert = { personel: Personel; sisaHari: number; tahap: Tahap; ditinjau: { o
 type Caps = { canRead: boolean; canCreate: boolean; canUpdate: boolean; canArchive: boolean; canReview: boolean }
 type Aktivitas = { jenis: string; personelId: string | null; personelNama: string | null; oleh: string; pada: string; rincian: Record<string, unknown> }
 type Dashboard = {
-  totals: { personel: number; aktif: number; mpp: number; alert: number; belumDitinjau: number; belumLengkap: number; enamBulan: number; karierMenunggu?: number; kompetensiKedaluwarsa60?: number; cutiHariIni?: number; layananMenunggu?: number; pembinaanLewatTenggat?: number; pemeliharaanJatuhTempo14?: number | null }
+  totals: { personel: number; aktif: number; mpp: number; alert: number; belumDitinjau: number; belumLengkap: number; enamBulan: number; karierMenunggu?: number; kompetensiKedaluwarsa60?: number; cutiHariIni?: number; layananMenunggu?: number; pembinaanLewatTenggat?: number | null; pemeliharaanJatuhTempo14?: number | null }
   proyeksi: { bulan: string; jumlah: number }[]; alertTerdekat: Alert[]; terdekat: Personel[]; aktivitas: Aktivitas[]
 }
 type Rank = { code: string; shortName: string; fullName: string; group: string }
@@ -144,8 +144,8 @@ function DashboardView({ onNavigate, onLost }: { onNavigate: SumdaNav; onLost: (
         <small><button type="button" className="sdl-sumda__link" onClick={() => onNavigate('cuti', { tab: 'kalender' })}>Kalender cuti</button></small></div>}
       {t.layananMenunggu !== undefined && <div className={t.layananMenunggu ? 'is-attention' : ''}><dt>Cuti &amp; layanan menunggu keputusan</dt><dd>{t.layananMenunggu}</dd>
         <small><button type="button" className="sdl-sumda__link" onClick={() => onNavigate('cuti')}>Cuti</button> · <button type="button" className="sdl-sumda__link" onClick={() => onNavigate('kesejahteraan')}>Kesejahteraan</button></small></div>}
-      {t.pembinaanLewatTenggat !== undefined && <div className={t.pembinaanLewatTenggat ? 'is-attention' : ''}><dt>Pembinaan lewat tenggat</dt><dd>{t.pembinaanLewatTenggat}</dd>
-        <small>{isiKinerja ? <button type="button" className="sdl-sumda__link" onClick={() => onNavigate('kinerja')}>Kinerja &amp; Pembinaan</button> : 'Rincian untuk Kasubbag & Kabag'}</small></div>}
+      {typeof t.pembinaanLewatTenggat === 'number' && <div className={t.pembinaanLewatTenggat ? 'is-attention' : ''}><dt>Pembinaan lewat tenggat</dt><dd>{t.pembinaanLewatTenggat}</dd>
+        <small>{isiKinerja && <button type="button" className="sdl-sumda__link" onClick={() => onNavigate('kinerja')}>Kinerja &amp; Pembinaan</button>}</small></div>}
       {typeof t.pemeliharaanJatuhTempo14 === 'number' && <div className={t.pemeliharaanJatuhTempo14 ? 'is-attention' : ''}><dt>Pemeliharaan jatuh tempo ≤ 14 hari</dt><dd>{t.pemeliharaanJatuhTempo14}</dd>
         <small><button type="button" className="sdl-sumda__link" onClick={() => onNavigate('inventaris', { tab: 'jadwal' })}>Jadwal pemeliharaan</button></small></div>}
     </dl>

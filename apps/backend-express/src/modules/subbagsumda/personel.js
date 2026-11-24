@@ -404,7 +404,9 @@ export function createSumdaDashboardRouter({ pool }) {
         kompetensiKedaluwarsa60: (await pool.query(KOMPETENSI_60_SQL)).rows[0].n, // R5H29 K18/K31 (aditif)
         cutiHariIni: (await pool.query(CUTI_HARI_INI_SQL)).rows[0].n, // R5H30 K21/K40 (aditif)
         layananMenunggu: Number((await pool.query(LAYANAN_MENUNGGU_SQL)).rows[0].n),
-        pembinaanLewatTenggat: (await pool.query(PEMBINAAN_LEWAT_TENGGAT_SQL)).rows[0].n, // R5H31 K15/K33 (aditif)
+        // R5H31 K33 + review S1: angka ini bisa dikorelasikan dengan perubahan status ringkas (menebak siapa Perlu
+        // Pembinaan), jadi hanya untuk pemegang kinerja.read; lainnya null.
+        pembinaanLewatTenggat: (await can(req.actor, 'subbagsumda.kinerja.read')) ? (await pool.query(PEMBINAAN_LEWAT_TENGGAT_SQL)).rows[0].n : null,
         // R5H31 K47: angka aset hanya bagi pemegang inventaris.read (dashboard sendiri memakai personel.read).
         pemeliharaanJatuhTempo14: (await can(req.actor, 'subbagsumda.inventaris.read')) ? (await pool.query(PEMELIHARAAN_14_SQL)).rows[0].n : null,
       },

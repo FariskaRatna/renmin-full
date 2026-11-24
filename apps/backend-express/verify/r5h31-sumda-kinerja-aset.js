@@ -156,6 +156,7 @@ async function main() {
     const patTL = (it, extra) => call(op, 'PATCH', `${K}/${it.id}/tindak-lanjut/${tid}`, { bentuk: 'KONSELING', uraian: 'Konseling kinerja', tenggat: tambah(hari, -1), status: 'Selesai', hasil: '', version: it.version, ...extra })
     check('tindak lanjut Selesai tanpa hasil → 400', (await patTL(kPP)).status === 400)
     const d0 = (await call(kabag, 'GET', DASH)).body.totals.pembinaanLewatTenggat
+    check('review S1: staf menerima pembinaanLewatTenggat null; Kabagrenmin angka', (await call(staf, 'GET', DASH)).body.totals.pembinaanLewatTenggat === null && typeof d0 === 'number')
     const pCount = (await sql.query(`SELECT n FROM (${pembinaanLewatTenggatSql()}) x`)).rows[0].n
     check('dashboard pembinaanLewatTenggat = rumus SQL', d0 === pCount, `${d0} vs ${pCount}`)
     const tutupPP = await patTL(kPP, { hasil: 'Sudah membaik' })
@@ -165,6 +166,7 @@ async function main() {
     check('semua tindak lanjut tuntas → Selesai', sel.body?.item?.status === 'Selesai', short(sel))
     const pC = await personel()
     let kBaik = (await nilai(op, pC.id)).body.item
+    check('review C3: Kasubbag mengajukan draf milik op → 403', (await aksi(ka, kBaik, 'ajukan')).status === 403)
     check('tindak lanjut untuk kategori non-PP → 409', (await tl(op, kBaik)).body?.error === 'status_tidak_sesuai')
     kBaik = (await aksi(op, kBaik, 'ajukan')).body.item
     const sB = await aksi(ka, kBaik, 'setujui')

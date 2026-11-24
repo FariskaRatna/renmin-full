@@ -340,7 +340,11 @@ export function createSumdaKinerjaRouter({ pool, config }) {
 
     const item = await withTransaction(pool, async (c) => {
       const k = await kunci(c, id)
-      if (aksi === 'batalkan') { if (k.created_by !== req.actor && !ak) throw new HttpError(403, 'access_denied') } else if (aksi !== 'setujui' && aksi !== 'kembalikan') syaratIsi(k, req.actor, rk)
+      // Review C1: batalkan oleh bukan-pencatat butuh approve DAN kinerja.read (pemutus harus bisa membaca isinya).
+      // Review C3: ajukan hanya oleh pencatat (Kasubbag tidak bisa mengajukan draf orang lain lalu langsung memutusnya).
+      if (aksi === 'batalkan') { if (k.created_by !== req.actor && !(ak && rk)) throw new HttpError(403, 'access_denied') }
+      else if (aksi === 'ajukan') { if (k.created_by !== req.actor) throw new HttpError(403, 'access_denied') }
+      else if (aksi !== 'setujui' && aksi !== 'kembalikan') syaratIsi(k, req.actor, rk)
       if ((aksi === 'kembalikan' || aksi === 'batalkan') && [...catatan].length < 8) throw new HttpError(400, 'invalid_input')
       if (k.version !== version) throw new HttpError(409, 'version_conflict')
       const dari = k.status
