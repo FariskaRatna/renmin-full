@@ -1,6 +1,6 @@
 # R5H32 — Subbagsumda: Persuratan & Arsip + Laporan & Analitik
 
-Status: **sedang diimplementasi (2026-11-24)**. K1–K4 dijawab pemilik 2026-11-24; K5–K28 (usulan) disetujui pemilik 2026-11-24; K29–K49 (rencana, §9 Rencana Implementasi) disetujui **sementara** lewat "oke lanjut ke /implementasi" (aturan bisnis di kode Express, dapat diubah setelah paparan ke pengguna).
+Status: **terimplementasi di branch `feat/r5h32-sumda-arsip-laporan` (2026-11-24), belum di-push; menunggu /verifikasi + /review**. K1–K4 dijawab pemilik 2026-11-24; K5–K28 (usulan) disetujui pemilik 2026-11-24; K29–K49 (rencana, §9 Rencana Implementasi) disetujui **sementara** lewat "oke lanjut ke /implementasi" (aturan bisnis di kode Express, dapat diubah setelah paparan ke pengguna).
 Khusus Express. Migrasi **073** (R5H15 digeser lagi ke **074**, lihat K28).
 Lanjutan R5H27–R5H31. Pola dipakai ulang: `PERMIT_SQL` (`umum.js`), lampiran tersegel (`lampiran.js`), penyamaran di SQL
 (R5H30 S3, R5H31 K1), prinsip K43 R5H30 (migrasi hanya struktural), maker-checker tidak diperlukan (pencatatan).
@@ -154,6 +154,51 @@ silang antar-modul, bentuk, probe query, pencabutan, kunci evidence kosong. Suit
 - Laporan PDF berformat resmi buatan server, laporan terjadwal/email, dashboard lintas unit.
 - Ekspor XLSX, impor CSV, backup/restore JSON.
 - Perubahan endpoint lama dan backend Go selain migrasi + seed.
+
+## Hasil implementasi (2026-11-24)
+
+- **Migrasi 073** sesuai §4. Gladi di DB lokal (dump `pg_dump` lebih dulu): 21/21 uji CHECK lulus; uji rambatan
+  `TRUNCATE sdl_urmin_registry CASCADE` mengosongkan `sdl_surat_antar` tetapi **`sdl_sumda_arsip` utuh** (2 `surat_id`
+  menjadi yatim) — keputusan tanpa FK terbukti. `go test` (build image Go) hijau; Go start normal di DB ber-073; seed Go ↔
+  Express identik (13 role).
+- **Express:** `arsip.js`, `csv.js`, `ekspor.js`, `laporan.js`; aditif `personel.js` (`item.arsip`, `totals.arsipRetensi30`,
+  `proyeksiPensiunSql` — string dashboard identik, diuji) dan `kinerja.js` (`export boleh`).
+- **Uji:** `verify/r5h32-sumda-arsip-laporan.js` **140 OK / 0 gagal**; regresi `verify/r5h27-*` 101 OK, `verify/r5h31-*`
+  104 OK. Suite Express **28/28** (`x7_r5h32_sumda_arsip_laporan_guard`). Uji mutasi 1–5 (§7): masing-masing **hanya x7
+  merah**, berkas dipulihkan (diff 0).
+- **Frontend:** `SumdaArsipR5H32.tsx`, `SumdaLaporanR5H32.tsx`, `SumdaR5H32.css`; R5H27 (nav, kartu "Arsip retensi ≤ 30 hari",
+  bagian "Arsip dokumen" di detail personel); `App.tsx` (dua modul, cabang `unit.id==='sumda'`). `npm run build` hijau.
+  Demo browser (Edge): op mencatat arsip TERBATAS dari surat masuk `[UJI]` yang sudah diterima + PDF → staf tidak
+  melihatnya → Kasubbag menginaktifkan, mengunggah BA, memusnahkan → Kabag membuka laporan (blok kinerja ada, 10 tombol
+  unduh) dan mengunduh `sumda-arsip-20261124.csv` (BOM, `;`) → staf: tanpa blok kinerja dan tanpa panel unduh → 390 px
+  tanpa scroll horizontal → cetak menyembunyikan header/sidebar/footer/tombol/panel unduh.
+  Data demo yang tertinggal di DB lokal: surat `[UJI] Pemberitahuan SK pensiun personel` dan arsipnya (Musnah).
+
+### Menyimpang dari rencana
+
+1. **Urutan ekspor: audit → header → kirim** (rencana §6: header → audit). Nama berkas selalu ASCII dari daftar putih
+   modul + tanggal, jadi `setHeader` tidak bisa melempar setelah audit (alasan urutan header-dulu R5H28 S1 tidak berlaku),
+   dan dengan audit lebih dulu kegagalan audit dijawab 503 JSON bersih tanpa header `attachment` yang sudah terpasang.
+2. **`kinerja.js` hanya mengekspor `boleh`**, bukan `TAMPAK`: ekspor kinerja menyaring dengan `boleh` (lebih ketat dari
+   `TAMPAK`), dan blok kinerja analitik hanya untuk Rk sehingga tidak butuh penyamaran.
+3. **Uji akun tanpa Ra/Ri/Rk/Xa dipindah ke x7.** Verify memakai empat akun seed yang semuanya memegang `arsip.read`;
+   role uji (Ra-saja, tanpa Ps, pola Kabag tanpa Ri, E tanpa Xa/Rk, tanpa Ra) dibuat di DB sekali pakai suite keamanan.
+   Batas 10.001 baris (413) juga hanya diuji di x7.
+4. **Uji batas tahun WIB 31 Des (rencana §7 butir 0)** tidak dibuat: ringkasan memakai `HARI_INI` langsung (tanpa parameter
+   stempel). Yang diuji: tahun bawaan = tahun WIB hari ini, proyeksi dimulai bulan WIB, dan rumus retensi di batas hari.
+5. **Lampiran di layar:** dua bagian (Dokumen, Berita acara pemusnahan) masing-masing menampilkan "/10" karena batas 10
+   berlaku gabungan; tombol unggah hilang bila kuota gabungan habis (server tetap menolak 409 `batas_lampiran`).
+
+Tidak ada endpoint beku yang berubah; `DEVIATIONS.md` tidak perlu entri baru.
+
+### Sisa uji untuk /verifikasi
+
+- `bash scripts/security-test-r2d5.sh` (suite Go; 073 ter-embed) — belum dijalankan di sesi implementasi.
+- `npm run verify` Express + verify `r5h28`, `r5h29`, `r5h30` (regresi; `r5h27`, `r5h31`, `r5h32` sudah).
+- Harness golden: 127 `/admin/permissions` dan 128 `/admin/roles` berubah karena 073 → **rekam ulang oleh pemilik**.
+- CLAUDE.md (untuk pemilik): 126 tabel dari migrasi, 73 berkas SQL (`:186`, `:206-207`), suite Express 28/28 dengan
+  x1–x7 (`:130-131`), "R5H11–R5H32" (`:20`).
+- Deploy: centang **"Izinkan migrasi"** (073); rebuild `api`, `api-express`, `frontend`; cek `SDL_EVIDENCE_KEY` produksi.
 
 ## Rencana Implementasi
 
