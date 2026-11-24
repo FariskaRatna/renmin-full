@@ -6,6 +6,7 @@ import { parseGoInt, respond } from '../subbagren/shared.js'
 import { CUTI_HARI_INI_SQL, cutiTahunIni } from './cuti.js'
 import { riwayatDiklatPersonel } from './diklat.js'
 import { LAYANAN_MENUNGGU_SQL, kesejahteraanPersonel } from './kesejahteraan.js'
+import { PEMBINAAN_LEWAT_TENGGAT_SQL, kinerjaPersonel } from './kinerja.js'
 import { KOMPETENSI_60_SQL, kompetensiPersonel } from './kompetensi.js'
 import { GOLONGAN_PNS, HARI_INI, HttpError, UUID_RE, hariDari, body, cekPangkat, idParam, makeHandle, permit, pilihan, tanggal, teks } from './umum.js'
 
@@ -220,6 +221,8 @@ export function createSumdaPersonelRouter({ pool }) {
     item.kompetensi = await kompetensiPersonel(pool, id)
     item.cutiTahunIni = await cutiTahunIni(pool, id) // R5H30 K20/K41 (aditif)
     item.riwayatKesejahteraan = await kesejahteraanPersonel(pool, id)
+    // R5H31 K16 (aditif): isi kinerja hanya untuk pencatat/kinerja.read — disamarkan di SQL.
+    item.kinerja = await kinerjaPersonel(pool, id, req.actor, await can(req.actor, 'subbagsumda.kinerja.read'))
     respond(res, 200, { item })
   }))
 
@@ -400,6 +403,7 @@ export function createSumdaDashboardRouter({ pool }) {
         kompetensiKedaluwarsa60: (await pool.query(KOMPETENSI_60_SQL)).rows[0].n, // R5H29 K18/K31 (aditif)
         cutiHariIni: (await pool.query(CUTI_HARI_INI_SQL)).rows[0].n, // R5H30 K21/K40 (aditif)
         layananMenunggu: Number((await pool.query(LAYANAN_MENUNGGU_SQL)).rows[0].n),
+        pembinaanLewatTenggat: (await pool.query(PEMBINAAN_LEWAT_TENGGAT_SQL)).rows[0].n, // R5H31 K15/K33 (aditif)
       },
       proyeksi,
       alertTerdekat,
