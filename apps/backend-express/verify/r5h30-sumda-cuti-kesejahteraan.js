@@ -214,9 +214,10 @@ async function main() {
     const pK = await personel()
     const ck = (await cuti(op, pK.id, 'SAKIT', '2026-11-24', '2026-11-24')).body.item
     const ckOk = await disetujui(C, ck)
-    const n = async (ts) => (await sql.query(`SELECT n FROM (${cutiHariIniSql(hariDari('$1'))}) x`, [ts])).rows[0].n
+    // Dibatasi ke personel uji ini (kalimat WHERE rumus asli + satu syarat), supaya cuti lain di database tidak ikut terhitung.
+    const n = async (ts) => (await sql.query(`SELECT n FROM (${cutiHariIniSql(hariDari('$1'))} AND c.personel_id=$2::uuid) x`, [ts, pK.id])).rows[0].n
     const nWib = await n('2026-11-23T17:00:00Z'); const nUtcSebelum = await n('2026-11-23T16:59:59Z')
-    check('cutiHariIni menghitung 24 Nov mulai 00:00 WIB, bukan UTC', nWib === nUtcSebelum + 1, `${nUtcSebelum}→${nWib}`)
+    check('cutiHariIni menghitung 24 Nov mulai 00:00 WIB, bukan UTC', nUtcSebelum === 0 && nWib === 1, `${nUtcSebelum}→${nWib}`)
     void ckOk
     const kal = await call(kabag, 'GET', `${C}/kalender?bulan=2026-11`)
     const h24 = kal.body?.hari?.find((h) => h.tanggal === '2026-11-24')
