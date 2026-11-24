@@ -1,5 +1,5 @@
 import { parsePayload } from '../../http/payload.js'
-import { fail } from '../subbagren/shared.js'
+import { fail, respond } from '../subbagren/shared.js'
 
 /**
  * Helper bersama modul Subbagsumda (R5H27 Master Personel, R5H28 Karier & Mutasi).
@@ -46,8 +46,21 @@ const PERMIT_SQL = `SELECT EXISTS(
      AND NOT EXISTS(SELECT 1 FROM sdl_user_roles sr WHERE sr.user_id=u.id AND sr.role_key='superadmin')
 ) AS ok`
 
+const EXTRA_GALAT = ['id']
+
+/**
+ * Review R5H30 S2: syarat maker-checker "pernah mengubah" — pemutus tidak boleh pernah mengubah isian atau
+ * lampiran pengajuan ini (bukan hanya pengubah TERAKHIR). Dibaca dari audit yang ditulis dalam transaksi
+ * yang sama dengan perubahannya. `subject`/`actor` adalah nomor parameter SQL; subject dibandingkan lowercase
+ * karena id di URL boleh berhuruf besar.
+ */
+export const pernahMengubahSql = (type, subject, actor) => `EXISTS(SELECT 1 FROM sdl_audit_events a
+  WHERE a.actor_id=${actor}::uuid AND a.subject_type='${type}' AND lower(a.subject_id)=${subject}::text
+    AND a.event_key IN ('${type}.update','${type}.lampiran.add','${type}.lampiran.delete'))`
+
 export class HttpError extends Error {
-  constructor(status, code) { super(code); this.status = status; this.code = code }
+  /** `extra` (R5H30 K35) ikut ke badan galat di samping `error`, mis. `{id}` pada 409 pengajuan_ganda. */
+  constructor(status, code, extra = null) { super(code); this.status = status; this.code = code; this.extra = extra }
 }
 
 /**
@@ -60,7 +73,13 @@ export function makeHandle(unik = {}) {
       try {
         await fn(req, res)
       } catch (error) {
-        if (error instanceof HttpError) { fail(res, error.status, error.code); return }
+        if (error instanceof HttpError) {
+          // Review R5H30 C7: hanya kunci daftar putih yang boleh ikut ke badan galat.
+          const extra = error.extra ? Object.fromEntries(Object.entries(error.extra).filter(([k]) => EXTRA_GALAT.includes(k))) : null
+          if (extra && Object.keys(extra).length) respond(res, error.status, { ...extra, error: error.code })
+          else fail(res, error.status, error.code)
+          return
+        }
         if (error?.code === '23505') { fail(res, 409, unik[error.constraint] ?? 'duplicate'); return }
         if (error?.code === '23514' || error?.code === '23503') { fail(res, 400, 'invalid_input'); return }
         fail(res, 503, 'database_unavailable')

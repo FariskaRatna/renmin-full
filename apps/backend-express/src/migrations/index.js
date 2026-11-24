@@ -119,6 +119,7 @@ export const MANIFEST = [
   'sql/068_sumda_personel_pensiun.sql',
   'sql/069_sumda_karier_mutasi.sql',
   'sql/070_sumda_diklat_kompetensi.sql',
+  'sql/071_sumda_cuti_kesejahteraan.sql',
 ]
 
 /**

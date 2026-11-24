@@ -32,6 +32,8 @@ import SumdaR5B from './SumdaR5B'
 import SumdaPersonelR5H27 from './SumdaPersonelR5H27'
 import SumdaKarierR5H28 from './SumdaKarierR5H28'
 import SumdaDiklatR5H29 from './SumdaDiklatR5H29'
+import SumdaCutiR5H30 from './SumdaCutiR5H30'
+import SumdaKesejahteraanR5H30 from './SumdaKesejahteraanR5H30'
 import BinfungR5C from './BinfungR5C'
 import UrminR5D from './UrminR5D'
 import SmartUnitDashboard from './SmartUnitDashboard'
@@ -41,7 +43,7 @@ type Theme = 'light' | 'dark'
 // Server menolak proof CAPTCHA (captcha_invalid): kedaluwarsa atau sudah dipakai.
 class CaptchaRejected extends Error { constructor(){ super('CAPTCHA kedaluwarsa atau sudah dipakai. Verifikasi lagi.') } }
 type Screen = { view: 'portal' | 'executive' | 'arahan' | 'executive' | 'inbox' | 'tasks' | 'workspace' | 'roadmap' | 'security' | 'roles' | 'users' | 'master' | 'delegations' | 'profile' | 'login-preview'; unit?: UnitKey; menu?: string; tab?: string; recordID?: string; create?: boolean; sub?: RenSub }
-type IconName = 'grid'|'inbox'|'send'|'clipboard'|'calendar'|'archive'|'chart'|'users'|'book'|'file'|'fileCheck'|'layers'|'target'|'shield'|'folder'|'package'|'wrench'|'graduation'|'search'|'arrow'|'back'|'chevron'|'menu'|'x'|'sun'|'moon'|'bell'|'user'|'lock'|'clock'|'check'|'refresh'|'activity'|'database'|'settings'|'eye'|'list'|'info'|'external'|'key'|'mail'|'plus'
+type IconName = 'grid'|'inbox'|'send'|'clipboard'|'calendar'|'archive'|'chart'|'users'|'book'|'file'|'fileCheck'|'layers'|'target'|'shield'|'folder'|'package'|'wrench'|'graduation'|'search'|'arrow'|'back'|'chevron'|'menu'|'x'|'sun'|'moon'|'bell'|'user'|'lock'|'clock'|'check'|'refresh'|'activity'|'database'|'settings'|'eye'|'list'|'info'|'external'|'key'|'mail'|'plus'|'handshake'
 type UnitKey = 'urmin' | 'ren' | 'sumda' | 'binfung'
 // SUBBAGREN dibagi dua ruang kerja. Klik SUBBAGREN membuka halaman pilihan
 // dulu; modul di sidebar hanya yang termasuk ruang kerja yang dipilih.
@@ -78,6 +80,7 @@ const icons: Record<IconName, ReactNode> = {
   package:<><path d="m12 2 9 5-9 5-9-5zM3 7v10l9 5 9-5V7M12 12v10"/></>,
   wrench:<path d="M15 4a6 6 0 0 0-7 8l-5 5a3 3 0 0 0 4 4l5-5a6 6 0 0 0 8-7l-5 5-4-4z"/>,
   graduation:<><path d="m2 9 10-5 10 5-10 5zM6 11v6c3 3 9 3 12 0v-6M22 9v8"/></>,
+  handshake:<><path d="m11 17 2 2a1 1 0 1 0 3-3"/><path d="m14 14 2.5 2.5a1 1 0 1 0 3-3l-3.88-3.88a3 3 0 0 0-4.24 0l-.88.88a1 1 0 1 1-3-3l2.81-2.81a5.79 5.79 0 0 1 7.06-.87l.47.28a2 2 0 0 0 1.42.25L21 4"/><path d="m21 3 1 11h-2M3 3 2 14l6.5 6.5a1 1 0 1 0 3-3M3 4h8"/></>,
   search:<><circle cx="11" cy="11" r="7"/><path d="m16 16 5 5"/></>,
   arrow:<path d="M5 12h14m-6-6 6 6-6 6"/>,
   back:<path d="M19 12H5m6-6-6 6 6 6"/>,
@@ -154,6 +157,8 @@ const units: Unit[] = [
     {id:'pensiun',title:'Monitoring Pensiun',icon:'clock',description:'Alert otomatis H-60, H-30, H-14, H-7, dan jatuh tempo berdasarkan tanggal pensiun.',columns:['Personel','Unit Kerja','Tanggal Pensiun','Tahap','Tinjau']},
     {id:'karier',title:'Karier & Mutasi',icon:'file',description:'Usulan kenaikan pangkat (UKP), kenaikan gaji berkala (KGB), mutasi, dan penyesuaian jabatan.',columns:['Personel','Jenis','Usulan','Tanggal','Status']},
     {id:'diklat',title:'Diklat & Kompetensi',icon:'graduation',description:'Kegiatan diklat, peserta dan hasilnya, serta kompetensi/sertifikat personel dengan alert masa berlaku.',columns:['Kegiatan','Jenis','Tanggal','Peserta','Status']},
+    {id:'cuti',title:'Cuti & Perizinan',icon:'calendar',description:'Pengajuan cuti dan izin personel, jatah cuti tahunan, persetujuan Kasubbag, dan kalender ketidakhadiran.',columns:['Personel','Jenis','Tanggal','Hari','Status']},
+    {id:'kesejahteraan',title:'Kesejahteraan',icon:'handshake',description:'Layanan persiapan pensiun, MPP, ASABRI, kartu/identitas, dan layanan personel lain beserta tindak lanjutnya.',columns:['Personel','Layanan','Target','Status']},
     {id:'inventaris',title:'Inventaris & BMN',icon:'package',description:'Barang milik negara, kondisi dan penanggung jawab.',columns:['Kode Aset','Kategori','Kondisi','Lokasi','Status']},
     {id:'pemeliharaan',title:'Pemeliharaan Logistik',icon:'wrench',description:'Permohonan dan monitoring pemeliharaan.',columns:['Aset','Tindakan','Tanggal','Target','Status']}
   ]},
@@ -600,6 +605,8 @@ function App() {
           : unit.id==='sumda'&&chosenModule?.id==='karier' ? <SumdaKarierR5H28 key={`karier:${effectiveScreen.recordID??''}`} initialID={effectiveScreen.recordID} userId={account.id}/>
           : unit.id==='sumda'&&(chosenModule?.id==='personel'||chosenModule?.id==='pensiun') ? <SumdaPersonelR5H27 key={`${chosenModule.id}:${effectiveScreen.recordID??''}`} mode={chosenModule.id==='pensiun'?'pensiun':'master'} initialID={effectiveScreen.recordID} onNavigate={(menu,o)=>navigate({view:'workspace',unit:'sumda',menu,recordID:o?.recordID,tab:o?.tab})} legacy={<SumdaR5B kind="personel" openFiles={recordID=>navigate({view:'workspace',unit:'sumda',menu:'__unitwork',recordID})}/>}/>
           : unit.id==='sumda'&&chosenModule?.id==='diklat' ? <SumdaDiklatR5H29 key={`diklat:${effectiveScreen.tab??''}:${effectiveScreen.recordID??''}`} tab={effectiveScreen.tab} onTab={t=>navigate({view:'workspace',unit:'sumda',menu:'diklat',tab:t})} initialID={effectiveScreen.recordID} userId={account.id} legacy={<SumdaR5B kind="pendidikan" openFiles={recordID=>navigate({view:'workspace',unit:'sumda',menu:'__unitwork',recordID})}/>}/>
+          : unit.id==='sumda'&&chosenModule?.id==='cuti' ? <SumdaCutiR5H30 key={`cuti:${effectiveScreen.recordID??''}`} tab={effectiveScreen.tab} onTab={t=>navigate({view:'workspace',unit:'sumda',menu:'cuti',tab:t})} initialID={effectiveScreen.recordID} userId={account.id}/>
+          : unit.id==='sumda'&&chosenModule?.id==='kesejahteraan' ? <SumdaKesejahteraanR5H30 key={`kesejahteraan:${effectiveScreen.recordID??''}`} initialID={effectiveScreen.recordID} userId={account.id}/>
           : unit.id==='sumda'&&chosenModule?.id==='inventaris' ? <SumdaR5B key="inventaris" kind="inventaris" openFiles={recordID=>navigate({view:'workspace',unit:'sumda',menu:'__unitwork',recordID})}/>
           : unit.id==='urmin'&&['surat-keluar','agenda','arsip'].includes(chosenModule?.id||'') ? <UrminR5D key={chosenModule?.id} initialID={effectiveScreen.recordID} initialCreate={effectiveScreen.create} kind={({'surat-keluar':'surat_keluar',agenda:'agenda',arsip:'arsip'} as Record<string,'surat_keluar'|'agenda'|'arsip'>)[chosenModule!.id]} openFiles={recordID=>navigate({view:'workspace',unit:'urmin',menu:'__unitwork',recordID})} isKabagrenmin={isKabagrenmin}/>
           : unit.id==='binfung'&&['sop','pid','rb','abk','pembinaan','evaluasi'].includes(chosenModule?.id||'') ? <BinfungR5C key={chosenModule?.id} kind={chosenModule!.id as 'sop'|'pid'|'rb'|'abk'|'pembinaan'|'evaluasi'} openFiles={recordID=>navigate({view:'workspace',unit:'binfung',menu:'__unitwork',recordID})}/>

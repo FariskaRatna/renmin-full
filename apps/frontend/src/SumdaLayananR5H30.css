@@ -1,0 +1,29 @@
+/* R5H30: Cuti & Perizinan + Kesejahteraan. Memakai kelas R5H27 (sdl-sumda__*), R5H28 (sdl-karier__*) dan dialog sdl-progar__*. */
+.sdl-layanan__ringkas{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--soft,transparent)}
+.sdl-layanan__ringkas .is-lewat{color:#9b2c22}
+.sdl-layanan__peringatan{color:#8a5a06}
+.sdl-layanan__cek{display:flex!important;flex-direction:row!important;align-items:center;gap:8px;font-size:13px;font-weight:600}
+.sdl-layanan__terapkan{display:grid;gap:8px;margin:8px 0}
+.sdl-layanan__kalender{padding:12px;display:grid;gap:10px;min-width:0}
+.sdl-layanan__bulan{min-width:110px;text-align:center}
+.sdl-layanan__legenda{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--muted)}
+.sdl-layanan__legenda i{display:inline-block;width:12px;height:12px;border-radius:3px}
+.sdl-layanan__legenda i.is-disetujui,.sdl-layanan__cuti.is-disetujui{background:#e3f4ec;color:#1d6a48;border:1px solid #b5dfc9}
+.sdl-layanan__legenda i.is-diproses,.sdl-layanan__cuti.is-diproses{background:transparent;color:#8a5a06;border:1px dashed #d9a441}
+.sdl-layanan__grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
+.sdl-layanan__hari{font-size:11px;font-weight:750;color:var(--muted);text-align:center;padding:2px 0}
+.sdl-layanan__sel{min-height:84px;border:1px solid var(--border);border-radius:8px;padding:4px;display:flex;flex-direction:column;gap:3px;min-width:0;background:var(--card)}
+.sdl-layanan__sel.is-kosong{border:none;background:transparent}
+.sdl-layanan__sel.is-libur{background:var(--soft,#f6f7f9)}
+.sdl-layanan__sel.is-hariini{outline:2px solid var(--accent,#956db9);outline-offset:-1px}
+.sdl-layanan__tgl{font-size:11px;font-weight:750;color:var(--muted)}
+.sdl-layanan__cuti{font:inherit;font-size:11px;text-align:left;border-radius:5px;padding:1px 5px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+@media (max-width:640px){
+  .sdl-layanan__sel{min-height:56px;padding:2px}
+  .sdl-layanan__cuti{font-size:10px;padding:0 3px}
+}
+:root[data-theme=dark] .sdl-layanan__legenda i.is-disetujui,:root[data-theme=dark] .sdl-layanan__cuti.is-disetujui{background:#173a2b;color:#8fd6b0;border-color:#2b5c45}
+:root[data-theme=dark] .sdl-layanan__legenda i.is-diproses,:root[data-theme=dark] .sdl-layanan__cuti.is-diproses{color:#f0c46c;border-color:#8a6a2a}
+:root[data-theme=dark] .sdl-layanan__sel.is-libur{background:#1a2638}
+:root[data-theme=dark] .sdl-layanan__ringkas .is-lewat{color:#f0a39b}
+:root[data-theme=dark] .sdl-layanan__peringatan{color:#f0c46c}

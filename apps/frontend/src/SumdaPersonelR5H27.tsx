@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNo
 import { Pager, type PagerState } from './PaginationR5H5'
 import { confirmDialog, showToast } from './UIFeedback'
 import { ApiError, BULAN, Shade, TidakTersedia, UUID_RE, makeApi, tgl, waktu } from './SumdaBersama'
+import { JENIS_CUTI } from './SumdaCutiR5H30'
+import { JENIS_LAYANAN, kesejahteraanCaps, prosesPensiun } from './SumdaKesejahteraanR5H30'
 import './ProgarR5H11.css'
 import './SumdaPersonelR5H27.css'
 
@@ -24,6 +26,8 @@ type Status = 'Aktif' | 'MPP' | 'Pensiun' | 'Nonaktif'
 type RiwayatKarier = { id: string; jenis: string; status: string; tanggalUsulan: string; tanggalEfektif: string; ringkas: string }
 type RiwayatDiklat = { diklatId: string; pesertaId: string; nama: string; jenis: string; status: string; tanggalMulai: string; tanggalSelesai: string; hasil: string; nomorSertifikat: string }
 type KompetensiRingkas = { id: string; nama: string; kategori: string; nomor: string; berlakuSampai: string; sisaHari: number | null; tahap: 'H-60' | 'H-30' | 'KEDALUWARSA' | null }
+type CutiTahunIni = { tahun: number; jatah: number; terpakai: number; dalamProses: number; sisa: number; items: { id: string; jenis: string; status: string; tanggalMulai: string; tanggalSelesai: string; tanggalKembali: string; jumlahHari: number }[] }
+type LayananRingkas = { id: string; jenis: string; status: string; targetSelesai: string; nomorReferensi: string; selesaiAt: string | null }
 type Personel = {
   id: string; nrp: string; nama: string; jenis: '' | 'Polri' | 'PNS'; pangkat: string; pangkatLabel: string
   jabatan: string; unitKerja: string; tmtDinas: string; tanggalPensiun: string; status: Status; catatan: string
@@ -31,17 +35,19 @@ type Personel = {
   riwayatKarier?: RiwayatKarier[]
   riwayatDiklat?: RiwayatDiklat[]
   kompetensi?: KompetensiRingkas[]
+  cutiTahunIni?: CutiTahunIni
+  riwayatKesejahteraan?: LayananRingkas[]
 }
 type Alert = { personel: Personel; sisaHari: number; tahap: Tahap; ditinjau: { oleh: string; pada: string } | null }
 type Caps = { canRead: boolean; canCreate: boolean; canUpdate: boolean; canArchive: boolean; canReview: boolean }
 type Aktivitas = { jenis: string; personelId: string | null; personelNama: string | null; oleh: string; pada: string; rincian: Record<string, unknown> }
 type Dashboard = {
-  totals: { personel: number; aktif: number; mpp: number; alert: number; belumDitinjau: number; belumLengkap: number; enamBulan: number; karierMenunggu?: number; kompetensiKedaluwarsa60?: number }
+  totals: { personel: number; aktif: number; mpp: number; alert: number; belumDitinjau: number; belumLengkap: number; enamBulan: number; karierMenunggu?: number; kompetensiKedaluwarsa60?: number; cutiHariIni?: number; layananMenunggu?: number }
   proyeksi: { bulan: string; jumlah: number }[]; alertTerdekat: Alert[]; terdekat: Personel[]; aktivitas: Aktivitas[]
 }
 type Rank = { code: string; shortName: string; fullName: string; group: string }
 type Mode = 'dashboard' | 'master' | 'pensiun'
-export type SumdaNav = (menu: 'personel' | 'pensiun' | 'karier' | 'diklat', opts?: { recordID?: string; tab?: string }) => void
+export type SumdaNav = (menu: 'personel' | 'pensiun' | 'karier' | 'diklat' | 'cuti' | 'kesejahteraan', opts?: { recordID?: string; tab?: string }) => void
 
 const STATUS: Status[] = ['Aktif', 'MPP', 'Pensiun', 'Nonaktif']
 const TAHAP: { key: Tahap; label: string; rentang: string }[] = [
@@ -103,7 +109,7 @@ export default function SumdaPersonelR5H27({ mode, initialID, onNavigate, legacy
   }
   return mode === 'dashboard' ? <DashboardView onNavigate={onNavigate} onLost={lost} />
     : mode === 'pensiun' ? <PensiunView onNavigate={onNavigate} onLost={lost} />
-      : <MasterView initialID={initialID} onLost={lost} />
+      : <MasterView initialID={initialID} onLost={lost} onNavigate={onNavigate} />
 }
 
 /* --------------------------------------------------------------- Dashboard */
@@ -128,6 +134,10 @@ function DashboardView({ onNavigate, onLost }: { onNavigate: SumdaNav; onLost: (
         <small><button type="button" className="sdl-sumda__link" onClick={() => onNavigate('karier')}>Karier &amp; Mutasi</button></small></div>}
       {t.kompetensiKedaluwarsa60 !== undefined && <div className={t.kompetensiKedaluwarsa60 ? 'is-attention' : ''}><dt>Kompetensi kedaluwarsa ≤ 60 hari</dt><dd>{t.kompetensiKedaluwarsa60}</dd>
         <small><button type="button" className="sdl-sumda__link" onClick={() => onNavigate('diklat', { tab: 'kompetensi' })}>Diklat &amp; Kompetensi</button></small></div>}
+      {t.cutiHariIni !== undefined && <div><dt>Sedang cuti hari ini</dt><dd>{t.cutiHariIni}</dd>
+        <small><button type="button" className="sdl-sumda__link" onClick={() => onNavigate('cuti', { tab: 'kalender' })}>Kalender cuti</button></small></div>}
+      {t.layananMenunggu !== undefined && <div className={t.layananMenunggu ? 'is-attention' : ''}><dt>Cuti &amp; layanan menunggu keputusan</dt><dd>{t.layananMenunggu}</dd>
+        <small><button type="button" className="sdl-sumda__link" onClick={() => onNavigate('cuti')}>Cuti</button> · <button type="button" className="sdl-sumda__link" onClick={() => onNavigate('kesejahteraan')}>Kesejahteraan</button></small></div>}
     </dl>
 
     <div className="sdl-sumda__split">
@@ -196,7 +206,15 @@ function aktivitasTeks(a: Aktivitas) {
 
 type ListResp = { items: Personel[]; total: number; page: number; size: number; unitKerja: string[] }
 
-function MasterView({ initialID, onLost }: { initialID?: string; onLost: () => void }) {
+/** R5H30 K34: hak kelola layanan kesejahteraan, untuk tombol "Proses Pensiun". */
+function useKesejahteraanManage() {
+  const [boleh, setBoleh] = useState(false)
+  useEffect(() => { void kesejahteraanCaps().then(c => setBoleh(Boolean(c?.canManage))) }, [])
+  return boleh
+}
+
+function MasterView({ initialID, onLost, onNavigate }: { initialID?: string; onLost: () => void; onNavigate: SumdaNav }) {
+  const bolehProses = useKesejahteraanManage()
   const caps = useCaps()
   const [q, setQ] = useState('')
   const [qLive, setQLive] = useState('')
@@ -283,23 +301,27 @@ function MasterView({ initialID, onLost }: { initialID?: string; onLost: () => v
       </table></div>
       <Pager pager={pager} label="personel" />
     </div>
-    {detail && <DetailDialog p={detail} caps={caps} onClose={() => setDetail(null)} onEdit={() => { setForm({ item: detail }); setDetail(null) }} onArchive={() => void arsip(detail)} />}
+    {detail && <DetailDialog p={detail} caps={caps} onClose={() => setDetail(null)} onEdit={() => { setForm({ item: detail }); setDetail(null) }} onArchive={() => void arsip(detail)}
+      onProsesPensiun={bolehProses && ['Aktif', 'MPP'].includes(detail.status) ? async () => { const id = await prosesPensiun(detail); if (id) onNavigate('kesejahteraan', { recordID: id }) } : undefined} />}
     {form && <PersonelForm item={form.item} onClose={() => setForm(null)} onSaved={(saved, conflict) => { setForm(null); if (!conflict) { showToast(form.item ? 'Perubahan disimpan.' : 'Personel ditambahkan.'); setDetail(saved) } void load() }} />}
   </section>
 }
 
 const JENIS_KARIER_LABEL: Record<string, string> = { UKP: 'UKP', KGB: 'KGB', MUTASI: 'Mutasi', PENYESUAIAN_JABATAN: 'Penyesuaian jabatan' }
 
-function DetailDialog({ p, caps, onClose, onEdit, onArchive }: { p: Personel; caps: Caps | null; onClose: () => void; onEdit: () => void; onArchive: () => void }) {
+function DetailDialog({ p, caps, onClose, onEdit, onArchive, onProsesPensiun }: { p: Personel; caps: Caps | null; onClose: () => void; onEdit: () => void; onArchive: () => void; onProsesPensiun?: () => void }) {
   // R5H28 K13/K28: riwayat karier hanya ada di GET /personel/:id, jadi dimuat setiap dialog dibuka.
   // R5H29 K18: riwayat diklat & kompetensi ikut di respons yang sama.
   const [riwayat, setRiwayat] = useState<RiwayatKarier[] | null>(null)
   const [diklat, setDiklat] = useState<RiwayatDiklat[]>([])
   const [kompetensi, setKompetensi] = useState<KompetensiRingkas[]>([])
+  const [cuti, setCuti] = useState<CutiTahunIni | null>(null)
+  const [layanan, setLayanan] = useState<LayananRingkas[]>([])
   useEffect(() => {
     if (!UUID_RE.test(p.id)) return
     api<{ item: Personel }>(`/personel/${encodeURIComponent(p.id)}`).then(r => {
       setRiwayat(r.item.riwayatKarier ?? []); setDiklat(r.item.riwayatDiklat ?? []); setKompetensi(r.item.kompetensi ?? [])
+      setCuti(r.item.cutiTahunIni ?? null); setLayanan(r.item.riwayatKesejahteraan ?? [])
     }).catch(() => setRiwayat([]))
   }, [p.id])
   const rows: [string, ReactNode][] = [
@@ -334,10 +356,23 @@ function DetailDialog({ p, caps, onClose, onEdit, onArchive }: { p: Personel; ca
         : <ol>{kompetensi.map(k => <li key={k.id}><span className="sdl-sumda__mono">{k.berlakuSampai ? tgl(k.berlakuSampai) : 'Tanpa batas'}</span>
           <span>{k.nama} · {k.kategori}</span><span className={k.tahap ? 'sdl-sumda__flag' : 'sdl-sumda__muted'}>{k.tahap === 'KEDALUWARSA' ? 'Kedaluwarsa' : k.tahap ?? ''}</span></li>)}</ol>}
     </section>}
+    {cuti && <section className="sdl-sumda__riwayat" aria-label="Cuti tahun ini">
+      <strong>Cuti {cuti.tahun} · jatah tahunan terpakai {cuti.terpakai} dari {cuti.jatah}, sisa {cuti.sisa}{cuti.dalamProses ? ` (${cuti.dalamProses} hari dalam proses)` : ''}</strong>
+      {cuti.items.length === 0 ? <p className="sdl-sumda__muted">Belum ada cuti tahun ini.</p>
+        : <ol>{cuti.items.map(c => <li key={c.id}><span className="sdl-sumda__mono">{tgl(c.tanggalMulai)}</span>
+          <span>{JENIS_CUTI[c.jenis] ?? c.jenis} · {c.jumlahHari} hari</span><span className="sdl-sumda__muted">{c.status}</span></li>)}</ol>}
+    </section>}
+    {riwayat !== null && <section className="sdl-sumda__riwayat" aria-label="Layanan kesejahteraan">
+      <strong>Layanan kesejahteraan</strong>
+      {layanan.length === 0 ? <p className="sdl-sumda__muted">Belum ada layanan.</p>
+        : <ol>{layanan.map(l => <li key={l.id}><span className="sdl-sumda__mono">{l.targetSelesai ? tgl(l.targetSelesai) : '—'}</span>
+          <span>{JENIS_LAYANAN[l.jenis] ?? l.jenis}{l.nomorReferensi ? ` · ${l.nomorReferensi}` : ''}</span><span className="sdl-sumda__muted">{l.status}</span></li>)}</ol>}
+    </section>}
     <footer>
       {caps?.canArchive && <button type="button" className="btn sdl-progar__danger" onClick={onArchive}>Arsipkan</button>}
       <span className="sdl-sumda__grow" />
       <button type="button" className="btn" onClick={onClose}>Tutup</button>
+      {onProsesPensiun && <button type="button" className="btn" onClick={onProsesPensiun}>Proses pensiun</button>}
       {caps?.canUpdate && <button type="button" className="btn primary" onClick={onEdit}>Ubah data</button>}
     </footer>
   </Shade>
@@ -415,6 +450,7 @@ type AlertResp = { ringkas: Record<Tahap, number>; belumDitinjau: number; items:
 
 function PensiunView({ onNavigate, onLost }: { onNavigate: SumdaNav; onLost: () => void }) {
   const caps = useCaps()
+  const bolehProses = useKesejahteraanManage()
   const [filter, setFilter] = useState<Tahap | ''>('')
   const [data, setData] = useState<AlertResp | null>(null)
   const [error, setError] = useState('')
@@ -454,9 +490,9 @@ function PensiunView({ onNavigate, onLost }: { onNavigate: SumdaNav; onLost: () 
         {caps?.canReview && belum.length > 0 && <button type="button" className="btn" disabled={busy} onClick={() => void tinjau(belum)}>Tinjau semua yang tampil ({belum.length})</button>}
       </div>
       <div className="table-scroll"><table className="data-table sdl-sumda__table">
-        <thead><tr><th>Personel</th><th>Unit kerja</th><th className="is-num">Tanggal pensiun</th><th>Tahap</th><th className="is-num">Hitung mundur</th><th>Tinjau</th></tr></thead>
+        <thead><tr><th>Personel</th><th>Unit kerja</th><th className="is-num">Tanggal pensiun</th><th>Tahap</th><th className="is-num">Hitung mundur</th><th>Tinjau</th>{bolehProses && <th>Tindak lanjut</th>}</tr></thead>
         <tbody>
-          {data && data.items.length === 0 && <tr><td colSpan={6} className="sdl-sumda__empty"><strong>Tidak ada alert{filter ? ' pada tahap ini' : ''}.</strong> Personel yang pensiun lebih dari 60 hari lagi belum masuk daftar.</td></tr>}
+          {data && data.items.length === 0 && <tr><td colSpan={bolehProses ? 7 : 6} className="sdl-sumda__empty"><strong>Tidak ada alert{filter ? ' pada tahap ini' : ''}.</strong> Personel yang pensiun lebih dari 60 hari lagi belum masuk daftar.</td></tr>}
           {data?.items.map(a => <tr key={a.personel.id}>
             <td><button type="button" className="sdl-sumda__rowlink" onClick={() => onNavigate('personel', { recordID: a.personel.id })}><NamaSel p={a.personel} /></button></td>
             <td>{a.personel.unitKerja || <span className="sdl-sumda__muted">—</span>}</td>
@@ -467,6 +503,7 @@ function PensiunView({ onNavigate, onLost }: { onNavigate: SumdaNav; onLost: () 
               ? <span className="sdl-sumda__done">Ditinjau<small>{a.ditinjau.oleh} · {waktu(a.ditinjau.pada)}</small></span>
               : caps?.canReview ? <button type="button" className="btn" disabled={busy} onClick={() => void tinjau([a])}>Tandai tinjau</button>
                 : <span className="sdl-sumda__flag">Belum</span>}</td>
+            {bolehProses && <td><button type="button" className="btn" onClick={async () => { const id = await prosesPensiun(a.personel); if (id) onNavigate('kesejahteraan', { recordID: id }) }}>Proses pensiun</button></td>}
           </tr>)}
         </tbody>
       </table></div>
