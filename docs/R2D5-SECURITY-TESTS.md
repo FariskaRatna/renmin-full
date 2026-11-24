@@ -35,7 +35,9 @@ dicabut saat sesi sedang hidup.
   penolakan PDF terenkripsi/rusak → masing-masing hanya x4 merah;
 - (R5H30, 2026-11-24) membuka unduhan lampiran cuti Sakit untuk semua pembaca, menghapus syarat
   "bukan pengubah terakhir" di keputusan cuti, dan menghapus syarat `personel.update` saat menerapkan
-  status dari Kesejahteraan → masing-masing hanya `x5_r5h30_sumda_layanan_guard` merah.
+  status dari Kesejahteraan → masing-masing hanya `x5_r5h30_sumda_layanan_guard` merah;
+- (R5H30 perbaikan review) menghapus syarat "pernah mengubah" di keputusan cuti, lalu terpisah membuka
+  penyamaran catatan cuti Sakit → masing-masing hanya x5 merah.
 
 Keduanya dipulihkan sesudahnya. Suite yang lulus pada percobaan pertama tanpa
 pernah dibuktikan bisa merah tidak membuktikan apa-apa.

@@ -112,8 +112,8 @@ Guard operasional (**O**), validasi strict, `no-store`. Hak: `R` = `subbagsumda.
 |---|---|---|---|
 | GET | `/cuti/capabilities` | O | `{canRead,canManage,canApprove}` |
 | GET | `/cuti` | R | `?q=&status=&jenis=&bulan=YYYY-MM&personelId=&page=&size=` → `{items,total,page,size}` |
-| GET | `/cuti/kalender` | R | `?bulan=YYYY-MM` → `{hari:[{tanggal,items:[{id,personel,jenis,status}]}]}` (K18) |
-| GET | `/cuti/jatah` | R | `?personelId=&tahun=` → `{jatah:12,terpakai,dalamProses,sisa}` (K10) |
+| GET | `/cuti/kalender` | R | `?bulan=YYYY-MM` → `{bulan,hari:[{tanggal,items:[{id,nama,jenis,status}]}],terpotong}` (K18/K39) |
+| GET | `/cuti/jatah` | R | `?personelId=&tahun=` → `{tahun,jatah:12,terpakai,dalamProses,sisa}` (K10) |
 | POST | `/cuti` | Mc | `{personelId,jenis,tanggalMulai,tanggalSelesai,jumlahHari?,catatan}` → 201 `{item,peringatan[]}` |
 | GET | `/cuti/:id` | R | `{item,jatah,lampiran[],riwayat[]}` |
 | PATCH | `/cuti/:id` | Mc | badan penuh + `version`; hanya Diajukan |
@@ -132,8 +132,8 @@ Guard operasional (**O**), validasi strict, `no-store`. Hak: `R` = `subbagsumda.
 Kode galat (pola R5H28): 400 `invalid_body`/`invalid_input`/`invalid_file_type`/`one_file_required`; 413
 `file_too_large`; 403 `access_denied`/`self_review_forbidden`; 404 `not_found`; 409 `version_conflict`/
 `status_tidak_sesuai`/`cuti_bertumpuk`/`pengajuan_ganda`/`personel_tidak_aktif`/`personel_terarsip`/
-`personel_berubah`/`batas_lampiran`; 503 `evidence_encryption_unavailable`/`evidence_integrity_failure`/
-`database_unavailable`. "Melebihi jatah" **bukan** galat (K2).
+`personel_berubah`/`personel_belum_lengkap`/`batas_lampiran`; 503 `evidence_encryption_unavailable`/
+`evidence_integrity_failure`/`database_unavailable`. "Melebihi jatah" **bukan** galat (K2).
 
 ## Migrasi `071_sumda_cuti_kesejahteraan.sql`
 
@@ -142,11 +142,12 @@ identik. Tidak ada salinan data lama.
 
 - `sdl_sumda_cuti`: `personel_id` FK RESTRICT ke `sdl_sumda_personel`, `jenis` CHECK, `tanggal_mulai`/
   `tanggal_selesai` (CHECK selesai ≥ mulai), `tanggal_kembali` (CHECK antara mulai dan selesai), `jumlah_hari`
-  (CHECK ≥ 1), `status` CHECK, catatan, versi, created/updated/decided/selesai by+at, `deleted_at`; CHECK
-  maker-checker `decided_by <> created_by` (R5H28); indeks (personel, tanggal) untuk K11/K18.
+  (CHECK ≥ 1), `status` CHECK, catatan, versi, created/updated/decided/selesai by+at (~~`deleted_at`~~ dibatalkan,
+  temuan 1); CHECK maker-checker `decided_by <> created_by` (R5H28); indeks (personel, tanggal) untuk K11/K18.
 - `sdl_sumda_cuti_riwayat`, `sdl_sumda_cuti_lampiran` (isi wajib `SDL1`, RESTRICT).
 - `sdl_sumda_kesejahteraan`: `jenis` CHECK, `nomor_referensi`, `target_selesai`, status, `diterapkan` JSONB, versi,
-  pelaku; partial unique index satu layanan terbuka per (personel, jenis) (K16).
+  pelaku. ~~Partial unique index satu layanan terbuka per (personel, jenis)~~ — digantikan K43: K16 dijaga di
+  Express dengan kunci personel `FOR NO KEY UPDATE`.
 - `sdl_sumda_kesejahteraan_riwayat`, `sdl_sumda_kesejahteraan_lampiran`.
 - Permission K7 + `role_permissions` ke role BagRenmin yang sudah ada (pola 069).
 - Ditolak checker substring: tanpa `UPDATE␠`/`DELETE FROM`/`;`/`--` di literal. Gladi dari `pg_dump` sebelum commit.
@@ -335,6 +336,7 @@ CREATE TABLE sdl_sumda_kesejahteraan (
  CONSTRAINT sdl_sumda_kesejahteraan_terapkan CHECK (diterapkan IS NULL OR diterapkan = '{}'::jsonb
    OR jenis IN ('PERSIAPAN_PENSIUN','MPP'))
 );
+-- [DIGANTIKAN K43: indeks ini TIDAK dibuat; K16/K37 dijaga di Express dengan kunci personel.]
 -- K16: satu layanan terbuka per (personel, jenis). Bila K37 disetujui, tambahkan "AND jenis <> 'LAINNYA'".
 CREATE UNIQUE INDEX sdl_sumda_kesejahteraan_terbuka_uq ON sdl_sumda_kesejahteraan(personel_id, jenis)
  WHERE status IN ('Diajukan','Diproses','Disetujui');
@@ -398,7 +400,7 @@ produksi mendapat permission lewat INSERT di migrasi.
 
 Tidak ada salinan data, jadi tidak perlu pra-cek data produksi.
 
-Angka CLAUDE.md (pemilik): 116 tabel, 71 berkas SQL, suite Express 26/26.
+Angka CLAUDE.md: 115 tabel dari migrasi (+ `sdl_schema_migrations` milik runner), 71 berkas SQL, suite Express 26/26.
 
 ### 5. Otorisasi
 
@@ -458,7 +460,7 @@ hanya untuk `selesai` cuti, `terapkan` hanya untuk `selesai` kesejahteraan.
   | PATCH cuti | cuti `FOR UPDATE`, lalu personel `FOR NO KEY UPDATE` |
   | `proses`/`setujui`/`tolak` | induk `FOR UPDATE`, lalu personel `FOR SHARE` (cek terarsip) |
   | Selesai | induk `FOR UPDATE`, lalu personel `FOR NO KEY UPDATE` |
-  | POST kesejahteraan | tanpa kunci personel (pola karier; K16 dijaga indeks unik) |
+  | POST kesejahteraan | personel `FOR NO KEY UPDATE`, lalu INSERT (K43: K16 dijaga kunci ini, tanpa indeks unik) |
 
   Arsip dan PATCH personel R5H27 hanya mengunci personel, jadi tidak ada siklus.
 - **Selesai + terapkan (K3/K33)**, satu transaksi: kunci layanan `FOR UPDATE`, lalu personel `FOR NO KEY UPDATE`.
@@ -486,7 +488,7 @@ hanya untuk `selesai` cuti, `terapkan` hanya untuk `selesai` kesejahteraan.
 - `src/modules/subbagsumda/cuti.js` (baru):
   - `createSumdaCutiRouter`, `JENIS_CUTI`, `STATUS_CUTI`.
   - `hariKerja(mulai, selesai)`: fungsi murni atas string tanggal, tanpa zona waktu (K25).
-  - `jatahSql`, `cutiHariIniSql(hari = HARI_INI)` (bisa diuji dengan `hariDari`), `cutiPersonel(db, id)`,
+  - `jatahCuti`, `cutiHariIniSql(hari = HARI_INI)` (bisa diuji dengan `hariDari`), `cutiTahunIni(db, id)`,
     `CUTI_HARI_INI_SQL`.
   - Route: kalender, jatah, CRUD, aksi, lampiran.
 - `src/modules/subbagsumda/kesejahteraan.js` (baru): `createSumdaKesejahteraanRouter`, `JENIS_LAYANAN`, `PETA_TERAPKAN
@@ -529,7 +531,7 @@ hanya untuk `selesai` cuti, `terapkan` hanya untuk `selesai` kesejahteraan.
 
 **Docs:** dokumen ini, `API-CONTRACT.md` (§2), `MIGRATION-PLAN.md:16`, `R5H15-…md:12,106,169` (→ 072),
 `R2D5-SECURITY-TESTS.md:8` (26/26, x5) dan bagian uji mutasi `:32-35`, catatan sesi. Untuk pemilik: CLAUDE.md
-(116 tabel / 71 berkas SQL / 26/26) dan memori R5H15 → 072.
+(115 tabel dari migrasi / 71 berkas SQL / 26/26) dan memori R5H15 → 072.
 
 ### 7. Pengujian
 
@@ -642,9 +644,9 @@ hanya untuk `selesai` cuti, `terapkan` hanya untuk `selesai` kesejahteraan.
 | K32 | Perubahan status atau arsip personel setelah pengajuan | Pensiun/Nonaktif tidak memblokir aksi (pola R5H28 K20/D1). Terarsip: hanya batalkan; cuti dan layanannya tidak tampil di kalender, dashboard, dan jatah |
 | K33 | Terapkan status (K3) | MPP hanya dari Aktif (tanggal pensiun wajib, kalau tidak 409 `personel_belum_lengkap`). Pensiun dari Aktif/MPP. Sudah berstatus target: tidak ditawarkan. Status lain → 409 `personel_tidak_aktif`. Tidak ada syarat tanggal pensiun sudah lewat, hanya catatan di UI |
 | K34 | Tombol "Proses Pensiun" | Hanya untuk personel Aktif/MPP belum terarsip dan pemegang Mk; ada konfirmasi. Target = tanggal pensiun (kosong bila belum diisi). Layanan terbuka → dibuka. Ada yang Selesai dan personel sudah Pensiun → tombol disembunyikan. Selesai tetapi status bukan Pensiun → boleh membuat baru dengan peringatan |
-| K35 | 409 `pengajuan_ganda` membawa `id` | Lewat `HttpError(..., {id})` (aditif di `umum.js`), hanya di POST kesejahteraan. Jalur balapan 23505 tanpa `id`, jadi UI memuat ulang daftar dengan `personelId`+`jenis` |
+| K35 | 409 `pengajuan_ganda` membawa `id` | Lewat `HttpError(..., {id})` (aditif di `umum.js`, kunci daftar putih `id`), hanya di POST kesejahteraan. *(K43: tanpa indeks unik tidak ada jalur 23505; semua POST terserialisasi kunci personel dan selalu membawa `id`.)* |
 | K36 | Lampiran: kapan | Unggah selama Diajukan/Diproses/Disetujui/**Selesai** (surat keterangan atau SK susulan). Hapus oleh pengunggah atau A, hanya sebelum Disetujui. Tambah/hapus menaikkan versi dan `updated_by` |
-| K37 | K16 untuk `LAINNYA` | Tidak berlaku: beberapa "layanan lain" boleh terbuka bersamaan (indeks `AND jenis <> 'LAINNYA'`). Bila pemilik ingin tetap berlaku, indeks dipakai apa adanya |
+| K37 | K16 untuk `LAINNYA` | Tidak berlaku: beberapa "layanan lain" boleh terbuka bersamaan. *(K43: dijaga di kode `kesejahteraan.js`, bukan indeks.)* |
 | K38 | Pembaca tanpa hak lampiran Sakit | `filename: null, dibatasi: true` (nama asli bisa memuat diagnosis); ukuran dan pengunggah tetap tampil |
 | K39 | Batas kalender | Satu bulan per permintaan. Status Diproses (bertanda)/Disetujui/Selesai. Maks. 1000 cuti per bulan, lebih dari itu `terpotong: true`. Hanya nama personel, tanpa NRP |
 | K40 | Angka dashboard | `cutiHariIni` = jumlah personel berbeda yang rentang efektifnya memuat hari ini (Disetujui/Selesai, belum terarsip). `layananMenunggu` = cuti + kesejahteraan berstatus Diproses dengan personel belum terarsip (pelajaran R5H28 S3) |
@@ -694,7 +696,7 @@ unik parsial. Dua aturan ini diuji balapan di verify.
     penambahan K20 tidak tampil untuk mereka. Ini konsisten dengan R5H28/R5H29.
 13. **Rollback sempit** § R5H29 di API-CONTRACT (`:1798-1800`) ditandai usang, dan pola baru memuat `/cuti*` dan
     `/kesejahteraan*`.
-14. **CLAUDE.md** menjadi 116 tabel / 71 berkas SQL / suite Express 26/26. `MIGRATION-PLAN.md:16` menjadi "049–071".
+14. **CLAUDE.md** menjadi 115 tabel dari migrasi / 71 berkas SQL / suite Express 26/26. `MIGRATION-PLAN.md:16` menjadi "049–071".
     R5H15 → 072.
 
 ## Menyimpang dari rencana
@@ -729,3 +731,24 @@ Belum:
 - Deploy: `SDL_EVIDENCE_KEY` produksi valid; **centang "Izinkan migrasi"** (071). Tidak ada salinan data, jadi tidak
   perlu pra-cek data.
 - Paparan ke pengguna; keputusan bisnis yang berubah dikerjakan di kode (K43) tanpa migrasi baru bila struktural tetap.
+
+## Perbaikan hasil review (2026-11-24)
+
+`/review` (migration-guard + security-reviewer): tidak ada temuan wajib di kode; ketujuh aturan migrasi dipatuhi.
+Wajib di dokumen (bagian yang masih memuat rencana sebelum K43) sudah dikoreksi di atas. Atas permintaan pemilik
+("kerjakan sekalian semua") juga dikerjakan:
+
+| # | Temuan | Perbaikan |
+|---|---|---|
+| S1 | Selesai cuti bisa mengubah jumlah hari tanpa pemeriksa | `jumlahHari` saat Selesai hanya bersama `tanggalKembali` dan ≤ jumlah yang disetujui; hitung ulang juga dibatasi jumlah yang disetujui |
+| S2 | "Pengubah terakhir" bisa terlewati (Y mengubah, X mengunggah, Y memutus) | Pemutus juga tidak boleh **pernah** mengubah isian/lampiran pengajuan itu — dicek dari `sdl_audit_events` (`*.update`, `*.lampiran.add/delete`, ditulis dalam transaksi yang sama), untuk cuti dan kesejahteraan; id URL dibandingkan lowercase. **Karier R5H28 belum ikut** (di luar cakupan) |
+| S3 | Catatan dan alasan riwayat cuti Sakit terbuka untuk semua pembaca | Diputus di SQL: hanya pencatat cuti, penulis riwayat, dan pemegang `cuti.approve` yang menerima teksnya; lainnya `null` + `catatanDibatasi`. PATCH dengan `catatan: null` = tidak diubah. Dialog alasan menampilkan petunjuk "jangan menulis diagnosis" untuk cuti Sakit |
+| C5 | PATCH cuti tidak cek ulang status personel | PATCH menolak personel yang tidak lagi Aktif/MPP (409 `personel_tidak_aktif`) |
+| C7 | `extra` badan galat bebas | Hanya kunci daftar putih (`id`) |
+
+Tidak diubah (keputusan sadar, dicatat): `proses` tidak mengisi `updated_by`, jadi Kasubbag yang memproses tetap
+boleh memutus (pola R5H28); jenis cuti (termasuk Sakit) tampil di kalender/daftar (K18); lampiran kesejahteraan
+terbuka untuk semua pembaca Sumda — **ditanyakan saat paparan**; pembedaan 403/404 lampiran Sakit.
+
+Uji baru: verify §7b (S2 termasuk id huruf besar, S3 detail/daftar/riwayat/PATCH, C5) + S1 di §4; x5 (S2, S3). Uji
+mutasi: hapus syarat "pernah mengubah" → hanya x5 merah; buka penyamaran catatan Sakit → hanya x5 merah. Suite 26/26.

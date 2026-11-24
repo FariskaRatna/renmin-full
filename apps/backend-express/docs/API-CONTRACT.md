@@ -1809,19 +1809,20 @@ Migrasi `071_sumda_cuti_kesejahteraan.sql` (`sdl_sumda_cuti`, `sdl_sumda_cuti_ri
 permission pada grant aktif unit `subbagsumda`: `R` = `subbagsumda.personel.read`, `Mc`/`Ac` = `cuti.manage`/`.approve`,
 `Mk`/`Ak` = `kesejahteraan.manage`/`.approve`, `U` = `personel.update`. Validasi strict; semua respons `no-store`.
 Alur keduanya: Diajukan → Diproses → Disetujui/Ditolak → Selesai, batalkan dari Diajukan/Diproses/Disetujui (pencatat
-atau pemegang approve, alasan ≥ 8 karakter). Setujui/tolak: approve + bukan pencatat dan bukan pengubah terakhir
-(`self_review_forbidden`, juga CHECK DB untuk pencatat). Personel terarsip: hanya batalkan.
+atau pemegang approve, alasan ≥ 8 karakter). Setujui/tolak: approve + bukan pencatat, bukan pengubah terakhir, dan
+**tidak pernah** mengubah isian/lampiran pengajuan itu (dibaca dari audit; `self_review_forbidden`, CHECK DB untuk
+pencatat). Personel terarsip: hanya batalkan.
 
 | Method | Path | Hak | Catatan |
 |---|---|---|---|
 | GET | `/api/v1/subbagsumda/cuti/capabilities` | O | `{canRead,canManage,canApprove}` |
-| GET | `/api/v1/subbagsumda/cuti` | R | `?q=&status=&jenis=&bulan=YYYY-MM&personelId=&page=&size=` → `{items,total,page,size}`. Item: `{id,jenis,tanggalMulai,tanggalSelesai,tanggalKembali,jumlahHari,hariDisesuaikan,status,catatan,version,createdBy,createdByName,updatedBy,decidedByName,decidedAt,selesaiAt,createdAt,updatedAt,personel:{id,nrp,nama,status,terarsip}}` |
+| GET | `/api/v1/subbagsumda/cuti` | R | `?q=&status=&jenis=&bulan=YYYY-MM&personelId=&page=&size=` → `{items,total,page,size}`. Item: `{id,jenis,tanggalMulai,tanggalSelesai,tanggalKembali,jumlahHari,hariDisesuaikan,status,catatan,catatanDibatasi,version,createdBy,createdByName,updatedBy,decidedByName,decidedAt,selesaiAt,createdAt,updatedAt,personel:{id,nrp,nama,status,terarsip}}` |
 | GET | `/api/v1/subbagsumda/cuti/kalender` | R | `?bulan=YYYY-MM` (parameter lain → 400) → `{bulan,hari:[{tanggal,items:[{id,nama,jenis,status}]}],terpotong}`; status Diproses/Disetujui/Selesai, personel belum terarsip, maks. 1000, tanpa NRP |
 | GET | `/api/v1/subbagsumda/cuti/jatah` | R | `?personelId=&tahun=` (bawaan tahun WIB) → `{tahun,jatah:12,terpakai,dalamProses,sisa}`; terpakai = Tahunan Disetujui+Selesai bertanggal mulai di tahun itu |
 | POST | `/api/v1/subbagsumda/cuti` | Mc | `{personelId,jenis,tanggalMulai,tanggalSelesai,jumlahHari?,catatan}` → 201 `{item,peringatan:[]\|["melebihi_jatah"]}`. `jenis` `TAHUNAN`\|`SAKIT`\|`ALASAN_PENTING`\|`BESAR`\|`LAINNYA`. Hari kerja Senin–Jumat dihitung server; `jumlahHari` manual 1…hari kalender (`hariDisesuaikan`). 0 hari kerja tanpa manual, > 366 hari kalender, Tahunan lintas tahun → 400. Personel Aktif/MPP; beririsan dengan cuti Diajukan/Diproses/Disetujui/Selesai → 409 `cuti_bertumpuk` |
-| GET | `/api/v1/subbagsumda/cuti/:id` | R | `{item,jatah,lampiran:[{id,filename,dibatasi,size,uploadedBy,uploadedByName,uploadedAt}],riwayat[]}`; lampiran cuti SAKIT: `filename` null + `dibatasi:true` bagi selain pengunggah dan pemegang `Ac` |
-| PATCH | `/api/v1/subbagsumda/cuti/:id` | Mc | `{tanggalMulai,tanggalSelesai,jumlahHari?,catatan,version}` → `{item,peringatan}`; hanya Diajukan; `personelId`/`jenis` tidak diterima |
-| POST | `/api/v1/subbagsumda/cuti/:id/aksi` | Mc/Ac | `{aksi,catatan,version}`; `selesai` juga `{tanggalKembali?,jumlahHari?}` (hari terakhir yang dijalani ∈ [mulai, min(selesai, hari ini WIB)]; jumlah hari dihitung ulang). Selesai sebelum hari pertama cuti → 409 `status_tidak_sesuai`; isian `selesai` pada aksi lain → 400 |
+| GET | `/api/v1/subbagsumda/cuti/:id` | R | `{item,jatah,lampiran:[{id,filename,dibatasi,size,uploadedBy,uploadedByName,uploadedAt}],riwayat:[{dari,ke,catatan,oleh,pada}]}`; lampiran cuti SAKIT: `filename` null + `dibatasi:true` bagi selain pengunggah dan pemegang `Ac`. Cuti SAKIT: `item.catatan` null + `item.catatanDibatasi:true` bagi selain pencatat dan `Ac` (juga di daftar); `riwayat[].catatan` null bagi selain penulisnya, pencatat cuti, dan `Ac` |
+| PATCH | `/api/v1/subbagsumda/cuti/:id` | Mc | `{tanggalMulai,tanggalSelesai,jumlahHari?,catatan,version}` → `{item,peringatan}`; hanya Diajukan, personel Aktif/MPP; `personelId`/`jenis` tidak diterima; `catatan: null` = tidak diubah |
+| POST | `/api/v1/subbagsumda/cuti/:id/aksi` | Mc/Ac | `{aksi,catatan,version}`; `selesai` juga `{tanggalKembali?,jumlahHari?}` (hari terakhir yang dijalani ∈ [mulai, min(selesai, hari ini WIB)]; jumlah hari dihitung ulang, tidak melebihi yang disetujui; `jumlahHari` hanya bersama `tanggalKembali` dan ≤ jumlah yang disetujui). Selesai sebelum hari pertama cuti → 409 `status_tidak_sesuai`; isian `selesai` pada aksi lain → 400 |
 | POST · GET · DELETE | `/api/v1/subbagsumda/cuti/:id/lampiran` · `…/:lid` · `…/:lid` | Mc · R* · Mc | PDF ≤ 5 MB, maks. 10, SDL1, terenkripsi/rusak → 400; unggah selama Diajukan/Diproses/Disetujui/Selesai, hapus (pengunggah atau `Ac`) hanya Diajukan/Diproses. *Unduh lampiran cuti SAKIT: pengunggah atau `Ac`, selain itu 403 `access_denied` (diputus di SQL) |
 | GET | `/api/v1/subbagsumda/kesejahteraan/capabilities` | O | `{canRead,canManage,canApprove}` |
 | GET | `/api/v1/subbagsumda/kesejahteraan` | R | `?q=&status=&jenis=&personelId=&lewatTarget=1&page=&size=`. Item: `{id,jenis,nomorReferensi,targetSelesai,lewatTarget,status,catatan,diterapkan,statusUsulan,version,createdBy,createdByName,updatedBy,decidedByName,decidedAt,selesaiAt,createdAt,updatedAt,personel:{id,nrp,nama,status,tanggalPensiun,version,terarsip}}` |
@@ -1845,7 +1846,7 @@ sisa,items:[{id,jenis,status,tanggalMulai,tanggalSelesai,tanggalKembali,jumlahHa
 `{id,jenis,status,targetSelesai,nomorReferensi,selesaiAt}` (masing-masing maks. 50; tidak ada di POST/PATCH);
 `GET /api/v1/subbagsumda/dashboard` → `totals.cutiHariIni` (personel berbeda yang sedang cuti hari ini WIB) dan
 `totals.layananMenunggu` (cuti + kesejahteraan berstatus Diproses, personel belum terarsip). **Aditif umum:** badan
-galat Sumda boleh membawa kunci tambahan di samping `error` (saat ini hanya `id` pada `pengajuan_ganda`).
+galat Sumda boleh membawa kunci tambahan di samping `error` (daftar putih: hanya `id`, saat ini pada `pengajuan_ganda`).
 
 **Rollback.** Bila `/api/v1/subbagsumda/*` kembali ke Go, `/cuti*` dan `/kesejahteraan*` dijawab chi 404 `text/plain`;
 layar menampilkan "tidak tersedia" (tanpa cadangan). Tabel 071 diam; skema tidak perlu dibalik. Rollback sempit:
