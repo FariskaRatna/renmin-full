@@ -1,5 +1,5 @@
 import { parsePayload } from '../../http/payload.js'
-import { fail } from '../subbagren/shared.js'
+import { fail, respond } from '../subbagren/shared.js'
 
 /**
  * Helper bersama modul Subbagsumda (R5H27 Master Personel, R5H28 Karier & Mutasi).
@@ -47,7 +47,8 @@ const PERMIT_SQL = `SELECT EXISTS(
 ) AS ok`
 
 export class HttpError extends Error {
-  constructor(status, code) { super(code); this.status = status; this.code = code }
+  /** `extra` (R5H30 K35) ikut ke badan galat di samping `error`, mis. `{id}` pada 409 pengajuan_ganda. */
+  constructor(status, code, extra = null) { super(code); this.status = status; this.code = code; this.extra = extra }
 }
 
 /**
@@ -60,7 +61,11 @@ export function makeHandle(unik = {}) {
       try {
         await fn(req, res)
       } catch (error) {
-        if (error instanceof HttpError) { fail(res, error.status, error.code); return }
+        if (error instanceof HttpError) {
+          if (error.extra) respond(res, error.status, { ...error.extra, error: error.code })
+          else fail(res, error.status, error.code)
+          return
+        }
         if (error?.code === '23505') { fail(res, 409, unik[error.constraint] ?? 'duplicate'); return }
         if (error?.code === '23514' || error?.code === '23503') { fail(res, 400, 'invalid_input'); return }
         fail(res, 503, 'database_unavailable')
