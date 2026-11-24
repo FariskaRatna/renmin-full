@@ -283,7 +283,91 @@ async function main() {
   log(`\n${fail ? `GAGAL: ${fail} pemeriksaan` : 'LULUS: semua pemeriksaan'}\n`)
 }
 
-/** Irisan B (kesejahteraan) — diisi bersama kesejahteraan.js. */
-async function bagianKesejahteraan() {}
+/** Irisan B: Kesejahteraan (K3/K14–K17/K33–K37). */
+async function bagianKesejahteraan({ op, staf, ka, kabag, personel, aksi, disetujui, hari }) {
+  const baru = (a, pid, jenis, extra = {}) => call(a, 'POST', KS, { personelId: pid, jenis, nomorReferensi: '', targetSelesai: '', catatan: '', ...extra })
+  const pers = async (id) => (await call(ka, 'GET', `${PER}/${id}`)).body.item
+
+  log('\n9. Kesejahteraan: hak & satu terbuka per jenis (K16/K35/K37)')
+  const cap = {}
+  for (const a of [op, ka, kabag]) cap[a.username] = (await call(a, 'GET', `${KS}/capabilities`)).body
+  check('op: kelola tanpa setuju; Kasubbag: semua; kabagrenmin: baca saja',
+    cap['op-subbagsumda'].canManage && !cap['op-subbagsumda'].canApprove && cap.kasubbagsumda.canApprove && cap.kabagrenmin.canRead && !cap.kabagrenmin.canManage, JSON.stringify(cap))
+  const pA = await personel()
+  const pp = await baru(op, pA.id, 'PERSIAPAN_PENSIUN', { targetSelesai: '2040-01-01' })
+  check('Persiapan Pensiun → 201 Diajukan, statusUsulan Pensiun', pp.status === 201 && pp.body.item.status === 'Diajukan' && pp.body.item.statusUsulan === 'Pensiun', short(pp))
+  const ganda = await baru(staf, pA.id, 'PERSIAPAN_PENSIUN')
+  check('kedua kali (masih terbuka) → 409 pengajuan_ganda + id yang terbuka (K35)', ganda.status === 409 && ganda.body?.error === 'pengajuan_ganda' && ganda.body.id === pp.body.item.id, short(ganda))
+  const l1 = await baru(op, pA.id, 'LAINNYA'); const l2 = await baru(op, pA.id, 'LAINNYA')
+  check('LAINNYA boleh lebih dari satu terbuka (K37)', l1.status === 201 && l2.status === 201)
+  check('jenis lain (ASABRI) tetap boleh', (await baru(op, pA.id, 'ASABRI')).status === 201)
+  const pR = await personel()
+  const [r1, r2] = await Promise.all([baru(op, pR.id, 'KARTU_IDENTITAS'), baru(staf, pR.id, 'KARTU_IDENTITAS')])
+  check('balapan dua POST jenis sama → tepat satu 201 + satu 409', [r1.status, r2.status].sort().join(',') === '201,409', `${r1.status},${r2.status}`)
+  check('kabagrenmin catat → 403', (await baru(kabag, pA.id, 'MPP')).status === 403)
+  check('jenis tidak sah / target bukan tanggal → 400', (await baru(op, pA.id, 'BONUS')).status === 400 && (await baru(op, pA.id, 'MPP', { targetSelesai: '2026-02-30' })).status === 400)
+
+  log('\n10. Alur, maker-checker, Selesai + terapkan status (K3/K15/K33)')
+  const sendiri = (await baru(ka, pR.id, 'ASABRI')).body.item
+  const sendiriP = (await aksi(op, KS, sendiri, 'proses')).body.item
+  check('Kasubbag memutus layanan yang ia catat → 403', (await aksi(ka, KS, sendiriP, 'setujui')).body?.error === 'self_review_forbidden')
+  check('tolak tanpa alasan → 400', (await aksi(ka, KS, sendiriP, 'tolak', { catatan: 'x' })).status === 400)
+  const ppOk = await disetujui(KS, pp.body.item)
+  check('Persiapan Pensiun disetujui', ppOk?.status === 'Disetujui')
+  check('terapkan pada aksi selain selesai → 400', (await aksi(ka, KS, ppOk, 'batalkan', { catatan: 'alasan yang cukup', terapkan: { status: 'Pensiun', personelVersion: 1 } })).status === 400)
+  const v0 = (await pers(pA.id)).version
+  check('terapkan status bukan hasil pemetaan → 400', (await aksi(op, KS, ppOk, 'selesai', { terapkan: { status: 'MPP', personelVersion: v0 } })).status === 400)
+  check('terapkan kunci asing → 400', (await aksi(op, KS, ppOk, 'selesai', { terapkan: { status: 'Pensiun', personelVersion: v0, x: 1 } })).status === 400)
+  check('versi personel lama → 409 personel_berubah', (await aksi(op, KS, ppOk, 'selesai', { terapkan: { status: 'Pensiun', personelVersion: v0 - 1 < 1 ? 999 : v0 - 1 } })).body?.error === 'personel_berubah')
+  const sPP = await aksi(op, KS, ppOk, 'selesai', { terapkan: { status: 'Pensiun', personelVersion: v0 } })
+  const pA2 = await pers(pA.id)
+  check('Selesai + terapkan → personel Pensiun, versi +1', sPP.status === 200 && pA2.status === 'Pensiun' && pA2.version === v0 + 1, short(sPP))
+  check('diterapkan memuat status lama→baru', sPP.body?.item?.diterapkan?.fields?.status?.lama === 'Aktif' && sPP.body.item.diterapkan.fields.status.baru === 'Pensiun')
+  const pu = (await sql.query("SELECT metadata FROM sdl_audit_events WHERE event_key='subbagsumda.personel.update' AND subject_id=$1 ORDER BY id DESC LIMIT 1", [pA.id])).rows[0]
+  check('audit personel.update {fields:[status]}', JSON.stringify(pu?.metadata?.fields) === '["status"]', JSON.stringify(pu?.metadata))
+  check('personel sudah Pensiun: layanan baru → 409 personel_tidak_aktif', (await baru(op, pA.id, 'PERSIAPAN_PENSIUN')).body?.error === 'personel_tidak_aktif')
+
+  const pM = await personel()
+  const mpp = await disetujui(KS, (await baru(op, pM.id, 'MPP')).body.item)
+  const sM = await aksi(staf, KS, mpp, 'selesai', { terapkan: { status: 'MPP', personelVersion: (await pers(pM.id)).version } })
+  check('MPP selesai + terapkan → status MPP', sM.status === 200 && (await pers(pM.id)).status === 'MPP', short(sM))
+  const pN = await personel()
+  const mpp2 = await disetujui(KS, (await baru(op, pN.id, 'MPP')).body.item)
+  await sql.query('UPDATE sdl_sumda_personel SET tanggal_pensiun=NULL WHERE id=$1::uuid', [pN.id]) // meniru salinan registry yang belum lengkap
+  const vN = (await sql.query('SELECT version FROM sdl_sumda_personel WHERE id=$1::uuid', [pN.id])).rows[0].version
+  check('MPP tanpa tanggal pensiun → 409 personel_belum_lengkap', (await aksi(op, KS, mpp2, 'selesai', { terapkan: { status: 'MPP', personelVersion: vN } })).body?.error === 'personel_belum_lengkap')
+  const sTanpa = await aksi(op, KS, mpp2, 'selesai')
+  check('Selesai tanpa terapkan → master tetap, diterapkan {}', sTanpa.status === 200 && JSON.stringify(sTanpa.body.item.diterapkan) === '{}' && (await sql.query('SELECT status FROM sdl_sumda_personel WHERE id=$1::uuid', [pN.id])).rows[0].status === 'Aktif', short(sTanpa))
+  const asabri = await disetujui(KS, (await baru(op, pM.id, 'ASABRI')).body.item)
+  check('terapkan pada ASABRI → 400', (await aksi(op, KS, asabri, 'selesai', { terapkan: { status: 'Pensiun', personelVersion: (await pers(pM.id)).version } })).status === 400)
+  const rw = (await call(ka, 'GET', `${KS}/${pp.body.item.id}`)).body.riwayat.map((h) => h.ke).join('>')
+  check('riwayat Diajukan>Diproses>Disetujui>Selesai', rw === 'Diajukan>Diproses>Disetujui>Selesai', rw)
+
+  log('\n11. PATCH, lewat target, lampiran, aditif R5H27')
+  const pL = await personel()
+  const lt = (await baru(op, pL.id, 'KARTU_IDENTITAS', { targetSelesai: '2020-01-01' })).body.item
+  const lst = await call(kabag, 'GET', `${KS}?lewatTarget=1&q=${encodeURIComponent(PREFIX)}&size=50`)
+  check('filter lewatTarget memuat layanan lewat target', lst.status === 200 && lst.body.items.some((x) => x.id === lt.id && x.lewatTarget), short(lst))
+  check('lewatTarget=2 → 400', (await call(kabag, 'GET', `${KS}?lewatTarget=2`)).status === 400)
+  const pt = await call(op, 'PATCH', `${KS}/${lt.id}`, { nomorReferensi: 'KTA-1', targetSelesai: '2030-01-01', catatan: 'diubah', version: lt.version })
+  check('PATCH saat Diajukan → 200', pt.status === 200 && pt.body.item.nomorReferensi === 'KTA-1', short(pt))
+  check('PATCH jenis → 400 (K29)', (await call(op, 'PATCH', `${KS}/${lt.id}`, { jenis: 'MPP', nomorReferensi: '', targetSelesai: '', catatan: '', version: lt.version + 1 })).status === 400)
+  const up = await unggah(op, `${KS}/${lt.id}/lampiran`, PDF, 'kta.pdf')
+  check('unggah lampiran → 201; kabagrenmin unduh byte-identik', up.status === 201 && (await call(kabag, 'GET', `${KS}/${lt.id}/lampiran/${up.body.id}`)).bytes.equals(PDF), short(up))
+  const cutiLain = (await sql.query('SELECT l.id::text FROM sdl_sumda_cuti_lampiran l LIMIT 1')).rows[0]?.id
+  if (cutiLain) check('lampiran cuti via jalur kesejahteraan → 404', (await call(ka, 'GET', `${KS}/${lt.id}/lampiran/${cutiLain}`)).status === 404)
+  const d0 = (await call(kabag, 'GET', DASH)).body.totals.layananMenunggu
+  await aksi(op, KS, (await call(op, 'GET', `${KS}/${lt.id}`)).body.item, 'proses')
+  check('dashboard layananMenunggu +1', (await call(kabag, 'GET', DASH)).body.totals.layananMenunggu === d0 + 1)
+  const det = (await call(kabag, 'GET', `${PER}/${pM.id}`)).body.item
+  check('GET /personel/:id memuat riwayatKesejahteraan', det.riwayatKesejahteraan?.length === 2 && det.riwayatKesejahteraan.every((x) => ['MPP', 'ASABRI'].includes(x.jenis)), JSON.stringify(det.riwayatKesejahteraan))
+  const pids = (await sql.query(`SELECT id::text FROM sdl_sumda_personel WHERE nrp LIKE '${PREFIX}%'`)).rows.map((r) => r.id)
+  const kids = (await sql.query('SELECT id::text FROM sdl_sumda_kesejahteraan WHERE personel_id = ANY($1::uuid[])', [pids])).rows.map((r) => r.id)
+  const ev = (await sql.query("SELECT event_key, metadata::text AS m FROM sdl_audit_events WHERE subject_type='subbagsumda.kesejahteraan' AND subject_id = ANY($1::text[])", [kids])).rows
+  const keys = new Set(ev.map((e) => e.event_key.replace('subbagsumda.kesejahteraan.', '')))
+  check('event kesejahteraan tercatat', ['create', 'update', 'proses', 'setujui', 'selesai', 'lampiran.add', 'lampiran.download'].every((k) => keys.has(k)), [...keys].join(','))
+  check('metadata tanpa NRP/nama/catatan/nomor', ev.every((e) => !e.m.includes(PREFIX) && !e.m.includes('Uji ') && !e.m.includes('KTA-1') && !e.m.includes('diubah')))
+  void hari
+}
 
 main().catch((e) => { console.error(e); fail++ }).finally(async () => { await sql.end(); await db.close(); process.exit(fail ? 1 : 0) })

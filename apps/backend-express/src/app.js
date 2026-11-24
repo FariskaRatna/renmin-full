@@ -24,6 +24,7 @@ import { createSumdaKarierRouter } from './modules/subbagsumda/karier.js'
 import { createSumdaDiklatRouter } from './modules/subbagsumda/diklat.js'
 import { createSumdaKompetensiRouter } from './modules/subbagsumda/kompetensi.js'
 import { createSumdaCutiRouter } from './modules/subbagsumda/cuti.js'
+import { createSumdaKesejahteraanRouter } from './modules/subbagsumda/kesejahteraan.js'
 import { createPerencanaanRouter } from './modules/subbagren/perencanaan.js'
 import { createUsulanRouter } from './modules/subbagren/usulan.js'
 import { createExecutiveRouter } from './modules/executive/index.js'
@@ -118,6 +119,7 @@ export function createApp({ pool, config, mailer: injectedMailer }) {
   v1.use('/subbagsumda/kompetensi', operational, createSumdaKompetensiRouter({ pool, config }))
   // R5H30: Cuti & Perizinan (migrasi 071, Express saja). Mount spesifik; butuh config.evidenceKey.
   v1.use('/subbagsumda/cuti', operational, createSumdaCutiRouter({ pool, config }))
+  v1.use('/subbagsumda/kesejahteraan', operational, createSumdaKesejahteraanRouter({ pool, config }))
   // R5H7: tanda tangan tersimpan Kabagrenmin (Express saja).
   v1.use('/urmin/ttd', operational, createTtdRouter({ pool, config }))
   v1.use('/unit-work', operational, createUnitWorkRouter({ pool, config }))
