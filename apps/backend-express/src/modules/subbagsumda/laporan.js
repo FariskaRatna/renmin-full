@@ -208,7 +208,12 @@ export function createSumdaLaporanRouter({ pool }) {
     if (modul === 'kinerja') ctx.rk = await can(req.actor, P.kinerja)
     if (modul === 'arsip') ctx.xa = await can(req.actor, P.restricted)
     const { text, args } = m.sql(filter, ctx)
-    const rows = (await pool.query(text, args)).rows
+    // Review S5: satu transaksi baca dengan batas waktu (pola ringkasan); timeout → 503.
+    const rows = await withTransaction(pool, async (c) => {
+      await c.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY')
+      await c.query("SET LOCAL statement_timeout = '10s'")
+      return (await c.query(text, args)).rows
+    })
     if (rows.length > BATAS_EKSPOR) throw new HttpError(413, 'terlalu_banyak') // K21: sebelum satu byte pun dikirim, tidak diaudit
     const buf = berkasCsv(m.header, rows.map(m.baris))
     const tgl = (await pool.query(`SELECT to_char(${HARI_INI},'YYYYMMDD') AS d`)).rows[0].d

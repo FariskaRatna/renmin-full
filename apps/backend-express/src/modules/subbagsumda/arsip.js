@@ -84,24 +84,25 @@ export const DARI_ARSIP = `FROM sdl_sumda_arsip a
   LEFT JOIN sdl_users cu ON cu.id=a.created_by
   LEFT JOIN sdl_users mu ON mu.id=a.musnah_by`
 
-function mapArsip(r) {
+/** Review S3: `suratId` hanya untuk pemegang persuratan.read; selainnya cukup `bertautSurat`. */
+function mapArsip(r, ps = false) {
   return {
     id: r.id, nomor: r.nomor, jenis: r.jenis, perihal: r.perihal, tanggal: r.tanggal, asalTujuan: r.asal_tujuan,
     kodeKlasifikasi: r.kode_klasifikasi, lokasiSimpan: r.lokasi_simpan, retensiSampai: r.retensi_sampai ?? '',
     sisaRetensi: r.tahap_retensi ? r.sisa_retensi : null, tahapRetensi: r.tahap_retensi ?? null,
     kerahasiaan: r.kerahasiaan, catatan: r.catatan,
     personel: r.personel_id ? { id: r.personel_id, nama: r.personel_nama, nrp: r.personel_nrp, terarsip: r.personel_terarsip } : null,
-    suratId: r.surat_id ?? null, status: r.status,
+    suratId: ps ? (r.surat_id ?? null) : null, bertautSurat: r.surat_id !== null, status: r.status,
     musnah: r.musnah_at ? { olehNama: r.musnah_name ?? '', pada: r.musnah_at } : null,
     createdBy: r.created_by, createdByName: r.created_name ?? '', version: r.version,
     createdAt: r.created_at, updatedAt: r.updated_at, updatedBy: r.updated_by,
   }
 }
 
-async function ambil(c, id, actor, xa) {
+async function ambil(c, id, actor, xa, ps = false) {
   const r = await c.query(`SELECT ${KOLOM_ARSIP} ${DARI_ARSIP} WHERE a.id=$1::uuid AND ${bolehArsip('$2', '$3')}`, [id, actor, xa])
   if (r.rowCount !== 1) throw new HttpError(404, 'not_found')
-  return mapArsip(r.rows[0])
+  return mapArsip(r.rows[0], ps)
 }
 
 /** K24/K45: arsip yang menautkan seorang personel — hanya baris terlihat, maks. 50, tanpa catatan. */
@@ -165,7 +166,7 @@ function nilaiArsip(b) {
     nomor: teks(b.nomor, 0, 120), jenis: pilihan(b.jenis, JENIS_ARSIP), perihal: teks(b.perihal, 3, 240), tanggal: tgl,
     asalTujuan: teks(b.asalTujuan, 0, 200), kodeKlasifikasi: teks(b.kodeKlasifikasi, 0, 60), lokasiSimpan: teks(b.lokasiSimpan, 0, 200),
     retensiSampai: retensi, kerahasiaan: pilihan(b.kerahasiaan, KERAHASIAAN), catatan: teks(b.catatan, 0, 2000, { multiline: true }),
-    personelId: uuidOpsional(b.personelId), suratId: uuidOpsional(b.suratId),
+    personelId: uuidOpsional(b.personelId), suratId: b.suratId === undefined ? undefined : uuidOpsional(b.suratId),
   }
 }
 
@@ -223,6 +224,7 @@ export function createSumdaArsipRouter({ pool, config }) {
     const size = req.query.size === undefined ? 10 : parseGoInt(String(req.query.size))
     if (page === undefined || page < 1 || page > 100000 || !UKURAN_HALAMAN.has(size)) throw new HttpError(400, 'invalid_input')
     const xa = await can(req.actor, P.restricted)
+    const ps = await can(req.actor, P.surat)
     // K29/K36: semua filter, urutan, dan hitungan atas baris yang TERLIHAT (CTE v).
     const args = [req.actor, xa]
     const where = ['TRUE']
@@ -241,7 +243,7 @@ export function createSumdaArsipRouter({ pool, config }) {
     const total = Number((await pool.query(`${cte} SELECT count(*) FROM v WHERE ${w}`, args)).rows[0].count)
     const rows = (await pool.query(
       `${cte} SELECT * FROM v WHERE ${w} ORDER BY v.tanggal DESC, v.created_at DESC, v.id LIMIT ${size} OFFSET ${(page - 1) * size}`, args)).rows
-    respond(res, 200, { items: rows.map(mapArsip), total, page, size })
+    respond(res, 200, { items: rows.map((r) => mapArsip(r, ps)), total, page, size })
   }))
 
   router.get('/surat-tertaut', handle(async (req, res) => {
@@ -266,7 +268,11 @@ export function createSumdaArsipRouter({ pool, config }) {
   router.post('/', json, handle(async (req, res) => {
     await need(req, P.manage)
     const v = nilaiArsip(body(req, FIELD))
+    v.suratId ??= null
     if (v.suratId) await need(req, P.surat) // K30
+    // Review S1 (K51): menautkan surat ke arsip TERBATAS hanya oleh pemegang Xa. Surat yang tertaut ke arsip tak terlihat
+    // menghilang dari pilihan surat dan ditolak 409, sehingga keberadaannya bisa disimpulkan dari perihal surat itu.
+    if (v.suratId && v.kerahasiaan === 'TERBATAS' && !(await can(req.actor, P.restricted))) throw new HttpError(403, 'access_denied')
     const item = await withTransaction(pool, async (c) => {
       if (v.suratId) await cekSurat(c, v.suratId, null)
       await cekPersonel(c, v.personelId, null)
@@ -278,7 +284,7 @@ export function createSumdaArsipRouter({ pool, config }) {
           v.catatan, v.personelId, v.suratId, req.actor])).rows[0].id
       await riwayat(c, id, null, 'Aktif', '', req.actor)
       await audit(c, req.actor, 'subbagsumda.arsip.create', id, { status: 'Aktif', jenis: v.jenis, kerahasiaan: v.kerahasiaan })
-      return ambil(c, id, req.actor, false)
+      return ambil(c, id, req.actor, false, true)
     })
     respond(res, 201, { item })
   }))
@@ -287,7 +293,8 @@ export function createSumdaArsipRouter({ pool, config }) {
     await need(req, P.read)
     const id = idParam(req.params.id)
     const xa = await can(req.actor, P.restricted)
-    const item = await ambil(pool, id, req.actor, xa)
+    const ps = await can(req.actor, P.surat)
+    const item = await ambil(pool, id, req.actor, xa, ps)
     // Ikut disaring bolehArsip di SQL (pertahanan berlapis), walau item sudah dipastikan terlihat.
     const lampiran = (await pool.query(
       `SELECT l.id::text,l.peran,l.filename,l.size_bytes,l.uploaded_by::text,u.display_name,l.uploaded_at
@@ -298,14 +305,15 @@ export function createSumdaArsipRouter({ pool, config }) {
          FROM sdl_sumda_arsip_riwayat h JOIN sdl_sumda_arsip a ON a.id=h.arsip_id LEFT JOIN sdl_users u ON u.id=h.oleh
         WHERE h.arsip_id=$1::uuid AND ${bolehArsip('$2', '$3')} ORDER BY h.id`, [id, req.actor, xa])).rows
     let surat = null
-    if (item.suratId) {
-      if (!(await can(req.actor, P.surat))) surat = { dibatasi: true } // K30: info surat hanya bagi Ps
+    if (item.bertautSurat) {
+      if (!ps) surat = { dibatasi: true } // K30: info surat hanya bagi Ps
       else {
+        // Review S2: surat yang tidak lagi sah (dikirim/diterima Sumda) diperlakukan seperti hilang.
         const s = (await pool.query(
-          'SELECT s.id::text,s.nomor,s.tanggal::text AS tanggal,s.perihal,s.unit_pengirim FROM sdl_surat_antar s WHERE s.id=$1::uuid', [item.suratId])).rows[0]
+          `SELECT s.id::text,s.nomor,s.tanggal::text AS tanggal,s.perihal,s.unit_pengirim FROM sdl_surat_antar s WHERE s.id=$1::uuid AND ${SURAT_SAH_SQL}`, [item.suratId])).rows[0]
         surat = s
           ? { id: s.id, arah: s.unit_pengirim === 'subbagsumda' ? 'keluar' : 'masuk', nomor: s.nomor, tanggal: s.tanggal ?? '', perihal: s.perihal, unitPengirim: s.unit_pengirim }
-          : { hilang: true } // R11: surat_id tanpa FK bisa yatim
+          : { hilang: true } // R11: surat_id tanpa FK bisa yatim; review S2: atau tidak lagi sah
       }
     }
     respond(res, 200, {
@@ -326,10 +334,13 @@ export function createSumdaArsipRouter({ pool, config }) {
     const hasil = await withTransaction(pool, async (c) => {
       const k = await kunci(c, id, req.actor, xa)
       const v = nilaiArsip(b)
+      if (v.suratId === undefined) v.suratId = k.surat_id // review S3: tidak dikirim = pertahankan
       // Hak dulu (403), baru versi/status (409) — pelajaran R5H31.
       if (k.kerahasiaan === 'TERBATAS' && v.kerahasiaan === 'BIASA' && !xa) throw new HttpError(403, 'access_denied') // K13/K34
       const suratBerubah = v.suratId !== k.surat_id
       if (suratBerubah && !ps) throw new HttpError(403, 'access_denied') // K30
+      // Review S1 (K51): arsip bersurat hanya boleh menjadi/tetap TERBATAS dengan tautan baru oleh pemegang Xa.
+      if (v.suratId && v.kerahasiaan === 'TERBATAS' && !xa && (k.kerahasiaan !== 'TERBATAS' || suratBerubah)) throw new HttpError(403, 'access_denied')
       if (k.version !== version) throw new HttpError(409, 'version_conflict')
       if (k.status === 'Musnah') throw new HttpError(409, 'status_tidak_sesuai') // K9: final
       if (suratBerubah && v.suratId) await cekSurat(c, v.suratId, id)
@@ -345,7 +356,7 @@ export function createSumdaArsipRouter({ pool, config }) {
       // K34: menaikkan ke Terbatas arsip milik orang lain tanpa Xa membuatnya tak terlihat lagi bagi pengubah.
       const r = await c.query(`SELECT ${bolehArsip('$2', '$3')} AS ok FROM sdl_sumda_arsip a WHERE a.id=$1::uuid`, [id, req.actor, xa])
       if (!r.rows[0].ok) return { item: null, tersembunyi: true }
-      return { item: await ambil(c, id, req.actor, xa) }
+      return { item: await ambil(c, id, req.actor, xa, ps) }
     })
     respond(res, 200, hasil)
   }))
@@ -360,6 +371,7 @@ export function createSumdaArsipRouter({ pool, config }) {
     const catatan = teks(b.catatan, 0, 1000, { multiline: true })
     if (aksi === 'musnahkan' && [...catatan].length < 8) throw new HttpError(400, 'invalid_input')
     const xa = await can(req.actor, P.restricted)
+    const ps = await can(req.actor, P.surat)
     const item = await withTransaction(pool, async (c) => {
       const k = await kunci(c, id, req.actor, xa)
       if (k.version !== version) throw new HttpError(409, 'version_conflict')
@@ -378,7 +390,7 @@ export function createSumdaArsipRouter({ pool, config }) {
       }
       await riwayat(c, id, dari, ke, catatan, req.actor)
       await audit(c, req.actor, `subbagsumda.arsip.${aksi}`, id, { status: ke })
-      return ambil(c, id, req.actor, xa)
+      return ambil(c, id, req.actor, xa, ps)
     })
     respond(res, 200, { item })
   }))

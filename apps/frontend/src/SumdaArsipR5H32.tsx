@@ -20,7 +20,7 @@ type TahapRetensi = 'H-30' | 'JATUH_TEMPO'
 type Arsip = {
   id: string; nomor: string; jenis: string; perihal: string; tanggal: string; asalTujuan: string; kodeKlasifikasi: string; lokasiSimpan: string
   retensiSampai: string; sisaRetensi: number | null; tahapRetensi: TahapRetensi | null; kerahasiaan: 'BIASA' | 'TERBATAS'; catatan: string
-  personel: { id: string; nama: string; nrp: string; terarsip: boolean } | null; suratId: string | null; status: Status
+  personel: { id: string; nama: string; nrp: string; terarsip: boolean } | null; suratId: string | null; bertautSurat: boolean; status: Status
   musnah: { olehNama: string; pada: string } | null; createdBy: string; createdByName: string; version: number
 }
 type Surat = { id?: string; arah?: 'masuk' | 'keluar'; nomor?: string; tanggal?: string; perihal?: string; unitPengirim?: string; dibatasi?: true; hilang?: true }
@@ -126,7 +126,7 @@ function DaftarArsip({ caps, onLost, onOpen, refresh }: { caps: Caps | null; onL
             : data.items.length === 0 ? <tr><td colSpan={6} className="sdl-sumda__empty"><strong>Belum ada arsip yang cocok.</strong></td></tr>
               : data.items.map(a => <tr key={a.id} className="sdl-sumda__click" onClick={() => onOpen(a.id)}>
                 <td><div className="sdl-sumda__who"><strong>{a.perihal}</strong><span className="sdl-sumda__mono">{a.nomor || 'Tanpa nomor'}{a.kodeKlasifikasi && ` · ${a.kodeKlasifikasi}`}</span></div>
-                  {a.kerahasiaan === 'TERBATAS' && <Terbatas />}{a.suratId && <span className="sdl-sumda__flag">Surat tertaut</span>}</td>
+                  {a.kerahasiaan === 'TERBATAS' && <Terbatas />}{a.bertautSurat && <span className="sdl-sumda__flag">Surat tertaut</span>}</td>
                 <td>{JENIS_ARSIP[a.jenis] ?? a.jenis}</td>
                 <td className="is-num sdl-sumda__mono">{tgl(a.tanggal)}</td>
                 <td>{a.lokasiSimpan || '—'}</td>
@@ -175,8 +175,11 @@ function FormArsip({ item, caps, onClose, onSaved }: { item: Arsip | null; caps:
     e.preventDefault(); if (busy) return
     if (!v.tanggal) return setError('Tanggal dokumen wajib diisi.')
     if (v.retensiSampai && v.retensiSampai < v.tanggal) return setError('Retensi tidak boleh sebelum tanggal dokumen.')
+    if (bisaTaut && suratId && v.kerahasiaan === 'TERBATAS' && !caps?.canRestricted && (item?.kerahasiaan !== 'TERBATAS' || suratId !== item?.suratId))
+      return setError('Arsip Terbatas yang menautkan surat hanya bisa dicatat Kasubbagsumda. Lepas tautan surat atau pilih kerahasiaan Biasa.')
     setBusy(true); setError('')
-    const isi = { ...v, personelId: personel?.id ?? null, suratId }
+    // Tanpa hak persuratan, suratId tidak dikirim: server mempertahankan tautan yang ada (review S3).
+    const isi = { ...v, personelId: personel?.id ?? null, ...(bisaTaut ? { suratId } : {}) }
     try {
       if (item) {
         const r = await api<{ item: Arsip | null; tersembunyi?: boolean }>(`/arsip/${enc(item.id)}`, 'PATCH', { ...isi, version: item.version })

@@ -191,6 +191,53 @@ export async function verifyR5H32SumdaArsipLaporan({ env }) {
   for (const qs of ['x=1', 'tahun=2026&tahun=2027', 'status=Hilang']) status(await ka.call('GET', `${LAP}/ekspor/personel?${qs}`), 400, `query ekspor ${qs}`)
   status(await ka.call('GET', `${LAP}/ekspor/gaji`), 404, 'modul ekspor tak dikenal')
 
+  // ---- 4b. Perbaikan review R5H32 ----
+  const suratSah = async (perihal) => {
+    const s = (await env.pool.query(`INSERT INTO sdl_surat_antar(unit_pengirim,nomor,tanggal,perihal,status,sent_at,created_by,updated_by)
+      VALUES('subbagren','SEC/1','2026-11-10',$1,'dikirim',now(),$2,$2) RETURNING id::text`, [perihal, users.ka_r5h32.id])).rows[0].id
+    await env.pool.query("INSERT INTO sdl_surat_antar_tujuan(surat_id,unit_key,diterima_at,diterima_by) VALUES($1,'subbagsumda',now(),$2)", [s, users.ka_r5h32.id])
+    return s
+  }
+  const [s1, s2, s3] = [await suratSah('Surat uji S1'), await suratSah('Surat uji S2'), await suratSah('Surat uji S3')]
+  // S1 (K51): menautkan surat ke arsip TERBATAS, atau menaikkan arsip bersurat ke TERBATAS, hanya oleh Xa.
+  status(await op.call('POST', AR, isi({ suratId: s1, kerahasiaan: 'TERBATAS' }), true), 403, 'S1: Ma+Ps tanpa Xa menautkan surat ke arsip TERBATAS')
+  let bs = item(await op.call('POST', AR, isi({ suratId: s1, perihal: 'Arsip bersurat S1' }), true))
+  status(await patch(op, bs, { kerahasiaan: 'TERBATAS' }), 403, 'S1: tanpa Xa menaikkan arsip bersurat ke TERBATAS')
+  status(await patch(op2, bs, { kerahasiaan: 'TERBATAS' }), 403, 'S1: bukan pencatat tanpa Xa menaikkan arsip bersurat')
+  status(await ka.call('POST', AR, isi({ suratId: s3, kerahasiaan: 'TERBATAS' }), true), 201, 'S1: Xa boleh menautkan surat ke arsip TERBATAS')
+  // S3: suratId tidak dikirim ke pemegang Ra tanpa Ps; PATCH tanpa suratId mempertahankan tautan.
+  const b2s = item(await op.call('POST', AR, isi({ suratId: s2, perihal: 'Arsip bersurat S2' }), true))
+  const diBaca = json(await baca.call('GET', `${AR}?size=100`)).items.find((x) => x.id === b2s.id)
+  equal(diBaca.suratId, null, 'S3: Ra tanpa Ps tidak menerima suratId')
+  equal(diBaca.bertautSurat, true, 'S3: Ra tanpa Ps menerima bertautSurat')
+  equal(/Surat uji S2/.test((await baca.call('GET', `${AR}/${b2s.id}`)).text), false, 'S3: detail tanpa Ps tidak memuat surat')
+  const { suratId: _buang, ...tanpaSurat } = { ...isi(), perihal: b2s.perihal, version: b2s.version }
+  status(await nops.call('PATCH', `${AR}/${b2s.id}`, { ...tanpaSurat, lokasiSimpan: 'Lemari Z' }, true), 200, 'S3: Ma tanpa Ps PATCH tanpa suratId')
+  equal((await env.pool.query('SELECT surat_id::text AS s FROM sdl_sumda_arsip WHERE id=$1::uuid', [b2s.id])).rows[0].s, s2, 'S3: tautan surat dipertahankan')
+  const b2v = item(await op.call('GET', `${AR}/${b2s.id}`))
+  status(await nops.call('PATCH', `${AR}/${b2s.id}`, { ...tanpaSurat, suratId: null, version: b2v.version }, true), 403, 'S3: Ma tanpa Ps melepas tautan')
+  // S2: surat yang tidak lagi sah → detail {hilang:true}, tanpa nomor/perihal.
+  await env.pool.query("UPDATE sdl_surat_antar_tujuan SET diterima_at=NULL, diterima_by=NULL WHERE surat_id=$1::uuid", [s2])
+  const dS2 = await op.call('GET', `${AR}/${b2s.id}`)
+  contains(dS2, '"surat":{"hilang":true}', 'S2: surat tidak lagi sah diperlakukan hilang')
+  equal(/Surat uji S2/.test(dS2.text), false, 'S2: perihal surat tidak sah tidak terkirim')
+  // S4: data lama yang tidak lewat teks() (spasi/NBSP/baris baru di depan, padanan Unicode) tetap dinetralkan.
+  await env.pool.query(`INSERT INTO sdl_sumda_personel(nrp,nama,jenis,status,created_by,updated_by) VALUES
+    ('SEC-F-1', E'\\u00A0=HYPERLINK("http://x")', 'Polri', 'Aktif', $1, $1), ('SEC-F-2', E'\\uFE661+1 cmd', 'Polri', 'Aktif', $1, $1),
+    ('SEC-F-3', E'\\n=2+2 cmd', 'Polri', 'Aktif', $1, $1)`, [users.ka_r5h32.id])
+  const csvP = (await ka.call('GET', `${LAP}/ekspor/personel`)).text
+  for (const [nrp, awal] of [['SEC-F-1', "'\u00A0="], ['SEC-F-2', "'\uFE66"], ['SEC-F-3', "'\n="]]) {
+    equal(csvP.includes(`"${nrp}";"${awal}`), true, `S4: ${nrp} diberi awalan '`)
+  }
+  await env.pool.query("DELETE FROM sdl_sumda_personel WHERE nrp LIKE 'SEC-F-%'")
+  // Usulan review: keterlihatan dicek sebelum body unggahan dibaca; GET oleh must_change_password ditolak.
+  const besar = Buffer.concat([PDF, Buffer.alloc(6 << 20, 0x20)])
+  status(await op2.upload(`${AR}/${tb.id}/lampiran`, { filename: 'besar.pdf', data: besar }), 404, 'unggah > 5 MB ke TERBATAS tak terlihat → 404 (bukan 413)')
+  await env.pool.query('UPDATE sdl_users SET must_change_password=TRUE WHERE id=$1', [users.ka_r5h32.id])
+  try {
+    for (const path of [`${LAP}/ringkasan`, `${LAP}/ekspor/personel`, `${AR}/${tb.id}/lampiran/${lidT}`]) status(await ka.call('GET', path), 403, `must_change_password GET ${path}`)
+  } finally { await env.pool.query('UPDATE sdl_users SET must_change_password=FALSE WHERE id=$1', [users.ka_r5h32.id]) }
+
   // ---- 5. CSRF / Origin / bentuk / id silang ----
   status(await op.call('POST', AR, isi(), false), 403, 'catat arsip tanpa CSRF')
   status(await op.call('POST', AR, isi(), true, { origin: 'https://evil.example' }), 403, 'catat arsip Origin asing')

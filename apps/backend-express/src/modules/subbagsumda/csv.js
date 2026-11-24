@@ -10,7 +10,10 @@ import { disposisi } from './lampiran.js'
 
 export const BOM = Buffer.from([0xef, 0xbb, 0xbf])
 // eslint-disable-next-line no-control-regex
-const AWAL_FORMULA = /^[=+\-@\t\r＝＋－＠]/
+const AWAL_FORMULA = /^[=+\-@\t\r\n＝＋－＠]/
+// Review S4: data lama (salinan registry/impor) tidak lewat teks() — spasi, NBSP, atau baris baru di depan, dan padanan
+// Unicode (﹦ U+FE66 dst.) dinormalisasi NFKC lalu diperiksa lagi.
+const berawalFormula = (s) => AWAL_FORMULA.test(s) || AWAL_FORMULA.test(s.normalize('NFKC').replace(/^[\s​﻿]+/u, ''))
 
 /** Satu sel CSV yang sudah berkutip. */
 export function sel(v) {
@@ -18,7 +21,7 @@ export function sel(v) {
   if (typeof v === 'number' || typeof v === 'bigint') return `"${String(v)}"`
   if (typeof v === 'boolean') return v ? '"Ya"' : '"Tidak"'
   let s = String(v)
-  if (AWAL_FORMULA.test(s)) s = `'${s}`
+  if (berawalFormula(s)) s = `'${s}`
   return `"${s.replace(/"/g, '""')}"`
 }
 
