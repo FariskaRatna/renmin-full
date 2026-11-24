@@ -3,6 +3,7 @@ import { Router } from 'express'
 import { withTransaction } from '../../db.js'
 import { BODY_LIMITS, rawBody } from '../../http/payload.js'
 import { parseGoInt, respond } from '../subbagren/shared.js'
+import { CUTI_HARI_INI_SQL, cutiTahunIni } from './cuti.js'
 import { riwayatDiklatPersonel } from './diklat.js'
 import { KOMPETENSI_60_SQL, kompetensiPersonel } from './kompetensi.js'
 import { GOLONGAN_PNS, HARI_INI, HttpError, UUID_RE, hariDari, body, cekPangkat, idParam, makeHandle, permit, pilihan, tanggal, teks } from './umum.js'
@@ -216,6 +217,7 @@ export function createSumdaPersonelRouter({ pool }) {
     // R5H29 K18 (aditif, hanya di GET ini): riwayat diklat dan kompetensi personel.
     item.riwayatDiklat = await riwayatDiklatPersonel(pool, id)
     item.kompetensi = await kompetensiPersonel(pool, id)
+    item.cutiTahunIni = await cutiTahunIni(pool, id) // R5H30 K20/K41 (aditif)
     respond(res, 200, { item })
   }))
 
@@ -394,6 +396,7 @@ export function createSumdaDashboardRouter({ pool }) {
         enamBulan: proyeksi.reduce((s, b) => s + b.jumlah, 0),
         karierMenunggu: Number(tot.karier_menunggu), // R5H28 K14 (aditif)
         kompetensiKedaluwarsa60: (await pool.query(KOMPETENSI_60_SQL)).rows[0].n, // R5H29 K18/K31 (aditif)
+        cutiHariIni: (await pool.query(CUTI_HARI_INI_SQL)).rows[0].n, // R5H30 K21/K40 (aditif)
       },
       proyeksi,
       alertTerdekat,
