@@ -5,7 +5,7 @@
 | Suite | Menguji | Perintah | Status |
 |---|---|---|---|
 | Go | `apps/backend` (melayani produksi hari ini) | `bash ./scripts/security-test-r2d5.sh` | 21 subtest |
-| Express | `apps/backend-express` (akan menggantikannya) | `bash ./scripts/security-test-express.sh` | **25/25 LULUS, 2026-11-23** (21 skenario 1:1 + `x1_r5h25` + `x2_r5h27` + `x3_r5h28` + `x4_r5h29`) |
+| Express | `apps/backend-express` (akan menggantikannya) | `bash ./scripts/security-test-express.sh` | **26/26 LULUS, 2026-11-24** (21 skenario 1:1 + `x1_r5h25` + `x2_r5h27` + `x3_r5h28` + `x4_r5h29` + `x5_r5h30`) |
 
 Suite Express adalah port satu-lawan-satu dari yang Go, dengan nama skenario
 yang identik supaya kedua laporan bisa ditaruh berdampingan. Skenario berawalan
@@ -32,7 +32,10 @@ dicabut saat sesi sedang hidup.
 - (R5H29, 2026-11-23) menghapus syarat "pengunggah atau pemegang arsip" pada hapus lampiran
   kegiatan Diklat → `x4_r5h29_sumda_diklat_guard` merah, dan hanya x4;
 - (R5H29 perbaikan review) menghapus cek personel terarsip di hapus peserta, lalu terpisah menghapus
-  penolakan PDF terenkripsi/rusak → masing-masing hanya x4 merah.
+  penolakan PDF terenkripsi/rusak → masing-masing hanya x4 merah;
+- (R5H30, 2026-11-24) membuka unduhan lampiran cuti Sakit untuk semua pembaca, menghapus syarat
+  "bukan pengubah terakhir" di keputusan cuti, dan menghapus syarat `personel.update` saat menerapkan
+  status dari Kesejahteraan → masing-masing hanya `x5_r5h30_sumda_layanan_guard` merah.
 
 Keduanya dipulihkan sesudahnya. Suite yang lulus pada percobaan pertama tanpa
 pernah dibuktikan bisa merah tidak membuktikan apa-apa.
