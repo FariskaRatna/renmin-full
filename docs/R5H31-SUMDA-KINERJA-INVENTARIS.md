@@ -1,6 +1,6 @@
 # R5H31 — Subbagsumda: Kinerja & Pembinaan + Inventaris/BMN
 
-Status: **DIIMPLEMENTASI (2026-11-24), branch `feat/r5h31-sumda-kinerja-aset`, belum di-push / belum deploy**. K1–K4 dijawab pemilik 2026-11-24; K5–K30 (usulan) disetujui pemilik 2026-11-24. Rencana Implementasi + K31–K49 disetujui pemilik 2026-11-24. Belum ada kode.
+Status: **DIIMPLEMENTASI (2026-11-24), branch `feat/r5h31-sumda-kinerja-aset`, belum di-push / belum deploy**. K1–K4 dijawab pemilik 2026-11-24; K5–K30 (usulan) disetujui pemilik 2026-11-24. Rencana Implementasi + K31–K49 disetujui pemilik 2026-11-24. Perbaikan hasil review di bagian akhir.
 Khusus Express. Migrasi **072** (R5H15 digeser lagi ke **073**, lihat K30). Commit: f31cc3d migrasi · aa52dce
 `pernahMengubahSql` · 7ad96b3 API Kinerja · d7806c7 API Aset · 4522311 skenario x6 · 59fe53d frontend.
 Lanjutan R5H27–R5H30: penilaian merujuk `sdl_sumda_personel`; alur persetujuan, maker-checker ("bukan pencatat dan
@@ -188,8 +188,8 @@ antar-modul, bentuk, pencabutan, kunci evidence kosong. Suite Express **27/27**.
 
 ## Rencana Implementasi
 
-> Disusun 2026-11-24 dari kode di `main` (a4aa35a, sudah memuat R5H27–R5H30). Belum ada kode. K1–K30 sudah disetujui.
-> K31–K49 (§9) masih menunggu persetujuan pemilik. Klaim dokumen rilis sudah dicocokkan dengan kode. Koreksinya ada di
+> Disusun 2026-11-24 dari kode di `main` (a4aa35a, sudah memuat R5H27–R5H30), sebelum kode ditulis. K1–K30 sudah disetujui;
+> K31–K49 (§9) disetujui pemilik 2026-11-24. Klaim dokumen rilis sudah dicocokkan dengan kode. Koreksinya ada di
 > "Temuan yang mengoreksi dokumen rilis". "K43 R5H30" selalu berarti keputusan R5H30, bukan nomor di dokumen ini.
 
 ### 1. Backend: Express saja (ditambah migrasi 072, manifes, dan seed Go)
@@ -505,13 +505,17 @@ terhapus, jadi salinannya 0 baris dan **fixture wajib**:
    - `body` tanpa `SDL1`
 6. Pulihkan dump, **baru commit**.
 
-**Pra-cek produksi** (baca saja, oleh pemilik). Hasilnya informatif. Satu-satunya jalur gagal adalah bentrok kode, dan
-hasil yang diharapkan untuk itu 0:
+**Pra-cek produksi** (baca saja, oleh pemilik). Hasilnya informatif. Satu-satunya jalur gagal adalah bentrok kode
+(`kode_ganda_btrim` dan `kode_bertilde` — review S3: kode registry yang sudah berakhiran `~n` bisa bentrok dengan
+akhiran salinan ganda); harus 0. `penting`/`keterangan_penting` ditunjukkan ke pemilik (review S2, K44):
 ```sql
 SELECT count(*) AS sumber,
        count(*) - count(DISTINCT lower(btrim(s.ref_code))) AS kode_ganda_btrim,
        count(*) FILTER (WHERE lower(btrim(coalesce(s.fields->>'kondisi',''))) NOT IN ('baik','perlu pemeriksaan','rusak ringan','rusak berat')) AS kondisi_dipetakan,
-       count(*) FILTER (WHERE btrim(coalesce(s.fields->>'jumlah','')) !~ '^[1-9][0-9]{0,8}$') AS jumlah_dipetakan
+       count(*) FILTER (WHERE btrim(coalesce(s.fields->>'jumlah','')) !~ '^[1-9][0-9]{0,8}$') AS jumlah_dipetakan,
+       count(*) FILTER (WHERE s.ref_code LIKE '%~%') AS kode_bertilde,
+       count(*) FILTER (WHERE w.classification = 'penting') AS penting,
+       count(*) FILTER (WHERE w.classification = 'penting' AND btrim(coalesce(s.fields->>'keterangan','')) <> '') AS keterangan_penting
   FROM sdl_sumda_registry s JOIN sdl_unit_work_records w ON w.id=s.work_record_id
  WHERE s.kind='inventaris' AND s.deleted_at IS NULL AND w.deleted_at IS NULL AND w.unit_key='subbagsumda';
 ```
@@ -922,3 +926,26 @@ Belum:
 - Demo Kabagrenmin (isi kinerja terbaca, tanpa tombol) dan akun unit lain; simulasi rollback (tombol darurat registry).
 - Harness golden: 127/128 berubah lagi (permission 072) → **rekam ulang oleh pemilik**; registry 32–37 harus cocok.
 - Deploy: pra-cek registry inventaris produksi (§4) + `SDL_EVIDENCE_KEY`; **centang "Izinkan migrasi"** (072).
+
+## Perbaikan hasil review (2026-11-24)
+
+`/review` (migration-guard + security-reviewer): tidak ada temuan wajib; ketujuh aturan migrasi dipatuhi; SQL
+`pernahMengubahSql` tanpa opsi terbukti identik dengan R5H30. Dikerjakan atas persetujuan pemilik:
+
+| # | Temuan | Perbaikan |
+|---|---|---|
+| S1 | Angka dashboard "Pembinaan lewat tenggat" (terlihat semua pembaca) bisa dikorelasikan dengan perubahan status ringkas Diajukan→Dinilai saat Kasubbag menyetujui, sehingga staf bisa menebak siapa Perlu Pembinaan | **Mengubah K33 ke alternatifnya:** `totals.pembinaanLewatTenggat` hanya untuk pemegang `kinerja.read`, selain itu `null` (kartu tidak tampil) |
+| S2 | Salinan registry `penting` (termasuk `keterangan`) terbaca semua pemegang `inventaris.read` | Sesuai K44; pra-cek §4 kini menghitung `penting` dan `keterangan_penting` untuk ditunjukkan ke pemilik sebelum deploy |
+| S3 | Migrasi bisa gagal bila kode registry sudah berakhiran `~n` | Pra-cek §4 menghitung `kode_bertilde` (harus 0); 072 tidak diubah |
+| C1 | Approve tanpa `kinerja.read` membatalkan → selalu 404 setelah rollback | Batalkan oleh bukan-pencatat butuh approve **dan** `kinerja.read` (403 lebih awal) |
+| C3 | Kasubbag bisa mengajukan draf milik operator lalu langsung memutusnya | **Mengubah K34 untuk `ajukan`:** hanya pencatat |
+| Docs | Status/rencana masih "belum ada kode"; K49 belum di DEVIATIONS; rollback tidak menyebut data registry selama rollback; urutan deploy | Diperbaiki; DEVIATIONS B10 (K49); API-CONTRACT § R5H31; deploy: rebuild frontend segera setelah migrasi |
+
+Tidak diubah (dicatat): C2 pembaca terbatas mendapat 403 (bukan 404) saat memutasi penilaian Dibatalkan yang id-nya
+sudah diketahui; C4 Selesai pembinaan tanpa pemeriksa (K37); C5/C6 invarian: setiap pemegang `kinerja.manage` dan
+`inventaris.read` juga memegang `personel.read` (seed saat ini memenuhi); C7 event audit tindak lanjut menyiratkan PP
+(hanya Superadmin, K48); `tolak_hapus` tidak mengisi `updated_by`.
+
+**Deploy (tambahan):** rebuild `frontend` segera sesudah migrasi 072 — input ke registry inventaris lewat layar lama
+setelah migrasi tidak tersalin. Pemeriksaan pasca-deploy (harus 0):
+`SELECT count(*) FROM sdl_sumda_registry WHERE kind='inventaris' AND greatest(created_at,updated_at) > (SELECT applied_at FROM sdl_schema_migrations WHERE filename LIKE '%072_%')`.

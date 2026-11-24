@@ -40,7 +40,8 @@ dicabut saat sesi sedang hidup.
   penyamaran catatan cuti Sakit → masing-masing hanya x5 merah;
 - (R5H31, 2026-11-24) membuka penyamaran kolom kinerja, membuka syarat unduh lampiran kinerja, menghapus
   syarat "pernah mengubah" di keputusan kinerja, dan menghapus `usulan_by<>actor` di penghapusan BMN →
-  masing-masing hanya `x6_r5h31_sumda_kinerja_aset_guard` merah.
+  masing-masing hanya `x6_r5h31_sumda_kinerja_aset_guard` merah;
+- (R5H31 perbaikan review) mengirim angka pembinaan ke semua pembaca → hanya x6 merah.
 
 Keduanya dipulihkan sesudahnya. Suite yang lulus pada percobaan pertama tanpa
 pernah dibuktikan bisa merah tidak membuktikan apa-apa.

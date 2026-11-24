@@ -1877,7 +1877,7 @@ atas kolom tersamar. Mutasi oleh bukan-pencatat tanpa `Rk` → 403 sebelum valid
 | POST | `/api/v1/subbagsumda/kinerja` | Mk | `{personelId,tahun,periode,kategori,penilai,tanggalPenilaian,catatan}` → 201 Draft. `periode` `SEMESTER_I`\|`SEMESTER_II`\|`TAHUNAN`; `kategori` `BAIK_SEKALI`\|`BAIK`\|`CUKUP`\|`PERLU_PEMBINAAN`. Personel Aktif/MPP; sudah ada penilaian aktif periode itu → 409 `{error:"penilaian_ganda",id}` |
 | GET | `/api/v1/subbagsumda/kinerja/:id` | R | `{item,tindakLanjut:[{id,bentuk,uraian,tenggat,status,hasil,lewatTenggat,selesaiAt,updatedByName,updatedAt}],lampiran[],riwayat[]}` (tersamar, lihat atas) |
 | PATCH | `/api/v1/subbagsumda/kinerja/:id` | Mk + (pencatat\|Rk) | `{tahun,periode,kategori,penilai,tanggalPenilaian,catatan,version}`; hanya Draft; PP → kategori lain dengan tindak lanjut aktif → 409 `tindak_lanjut_terbuka` |
-| POST | `/api/v1/subbagsumda/kinerja/:id/aksi` | Mk/Ak | `{aksi,catatan,version}`: `ajukan` (Draft→Diajukan; Mk+pencatat\|Rk), `setujui` (Ak+Rk; PP → Disetujui, lainnya → Selesai; PP tanpa tindak lanjut → 409 `tindak_lanjut_wajib`), `kembalikan` (Ak+Rk, alasan ≥ 8, → Draft), `batalkan` (pencatat\|Ak, Draft/Diajukan, alasan ≥ 8), `selesai` (Disetujui PP; semua tindak lanjut tuntas dan ≥ 1 Selesai, kalau tidak 409 `tindak_lanjut_terbuka`). Pemutus bukan pencatat dan tidak pernah mengubah isi/lampiran/tindak lanjut (`self_review_forbidden`) |
+| POST | `/api/v1/subbagsumda/kinerja/:id/aksi` | Mk/Ak | `{aksi,catatan,version}`: `ajukan` (Draft→Diajukan; Mk + pencatat saja), `setujui` (Ak+Rk; PP → Disetujui, lainnya → Selesai; PP tanpa tindak lanjut → 409 `tindak_lanjut_wajib`), `kembalikan` (Ak+Rk, alasan ≥ 8, → Draft), `batalkan` (pencatat, atau Ak+Rk; Draft/Diajukan; alasan ≥ 8), `selesai` (Disetujui PP; semua tindak lanjut tuntas dan ≥ 1 Selesai, kalau tidak 409 `tindak_lanjut_terbuka`). Pemutus bukan pencatat dan tidak pernah mengubah isi/lampiran/tindak lanjut (`self_review_forbidden`) |
 | POST | `/api/v1/subbagsumda/kinerja/:id/tindak-lanjut` | Mk + (pencatat\|Rk) | `{bentuk,uraian,tenggat,version}`; hanya PP, Draft/Diajukan/Disetujui, personel belum terarsip; maks. 20 (`batas_tindak_lanjut`). `bentuk` `KONSELING`\|`PELATIHAN`\|`PENDAMPINGAN`\|`TEGURAN`\|`LAINNYA` |
 | PATCH | `/api/v1/subbagsumda/kinerja/:id/tindak-lanjut/:tid` | Mk + (pencatat\|Rk) | `{bentuk,uraian,tenggat,status,hasil,version}`; `version` = versi penilaian; Selesai wajib `hasil` ≥ 3; tindak lanjut final tidak bisa diubah |
 | POST · GET · DELETE | `/api/v1/subbagsumda/kinerja/:id/lampiran` · `…/:lid` · `…/:lid` | Mk · pencatat\|Rk · Mk | PDF tersegel; unduh oleh selain pencatat/Rk → 403 |
@@ -1902,10 +1902,11 @@ Audit `subbagsumda.kinerja.*` (metadata `{status,fields,version}`, **tanpa kateg
 
 **Aditif pada R5H27:** `GET /api/v1/subbagsumda/personel/:id` → `item.kinerja[]` `{id,tahun,periode,statusRingkas,dibatasi,
 status,kategori}` (bagi non-K1 hanya entri `DINILAI`, `kategori`/`status` null); `GET /api/v1/subbagsumda/dashboard` →
-`totals.pembinaanLewatTenggat` (semua pembaca) dan `totals.pemeliharaanJatuhTempo14` (`null` tanpa `Ri`).
+`totals.pembinaanLewatTenggat` (`null` tanpa `Rk`, review S1) dan `totals.pemeliharaanJatuhTempo14` (`null` tanpa `Ri`).
 
 **Rollback.** Bila `/api/v1/subbagsumda/*` kembali ke Go, `/kinerja*` dan `/aset*` dijawab chi 404 `text/plain`; Kinerja
-"tidak tersedia", Inventaris menampilkan tombol registry lama (darurat). Tabel 072 diam. Rollback sempit:
+"tidak tersedia", Inventaris menampilkan tombol registry lama (darurat). Tabel 072 diam; **data yang ditulis ke registry
+selama rollback tidak tersalin ke `sdl_sumda_aset`** (input ulang manual setelah kembali). Rollback sempit:
 `/api/v1/subbagsumda/personel* /api/v1/subbagsumda/pensiun/* /api/v1/subbagsumda/dashboard /api/v1/subbagsumda/karier*
 /api/v1/subbagsumda/diklat* /api/v1/subbagsumda/kompetensi* /api/v1/subbagsumda/cuti* /api/v1/subbagsumda/kesejahteraan*
 /api/v1/subbagsumda/kinerja* /api/v1/subbagsumda/aset* /api/v1/subbagsumda/opsi-dropdown/*`. Catatan: executive v2
