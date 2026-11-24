@@ -13,7 +13,8 @@ export const BULAN = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'S
 
 /** Endpoint tidak dikenal server (mis. prefix dikembalikan ke Go): balasan 404 berupa teks, bukan JSON. */
 export class TidakTersedia extends Error {}
-export class ApiError extends Error { constructor(public code: string, message: string) { super(message) } }
+/** `data` = badan galat lengkap (R5H30: 409 pengajuan_ganda membawa `id`). */
+export class ApiError extends Error { constructor(public code: string, message: string, public data: Record<string, unknown> = {}) { super(message) } }
 
 export type Method = 'GET' | 'POST' | 'PATCH' | 'DELETE'
 
@@ -38,9 +39,9 @@ export function makeApi(errors: Record<string, string>, pesan404: string) {
     const json = (r.headers.get('content-type') ?? '').includes('application/json')
     if (r.status === 404 && !json) throw new TidakTersedia(pesan404)
     if (!r.ok) {
-      const e: { error?: string } = json ? await r.json().catch(() => ({})) : {}
+      const e: { error?: string } & Record<string, unknown> = json ? await r.json().catch(() => ({})) : {}
       const code = e.error ?? `http_${r.status}`
-      throw new ApiError(code, errors[code] ?? `Permintaan gagal (HTTP ${r.status}).`)
+      throw new ApiError(code, errors[code] ?? `Permintaan gagal (HTTP ${r.status}).`, e)
     }
     return r.status === 204 ? (undefined as T) : (await r.json() as T)
   }
@@ -67,7 +68,8 @@ export function Shade({ children, onClose, label, busy = false }: { children: Re
   </div>
 }
 
-export type LampiranItem = { id: string; filename: string; size: number; uploadedBy?: string; uploadedByName?: string }
+/** R5H30 K38: `filename` null + `dibatasi` untuk lampiran yang tidak boleh dibuka akun ini (cuti Sakit). */
+export type LampiranItem = { id: string; filename: string | null; dibatasi?: boolean; size: number; uploadedBy?: string; uploadedByName?: string }
 export const MAKS_PDF = 5 * 1024 * 1024
 
 /**
@@ -91,20 +93,72 @@ export function LampiranPdf({ judul, items, urlUnduh, unggah, hapus, bisaUnggah,
     finally { setBusy(false); if (ref.current) ref.current.value = '' }
   }
   async function buang(l: LampiranItem) {
-    if (!(await confirmDialog(`Hapus lampiran ${l.filename}?`, { confirmLabel: 'Hapus', danger: true }))) return
+    if (!(await confirmDialog(`Hapus lampiran ${l.filename ?? 'ini'}?`, { confirmLabel: 'Hapus', danger: true }))) return
     try { await hapus(l); showToast('Lampiran dihapus.') } catch (e) { showToast((e as Error).message, 'error') }
   }
   return <section className="sdl-sumda__riwayat" aria-label={judul}>
     <strong>{judul} ({items.length}/{maks})</strong>
     {items.length === 0 ? <p className="sdl-sumda__muted">Belum ada lampiran.</p>
       : <ol className="sdl-karier__lampiran">{items.map(l => <li key={l.id}>
-        <button type="button" className="sdl-sumda__link" onClick={() => setPreview(l)}>{l.filename}</button>
+        {l.dibatasi || l.filename === null
+          ? <span className="sdl-sumda__muted" title="Hanya pengunggah dan pemegang hak setuju yang bisa membuka lampiran ini.">Lampiran (dibatasi)</span>
+          : <button type="button" className="sdl-sumda__link" onClick={() => setPreview(l)}>{l.filename}</button>}
         <span className="sdl-sumda__muted">{l.size < 1024 ? '< 1 KB' : `${Math.round(l.size / 1024)} KB`}{l.uploadedByName ? ` · ${l.uploadedByName}` : ''}</span>
         {bisaHapus(l) ? <button type="button" className="btn sdl-progar__danger" onClick={() => void buang(l)}>Hapus</button> : <span />}
       </li>)}</ol>}
     {bisaUnggah && items.length < maks && <>
       <input ref={ref} type="file" accept="application/pdf,.pdf" hidden onChange={e => { const f = e.target.files?.[0]; if (f) void pilih(f) }} />
       <button type="button" className="btn" disabled={busy} onClick={() => ref.current?.click()}>Unggah PDF (maks. 5 MB)</button></>}
-    {preview && <LampiranPreviewR5F15 stored={{ url: urlUnduh(preview), name: preview.filename, mime: 'application/pdf' }} maxBytes={MAKS_PDF} title={judul} note="Pratinjau berkas pendukung." onClose={() => setPreview(null)} />}
+    {preview && <LampiranPreviewR5F15 stored={{ url: urlUnduh(preview), name: preview.filename ?? 'lampiran.pdf', mime: 'application/pdf' }} maxBytes={MAKS_PDF} title={judul} note="Pratinjau berkas pendukung." onClose={() => setPreview(null)} />}
   </section>
+}
+
+export type PersonelCari = { id: string; nrp: string; nama: string; status: string; tanggalPensiun?: string }
+const apiCari = makeApi({}, 'Master Personel tidak tersedia di server saat ini.')
+
+/** Pencarian personel (nama/NRP) dari Master Personel; `statusAktif` membatasi ke Aktif/MPP (R5H30). */
+export function CariPersonel({ onPilih, statusAktif }: { onPilih: (p: PersonelCari) => void; statusAktif: boolean }) {
+  const [cari, setCari] = useState('')
+  const [hasil, setHasil] = useState<PersonelCari[]>([])
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const term = cari.trim()
+      if (term.length < 2) { setHasil([]); return }
+      const daftar = statusAktif ? ['Aktif', 'MPP'] : ['']
+      Promise.all(daftar.map(st => apiCari<{ items: PersonelCari[] }>(`/personel?${new URLSearchParams({ q: term, size: '10', ...(st ? { status: st } : {}) })}`)))
+        .then(r => setHasil(r.flatMap(x => x.items).slice(0, 10))).catch(() => setHasil([]))
+    }, 300)
+    return () => clearTimeout(t)
+  }, [cari, statusAktif])
+  return <>
+    <input type="search" value={cari} placeholder="Ketik nama atau NRP (min. 2 huruf)…" onChange={e => setCari(e.target.value)} />
+    {hasil.length > 0 && <ul className="sdl-karier__hasil" role="listbox" aria-label="Hasil pencarian personel">{hasil.map(p =>
+      <li key={p.id}><button type="button" role="option" aria-selected={false} onClick={() => { onPilih(p); setHasil([]); setCari('') }}>
+        <strong>{p.nama}</strong> <span className="sdl-sumda__mono">{p.nrp}</span><small>{p.status}</small></button></li>)}</ul>}
+  </>
+}
+
+/** Dialog satu isian alasan (tolak/batalkan, min. 8 karakter). */
+export function AlasanDialog({ judul, onClose, onSubmit }: { judul: string; onClose: () => void; onSubmit: (alasan: string) => Promise<void> }) {
+  const [alasan, setAlasan] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  return <Shade onClose={onClose} label={judul} busy={busy}>
+    <form className="sdl-sumda__form" onSubmit={async e => {
+      e.preventDefault()
+      if ([...alasan.trim()].length < 8) { setError('Alasan minimal 8 karakter.'); return }
+      setBusy(true); try { await onSubmit(alasan.trim()) } finally { setBusy(false) }
+    }}>
+      <header><h2>{judul}</h2></header>
+      <div className="sdl-progar__fields"><label><span>Alasan<b aria-hidden="true"> *</b></span>
+        <textarea rows={3} maxLength={1000} value={alasan} autoFocus onChange={e => setAlasan(e.target.value)} /></label></div>
+      {error && <p className="sdl-progar__error" role="alert">{error}</p>}
+      <footer><button type="button" className="btn" disabled={busy} onClick={onClose}>Kembali</button><button type="submit" className="btn primary" disabled={busy}>Simpan</button></footer>
+    </form>
+  </Shade>
+}
+
+/** Status alur pengajuan Sumda (Diajukan … Dibatalkan) — memakai gaya R5H28. */
+export function StatusPengajuan({ status }: { status: string }) {
+  return <span className={`sdl-karier__status is-${status.toLowerCase()}`}>{status}</span>
 }
