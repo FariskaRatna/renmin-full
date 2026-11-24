@@ -29,6 +29,7 @@ type RiwayatDiklat = { diklatId: string; pesertaId: string; nama: string; jenis:
 type KompetensiRingkas = { id: string; nama: string; kategori: string; nomor: string; berlakuSampai: string; sisaHari: number | null; tahap: 'H-60' | 'H-30' | 'KEDALUWARSA' | null }
 type CutiTahunIni = { tahun: number; jatah: number; terpakai: number; dalamProses: number; sisa: number; items: { id: string; jenis: string; status: string; tanggalMulai: string; tanggalSelesai: string; tanggalKembali: string; jumlahHari: number }[] }
 type LayananRingkas = { id: string; jenis: string; status: string; targetSelesai: string; nomorReferensi: string; selesaiAt: string | null }
+type ArsipRingkas = { id: string; nomor: string; jenis: string; perihal: string; tanggal: string; status: string; kerahasiaan: 'BIASA' | 'TERBATAS'; retensiSampai: string; tahapRetensi: 'H-30' | 'JATUH_TEMPO' | null }
 type KinerjaRingkas = { id: string; tahun: number; periode: string; statusRingkas: 'BELUM_DINILAI' | 'DIAJUKAN' | 'DINILAI'; dibatasi: boolean; status: string | null; kategori: string | null }
 type Personel = {
   id: string; nrp: string; nama: string; jenis: '' | 'Polri' | 'PNS'; pangkat: string; pangkatLabel: string
@@ -40,17 +41,18 @@ type Personel = {
   cutiTahunIni?: CutiTahunIni
   riwayatKesejahteraan?: LayananRingkas[]
   kinerja?: KinerjaRingkas[]
+  arsip?: ArsipRingkas[] | null
 }
 type Alert = { personel: Personel; sisaHari: number; tahap: Tahap; ditinjau: { oleh: string; pada: string } | null }
 type Caps = { canRead: boolean; canCreate: boolean; canUpdate: boolean; canArchive: boolean; canReview: boolean }
 type Aktivitas = { jenis: string; personelId: string | null; personelNama: string | null; oleh: string; pada: string; rincian: Record<string, unknown> }
 type Dashboard = {
-  totals: { personel: number; aktif: number; mpp: number; alert: number; belumDitinjau: number; belumLengkap: number; enamBulan: number; karierMenunggu?: number; kompetensiKedaluwarsa60?: number; cutiHariIni?: number; layananMenunggu?: number; pembinaanLewatTenggat?: number | null; pemeliharaanJatuhTempo14?: number | null }
+  totals: { personel: number; aktif: number; mpp: number; alert: number; belumDitinjau: number; belumLengkap: number; enamBulan: number; karierMenunggu?: number; kompetensiKedaluwarsa60?: number; cutiHariIni?: number; layananMenunggu?: number; pembinaanLewatTenggat?: number | null; pemeliharaanJatuhTempo14?: number | null; arsipRetensi30?: number | null }
   proyeksi: { bulan: string; jumlah: number }[]; alertTerdekat: Alert[]; terdekat: Personel[]; aktivitas: Aktivitas[]
 }
 type Rank = { code: string; shortName: string; fullName: string; group: string }
 type Mode = 'dashboard' | 'master' | 'pensiun'
-export type SumdaNav = (menu: 'personel' | 'pensiun' | 'karier' | 'diklat' | 'cuti' | 'kesejahteraan' | 'kinerja' | 'inventaris', opts?: { recordID?: string; tab?: string }) => void
+export type SumdaNav = (menu: 'personel' | 'pensiun' | 'karier' | 'diklat' | 'cuti' | 'kesejahteraan' | 'kinerja' | 'inventaris' | 'arsip' | 'laporan', opts?: { recordID?: string; tab?: string }) => void
 
 const STATUS: Status[] = ['Aktif', 'MPP', 'Pensiun', 'Nonaktif']
 const TAHAP: { key: Tahap; label: string; rentang: string }[] = [
@@ -148,6 +150,8 @@ function DashboardView({ onNavigate, onLost }: { onNavigate: SumdaNav; onLost: (
         <small>{isiKinerja && <button type="button" className="sdl-sumda__link" onClick={() => onNavigate('kinerja')}>Kinerja &amp; Pembinaan</button>}</small></div>}
       {typeof t.pemeliharaanJatuhTempo14 === 'number' && <div className={t.pemeliharaanJatuhTempo14 ? 'is-attention' : ''}><dt>Pemeliharaan jatuh tempo ≤ 14 hari</dt><dd>{t.pemeliharaanJatuhTempo14}</dd>
         <small><button type="button" className="sdl-sumda__link" onClick={() => onNavigate('inventaris', { tab: 'jadwal' })}>Jadwal pemeliharaan</button></small></div>}
+      {typeof t.arsipRetensi30 === 'number' && <div className={t.arsipRetensi30 ? 'is-attention' : ''}><dt>Arsip retensi ≤ 30 hari</dt><dd>{t.arsipRetensi30}</dd>
+        <small><button type="button" className="sdl-sumda__link" onClick={() => onNavigate('arsip')}>Persuratan &amp; Arsip</button> · <button type="button" className="sdl-sumda__link" onClick={() => onNavigate('laporan')}>Laporan &amp; Analitik</button></small></div>}
     </dl>
 
     <div className="sdl-sumda__split">
@@ -328,11 +332,13 @@ function DetailDialog({ p, caps, onClose, onEdit, onArchive, onProsesPensiun }: 
   const [cuti, setCuti] = useState<CutiTahunIni | null>(null)
   const [layanan, setLayanan] = useState<LayananRingkas[]>([])
   const [kinerja, setKinerja] = useState<KinerjaRingkas[]>([])
+  const [arsip, setArsip] = useState<ArsipRingkas[] | null>(null)
   useEffect(() => {
     if (!UUID_RE.test(p.id)) return
     api<{ item: Personel }>(`/personel/${encodeURIComponent(p.id)}`).then(r => {
       setRiwayat(r.item.riwayatKarier ?? []); setDiklat(r.item.riwayatDiklat ?? []); setKompetensi(r.item.kompetensi ?? [])
       setCuti(r.item.cutiTahunIni ?? null); setLayanan(r.item.riwayatKesejahteraan ?? []); setKinerja(r.item.kinerja ?? [])
+      setArsip(Array.isArray(r.item.arsip) ? r.item.arsip : null) // R5H32 K24/K45: null tanpa arsip.read
     }).catch(() => setRiwayat([]))
   }, [p.id])
   const rows: [string, ReactNode][] = [
@@ -384,6 +390,12 @@ function DetailDialog({ p, caps, onClose, onEdit, onArchive, onProsesPensiun }: 
       {kinerja.length === 0 ? <p className="sdl-sumda__muted">Belum ada penilaian yang dapat ditampilkan.</p>
         : <ol>{kinerja.map(k => <li key={k.id}><span className="sdl-sumda__mono">{k.tahun} · {PERIODE_KINERJA[k.periode] ?? k.periode}</span>
           <span>{k.dibatasi ? RINGKAS_KINERJA[k.statusRingkas] : (k.kategori ? KATEGORI_KINERJA[k.kategori] ?? k.kategori : '—')}</span><span className="sdl-sumda__muted">{k.dibatasi ? 'isi dibatasi' : k.status}</span></li>)}</ol>}
+    </section>}
+    {riwayat !== null && arsip !== null && <section className="sdl-sumda__riwayat" aria-label="Arsip dokumen">
+      <strong>Arsip dokumen</strong>
+      {arsip.length === 0 ? <p className="sdl-sumda__muted">Belum ada arsip dokumen yang menautkan personel ini.</p>
+        : <ol>{arsip.map(a => <li key={a.id}><span className="sdl-sumda__mono">{tgl(a.tanggal)}</span>
+          <span>{a.perihal}{a.nomor ? ` · ${a.nomor}` : ''}{a.kerahasiaan === 'TERBATAS' ? ' · Terbatas' : ''}</span><span className="sdl-sumda__muted">{a.status}{a.tahapRetensi ? ' · retensi' : ''}</span></li>)}</ol>}
     </section>}
     <footer>
       {caps?.canArchive && <button type="button" className="btn sdl-progar__danger" onClick={onArchive}>Arsipkan</button>}

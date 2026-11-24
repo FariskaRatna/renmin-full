@@ -36,6 +36,8 @@ import SumdaCutiR5H30 from './SumdaCutiR5H30'
 import SumdaKesejahteraanR5H30 from './SumdaKesejahteraanR5H30'
 import SumdaKinerjaR5H31 from './SumdaKinerjaR5H31'
 import SumdaAsetR5H31 from './SumdaAsetR5H31'
+import SumdaArsipR5H32 from './SumdaArsipR5H32'
+import SumdaLaporanR5H32 from './SumdaLaporanR5H32'
 import BinfungR5C from './BinfungR5C'
 import UrminR5D from './UrminR5D'
 import SmartUnitDashboard from './SmartUnitDashboard'
@@ -162,7 +164,9 @@ const units: Unit[] = [
     {id:'cuti',title:'Cuti & Perizinan',icon:'calendar',description:'Pengajuan cuti dan izin personel, jatah cuti tahunan, persetujuan Kasubbag, dan kalender ketidakhadiran.',columns:['Personel','Jenis','Tanggal','Hari','Status']},
     {id:'kesejahteraan',title:'Kesejahteraan',icon:'handshake',description:'Layanan persiapan pensiun, MPP, ASABRI, kartu/identitas, dan layanan personel lain beserta tindak lanjutnya.',columns:['Personel','Layanan','Target','Status']},
     {id:'kinerja',title:'Kinerja & Pembinaan',icon:'clipboard',description:'Penilaian kinerja personel per periode, persetujuan Kasubbag, dan tindak lanjut pembinaan.',columns:['Personel','Periode','Hasil','Status']},
-    {id:'inventaris',title:'Inventaris & BMN',icon:'package',description:'Barang milik negara: kode BMN, kondisi, penanggung jawab, jadwal & riwayat pemeliharaan, dan usulan penghapusan.',columns:['Aset','Kategori','Lokasi','Kondisi','Pemeliharaan','Status']}
+    {id:'inventaris',title:'Inventaris & BMN',icon:'package',description:'Barang milik negara: kode BMN, kondisi, penanggung jawab, jadwal & riwayat pemeliharaan, dan usulan penghapusan.',columns:['Aset','Kategori','Lokasi','Kondisi','Pemeliharaan','Status']},
+    {id:'arsip',title:'Persuratan & Arsip',icon:'archive',description:'Register arsip dokumen Subbagsumda (SK, nota dinas, surat eksternal, berita acara): lokasi simpan, retensi, dan tautan Surat Masuk/Keluar.',columns:['Dokumen','Jenis','Tanggal','Lokasi','Retensi','Status']},
+    {id:'laporan',title:'Laporan & Analitik',icon:'chart',description:'Ringkasan dan grafik lintas modul Subbagsumda, ringkasan register, cetak, dan unduh data CSV.',columns:['Modul','Jumlah','Diproses']}
   ]},
   {id:'binfung',title:'SUBBAGBINFUNG',name:'Subbagian Pembinaan Fungsi',subtitle:'Tata kelola, sistem, metode dan evaluasi organisasi',description:'SOP dan regulasi, PID, RB, SPIP serta Analisis Beban Kerja.',icon:'book',accent:'#ca9250',soft:'#fcf4e9',modules:[
     {id:'sop',title:'SOP, Regulasi & Metode',icon:'book',description:'Register SOP, sistem, metode dan regulasi.',columns:['Kode','Jenis','Versi','Pemilik Proses','Status']},
@@ -611,6 +615,8 @@ function App() {
           : unit.id==='sumda'&&chosenModule?.id==='kesejahteraan' ? <SumdaKesejahteraanR5H30 key={`kesejahteraan:${effectiveScreen.recordID??''}`} initialID={effectiveScreen.recordID} userId={account.id}/>
           : unit.id==='sumda'&&chosenModule?.id==='kinerja' ? <SumdaKinerjaR5H31 key={`kinerja:${effectiveScreen.recordID??''}`} initialID={effectiveScreen.recordID} userId={account.id}/>
           : unit.id==='sumda'&&chosenModule?.id==='inventaris' ? <SumdaAsetR5H31 key={`aset:${effectiveScreen.tab??''}:${effectiveScreen.recordID??''}`} tab={effectiveScreen.tab} onTab={t=>navigate({view:'workspace',unit:'sumda',menu:'inventaris',tab:t})} initialID={effectiveScreen.recordID} userId={account.id} onOpenFiles={()=>navigate({view:'workspace',unit:'sumda',menu:'__unitwork'})} legacy={<SumdaR5B kind="inventaris" openFiles={recordID=>navigate({view:'workspace',unit:'sumda',menu:'__unitwork',recordID})}/>}/>
+          : unit.id==='sumda'&&chosenModule?.id==='arsip' ? <SumdaArsipR5H32 key={`arsip:${effectiveScreen.recordID??''}`} initialID={effectiveScreen.recordID} userId={account.id} onOpenSurat={(arah,id)=>navigate({view:'workspace',unit:'sumda',menu:arah==='masuk'?'__surat-masuk':'__surat-keluar',recordID:id})}/>
+          : unit.id==='sumda'&&chosenModule?.id==='laporan' ? <SumdaLaporanR5H32/>
           : unit.id==='urmin'&&['surat-keluar','agenda','arsip'].includes(chosenModule?.id||'') ? <UrminR5D key={chosenModule?.id} initialID={effectiveScreen.recordID} initialCreate={effectiveScreen.create} kind={({'surat-keluar':'surat_keluar',agenda:'agenda',arsip:'arsip'} as Record<string,'surat_keluar'|'agenda'|'arsip'>)[chosenModule!.id]} openFiles={recordID=>navigate({view:'workspace',unit:'urmin',menu:'__unitwork',recordID})} isKabagrenmin={isKabagrenmin}/>
           : unit.id==='binfung'&&['sop','pid','rb','abk','pembinaan','evaluasi'].includes(chosenModule?.id||'') ? <BinfungR5C key={chosenModule?.id} kind={chosenModule!.id as 'sop'|'pid'|'rb'|'abk'|'pembinaan'|'evaluasi'} openFiles={recordID=>navigate({view:'workspace',unit:'binfung',menu:'__unitwork',recordID})}/>
           : workMenu==='__distribution-inbox' ? <InboxSaya me={{id:account.id,isKabagrenmin}} initialID={effectiveScreen.recordID} onOpen={t=>t.view==='surat-keluar'?navigate({view:'workspace',unit:'urmin',menu:'surat-keluar',recordID:t.recordID}):t.view==='persetujuan-surat'?navigate({view:'workspace',unit:'urmin',menu:'__persetujuan-surat',recordID:t.recordID}):navigate({view:t.view,recordID:t.recordID})}/>
