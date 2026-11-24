@@ -239,7 +239,113 @@ async function main() {
   log(`\n${fail ? `GAGAL: ${fail} pemeriksaan` : 'LULUS: semua pemeriksaan'}\n`)
 }
 
-/** Irisan B (aset) — diisi bersama aset.js. */
-async function bagianAset() {}
+/** Irisan B: Inventaris & BMN (K3/K4/K17–K22/K39–K47). */
+async function bagianAset({ op, staf, ka, kabag, personel, hari }) {
+  const isi = (extra = {}) => ({ kodeBmn: `${PREFIX}A1`, nama: 'Laptop Uji', kategori: 'Komputer', merekTipe: 'Merek X', tahunPerolehan: 2024, jumlah: 1, satuan: 'unit', lokasi: 'Ruang Sumda', kondisi: 'Baik', penanggungJawabId: null, penanggungJawabTeks: '', jadwalPemeliharaan: '', catatan: '', ...extra })
+  const buat = (a, extra) => call(a, 'POST', A, isi(extra))
+  const aksiA = (a, it, act, extra = {}) => call(a, 'POST', `${A}/${it.id}/aksi`, { aksi: act, catatan: '', version: it.version, ...extra })
+  const detailA = async (id) => (await call(ka, 'GET', `${A}/${id}`)).body
+  const entri = (a, it, extra = {}) => call(a, 'POST', `${A}/${it.id}/pemeliharaan`, { tanggal: hari, jenis: 'PERBAIKAN', uraian: 'Ganti komponen', pelaksana: 'Teknisi', kondisi: 'Baik', jadwalBerikutnya: '', version: it.version, ...extra })
+  const { tahapAsetSql } = await import('../src/modules/subbagsumda/aset.js')
+
+  log('\n8. Aset: rumus tahap pemeliharaan WIB (K20)')
+  const tahap = async (jadwal, status = 'Aktif') => (await sql.query(
+    `SELECT ${tahapAsetSql('a', hariDari('$1'))} AS t FROM (SELECT $2::date AS jadwal_pemeliharaan, $3::text AS status) a`, ['2026-11-23T17:00:00Z', jadwal, status])).rows[0].t
+  check('24 Nov → JATUH_TEMPO; 25 Nov & 8 Des → H-14; 9 Des → null', (await tahap('2026-11-24')) === 'JATUH_TEMPO' && (await tahap('2026-11-25')) === 'H-14' && (await tahap('2026-12-08')) === 'H-14' && (await tahap('2026-12-09')) === null)
+  check('Usulan Penghapusan/Dihapus tidak bertahap', (await tahap('2026-11-24', 'Usulan Penghapusan')) === null && (await tahap('2026-11-24', 'Dihapus')) === null)
+
+  log('\n9. Aset: hak, CRUD, kode BMN, penanggung jawab (K7/K17/K43/K45)')
+  const cap = {}
+  for (const a of [op, ka, kabag]) cap[a.username] = (await call(a, 'GET', `${A}/capabilities`)).body
+  check('op: baca + kelola; Kasubbag: semua; Kabag: baca saja', cap['op-subbagsumda'].canManage && !cap['op-subbagsumda'].canApprove && cap.kasubbagsumda.canApprove && cap.kabagrenmin.canRead && !cap.kabagrenmin.canManage, JSON.stringify(cap))
+  const a1r = await buat(op)
+  check('buat aset → 201 Aktif', a1r.status === 201 && a1r.body.item.status === 'Aktif', short(a1r))
+  let a1 = a1r.body.item
+  check('kode ganda beda huruf besar → 409 kode_bmn_ganda', (await buat(staf, { kodeBmn: `${PREFIX}a1`.toLowerCase() })).body?.error === 'kode_bmn_ganda')
+  check('kode berspasi di tepi (di-trim) → 409', (await buat(staf, { kodeBmn: `  ${PREFIX}A1  ` })).body?.error === 'kode_bmn_ganda')
+  check('kode berkarakter tak sah → 400', (await buat(op, { kodeBmn: `${PREFIX}<x>` })).status === 400)
+  check('kabagrenmin buat → 403', (await buat(kabag, { kodeBmn: `${PREFIX}K1` })).status === 403)
+  const pj = await personel()
+  check('PJ id + teks sekaligus → 400', (await buat(op, { kodeBmn: `${PREFIX}A2`, penanggungJawabId: pj.id, penanggungJawabTeks: 'Budi' })).status === 400)
+  const a2r = await buat(op, { kodeBmn: `${PREFIX}A2`, penanggungJawabId: pj.id })
+  check('PJ dari Master Personel → 201', a2r.status === 201 && a2r.body.item.penanggungJawab.id === pj.id, short(a2r))
+  let a2 = a2r.body.item
+  const pjx = (await call(ka, 'GET', `${PER}/${pj.id}`)).body.item
+  await call(ka, 'DELETE', `${PER}/${pj.id}?version=${pjx.version}`)
+  const pt2 = await call(op, 'PATCH', `${A}/${a2.id}`, { ...isi({ kodeBmn: `${PREFIX}A2`, penanggungJawabId: pj.id, lokasi: 'Gudang' }), version: a2.version })
+  check('PJ yang kemudian terarsip tetap boleh dipertahankan saat PATCH', pt2.status === 200 && pt2.body.item.penanggungJawab.terarsip === true, short(pt2)); a2 = pt2.body.item
+  check('PJ terarsip dipilih baru → 409 personel_terarsip', (await buat(op, { kodeBmn: `${PREFIX}A3`, penanggungJawabId: pj.id })).body?.error === 'personel_terarsip')
+
+  log('\n10. Aset: status & penghapusan BMN (K4/K18/K39–K41)')
+  a1 = (await aksiA(op, a1, 'pemeliharaan')).body.item
+  check('Aktif → Pemeliharaan', a1.status === 'Pemeliharaan')
+  const fak = await unggah(op, `${A}/${a1.id}/lampiran`, PDF, 'faktur.pdf')
+  check('unggah faktur → 201', fak.status === 201, short(fak))
+  a1 = (await call(op, 'GET', `${A}/${a1.id}`)).body.item
+  check('usulkan hapus alasan < 8 → 400', (await aksiA(op, a1, 'usulkan_hapus', { catatan: 'rusak' })).status === 400)
+  const us = await aksiA(op, a1, 'usulkan_hapus', { catatan: 'Rusak berat tidak ekonomis' })
+  check('usulkan hapus → Usulan Penghapusan, status sebelum tersimpan', us.body?.item?.status === 'Usulan Penghapusan' && us.body.item.statusSebelum === 'Pemeliharaan', short(us)); a1 = us.body.item
+  check('Usulan membekukan PATCH dan entri (K40)', (await call(op, 'PATCH', `${A}/${a1.id}`, { ...isi(), version: a1.version })).status === 409 && (await entri(op, a1)).status === 409)
+  check('setujui tanpa lampiran SEJAK usulan (faktur lama) → 409 lampiran_wajib', (await aksiA(ka, a1, 'setujui_hapus')).body?.error === 'lampiran_wajib')
+  check('op (tanpa approve) setujui → 403', (await aksiA(op, a1, 'setujui_hapus')).status === 403)
+  const tolak = await aksiA(ka, a1, 'tolak_hapus', { catatan: 'Masih bisa diperbaiki' })
+  check('tolak → kembali ke status sebelumnya', tolak.body?.item?.status === 'Pemeliharaan' && tolak.body.item.usulan === null, short(tolak)); a1 = tolak.body.item
+  a1 = (await aksiA(op, a1, 'usulkan_hapus', { catatan: 'Rusak berat tidak ekonomis' })).body.item
+  await unggah(ka, `${A}/${a1.id}/lampiran`, PDF, 'ba-ka.pdf')
+  a1 = (await call(op, 'GET', `${A}/${a1.id}`)).body.item
+  check('pemutus yang mengunggah sejak usulan → 403 self_review_forbidden', (await aksiA(ka, a1, 'setujui_hapus')).body?.error === 'self_review_forbidden')
+  const a4 = (await buat(ka, { kodeBmn: `${PREFIX}A4` })).body.item
+  let a4u = (await aksiA(ka, a4, 'usulkan_hapus', { catatan: 'Usulan oleh Kasubbag' })).body.item
+  await unggah(op, `${A}/${a4.id}/lampiran`, PDF, 'ba.pdf')
+  a4u = (await call(ka, 'GET', `${A}/${a4.id}`)).body.item
+  check('pengusul tidak boleh memutus usulannya → 403', (await aksiA(ka, a4u, 'setujui_hapus')).body?.error === 'self_review_forbidden')
+  let dbErr = ''
+  try { await sql.query("UPDATE sdl_sumda_aset SET status='Dihapus',decided_by=usulan_by,decided_at=now() WHERE id=$1::uuid", [a4.id]) } catch (e) { dbErr = e.code }
+  check('CHECK DB: pemutus = pengusul → 23514', dbErr === '23514', dbErr)
+  const a5 = (await buat(op, { kodeBmn: `${PREFIX}A5` })).body.item
+  let a5u = (await aksiA(op, a5, 'usulkan_hapus', { catatan: 'Hilang saat pindahan' })).body.item
+  const ba = await unggah(op, `${A}/${a5.id}/lampiran`, PDF, 'berita-acara.pdf')
+  a5u = (await call(ka, 'GET', `${A}/${a5.id}`)).body.item
+  const hapus = await aksiA(ka, a5u, 'setujui_hapus')
+  check('lampiran BA dari op sejak usulan → Kasubbag setujui → Dihapus', hapus.body?.item?.status === 'Dihapus' && hapus.body.item.decidedByName, short(hapus))
+  const a5d = hapus.body.item
+  check('Dihapus final: PATCH/aksi/entri/unggah/hapus lampiran → 409',
+    (await call(op, 'PATCH', `${A}/${a5.id}`, { ...isi({ kodeBmn: `${PREFIX}A5` }), version: a5d.version })).status === 409 && (await aksiA(op, a5d, 'aktifkan')).status === 409
+    && (await entri(op, a5d)).status === 409 && (await unggah(op, `${A}/${a5.id}/lampiran`)).status === 409 && (await call(ka, 'DELETE', `${A}/${a5.id}/lampiran/${ba.body.id}`)).status === 409)
+  check('Dihapus: lampiran tetap bisa diunduh', (await call(kabag, 'GET', `${A}/${a5.id}/lampiran/${ba.body.id}`)).status === 200)
+  check('kode milik aset Dihapus boleh dipakai lagi (K41)', (await buat(op, { kodeBmn: `${PREFIX}A5` })).status === 201)
+  const lst = await call(kabag, 'GET', `${A}?q=${encodeURIComponent(PREFIX)}&size=50`)
+  check('daftar bawaan tanpa Dihapus; filter status=Dihapus menemukannya', !lst.body.items.some((x) => x.id === a5.id) && (await call(kabag, 'GET', `${A}?q=${encodeURIComponent(PREFIX)}&status=Dihapus&size=50`)).body.items.some((x) => x.id === a5.id), short(lst))
+
+  log('\n11. Aset: entri pemeliharaan & jadwal (K19/K42/K47)')
+  let a6 = (await buat(op, { kodeBmn: `${PREFIX}A6`, kondisi: 'Rusak Ringan' })).body.item
+  check('RUTIN tanpa jadwal berikutnya → 400', (await entri(op, a6, { jenis: 'RUTIN' })).status === 400)
+  check('tanggal di masa depan (WIB) → 400', (await entri(op, a6, { tanggal: tambah(hari, 1) })).status === 400)
+  check('jadwal berikutnya ≤ tanggal → 400', (await entri(op, a6, { jadwalBerikutnya: hari })).status === 400)
+  const d0 = (await call(kabag, 'GET', DASH)).body.totals.pemeliharaanJatuhTempo14
+  const e1 = await entri(op, a6, { jenis: 'RUTIN', kondisi: 'Baik', jadwalBerikutnya: tambah(hari, 5) })
+  check('entri memperbarui kondisi + jadwal aset dalam satu transaksi', e1.status === 201 && e1.body.item.kondisi === 'Baik' && e1.body.item.jadwalPemeliharaan === tambah(hari, 5) && e1.body.item.tahap === 'H-14', short(e1)); a6 = e1.body.item
+  check('dashboard pemeliharaanJatuhTempo14 +1', (await call(kabag, 'GET', DASH)).body.totals.pemeliharaanJatuhTempo14 === d0 + 1)
+  const jd = (await call(kabag, 'GET', `${A}/jadwal`)).body
+  check('/jadwal memuat aset H-14 + ringkas', jd.items.some((x) => x.id === a6.id) && jd.ringkas['H-14'] >= 1, JSON.stringify(jd.ringkas))
+  const eid = (await detailA(a6.id)).pemeliharaan[0].id
+  const a7 = (await buat(op, { kodeBmn: `${PREFIX}A7` })).body.item
+  check('koreksiDari dari aset lain → 400 (FK komposit)', (await entri(op, a7, { koreksiDari: eid })).status === 400)
+  check('koreksiDari dari aset sendiri → 201', (await entri(op, a6, { koreksiDari: eid, uraian: 'Koreksi entri sebelumnya' })).status === 201)
+  check('aset Pemeliharaan tetap boleh menerima entri; tahap tetap dihitung', (await sql.query(`SELECT ${tahapAsetSql()} AS t FROM sdl_sumda_aset a WHERE id=$1::uuid`, [a6.id])).rows[0].t === 'H-14')
+
+  log('\n12. Aset: lampiran & audit')
+  const up = await unggah(op, `${A}/${a6.id}/lampiran`, PDF, 'sk.pdf')
+  const row = (await sql.query("SELECT substring(body FROM 1 FOR 4) AS head, position('%PDF'::bytea IN body) AS pos FROM sdl_sumda_aset_lampiran WHERE id=$1::uuid", [up.body?.id])).rows[0]
+  check('body diawali SDL1 tanpa %PDF', row?.head?.toString('latin1') === 'SDL1' && row.pos === 0)
+  check('kabag unduh byte-identik; id silang → 404', (await call(kabag, 'GET', `${A}/${a6.id}/lampiran/${up.body.id}`)).bytes.equals(PDF) && (await call(kabag, 'GET', `${A}/${a7.id}/lampiran/${up.body.id}`)).status === 404)
+  check('PDF palsu → 400', (await unggah(op, `${A}/${a6.id}/lampiran`, Buffer.from('bukan pdf'), 'x.pdf')).status === 400)
+  check('hapus lampiran milik orang lain tanpa approve → 403', (await call(staf, 'DELETE', `${A}/${a6.id}/lampiran/${up.body.id}`)).status === 403)
+  const aids = (await sql.query(`SELECT id::text FROM sdl_sumda_aset WHERE kode_bmn LIKE '${PREFIX}%'`)).rows.map((r) => r.id)
+  const ev = (await sql.query("SELECT event_key, metadata::text AS m FROM sdl_audit_events WHERE subject_type='subbagsumda.aset' AND subject_id = ANY($1::text[])", [aids])).rows
+  const keys = new Set(ev.map((e) => e.event_key.replace('subbagsumda.aset.', '')))
+  check('event aset tercatat', ['create', 'update', 'pemeliharaan_status', 'usulkan_hapus', 'tolak_hapus', 'setujui_hapus', 'pemeliharaan.add', 'lampiran.add', 'lampiran.download'].every((k) => keys.has(k)), [...keys].join(','))
+  check('metadata tanpa kode/nama/alasan', ev.every((e) => !e.m.includes(PREFIX) && !e.m.includes('Laptop') && !e.m.includes('Rusak berat tidak')))
+}
 
 main().catch((e) => { console.error(e); fail++ }).finally(async () => { await sql.end(); await db.close(); process.exit(fail ? 1 : 0) })

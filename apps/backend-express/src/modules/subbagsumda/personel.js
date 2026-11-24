@@ -3,6 +3,7 @@ import { Router } from 'express'
 import { withTransaction } from '../../db.js'
 import { BODY_LIMITS, rawBody } from '../../http/payload.js'
 import { parseGoInt, respond } from '../subbagren/shared.js'
+import { PEMELIHARAAN_14_SQL } from './aset.js'
 import { CUTI_HARI_INI_SQL, cutiTahunIni } from './cuti.js'
 import { riwayatDiklatPersonel } from './diklat.js'
 import { LAYANAN_MENUNGGU_SQL, kesejahteraanPersonel } from './kesejahteraan.js'
@@ -362,7 +363,7 @@ const AKTIVITAS_EVENT = [
 
 export function createSumdaDashboardRouter({ pool }) {
   const router = Router()
-  const { need } = permit(pool)
+  const { can, need } = permit(pool)
 
   router.get('/', handle(async (req, res) => {
     await need(req, P.read)
@@ -404,6 +405,8 @@ export function createSumdaDashboardRouter({ pool }) {
         cutiHariIni: (await pool.query(CUTI_HARI_INI_SQL)).rows[0].n, // R5H30 K21/K40 (aditif)
         layananMenunggu: Number((await pool.query(LAYANAN_MENUNGGU_SQL)).rows[0].n),
         pembinaanLewatTenggat: (await pool.query(PEMBINAAN_LEWAT_TENGGAT_SQL)).rows[0].n, // R5H31 K15/K33 (aditif)
+        // R5H31 K47: angka aset hanya bagi pemegang inventaris.read (dashboard sendiri memakai personel.read).
+        pemeliharaanJatuhTempo14: (await can(req.actor, 'subbagsumda.inventaris.read')) ? (await pool.query(PEMELIHARAAN_14_SQL)).rows[0].n : null,
       },
       proyeksi,
       alertTerdekat,
