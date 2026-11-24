@@ -1,0 +1,17 @@
+/* R5H31: Kinerja & Pembinaan + Inventaris/BMN. Memakai kelas R5H27–R5H30 (sdl-sumda__*, sdl-karier__*, sdl-layanan__*). */
+.sdl-r5h31__kat,.sdl-r5h31__ringkas,.sdl-r5h31__aset{display:inline-block;font-size:11px;font-weight:750;padding:2px 8px;border-radius:6px;white-space:nowrap}
+.sdl-r5h31__kat.is-baik_sekali{background:#e3f4ec;color:#1d6a48}
+.sdl-r5h31__kat.is-baik{background:#e8f1fb;color:#1f4f86}
+.sdl-r5h31__kat.is-cukup{background:#fdf2dc;color:#8a5a06}
+.sdl-r5h31__kat.is-perlu_pembinaan{background:#fbe6e4;color:#9b2c22}
+.sdl-r5h31__ringkas{background:#eef2f7;color:#3d5370}
+.sdl-r5h31__aset.is-aktif{background:#e3f4ec;color:#1d6a48}
+.sdl-r5h31__aset.is-pemeliharaan{background:#fdf2dc;color:#8a5a06}
+.sdl-r5h31__aset.is-usulan{background:#fbe6e4;color:#9b2c22}
+.sdl-r5h31__aset.is-dihapus{background:#eef2f7;color:#5d6b7e;text-decoration:line-through}
+.sdl-r5h31__jumlah{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px}
+:root[data-theme=dark] .sdl-r5h31__kat.is-baik_sekali,:root[data-theme=dark] .sdl-r5h31__aset.is-aktif{background:#173a2b;color:#8fd6b0}
+:root[data-theme=dark] .sdl-r5h31__kat.is-baik{background:#1a2c44;color:#9cc3ef}
+:root[data-theme=dark] .sdl-r5h31__kat.is-cukup,:root[data-theme=dark] .sdl-r5h31__aset.is-pemeliharaan{background:#3b2f14;color:#f0c46c}
+:root[data-theme=dark] .sdl-r5h31__kat.is-perlu_pembinaan,:root[data-theme=dark] .sdl-r5h31__aset.is-usulan{background:#3e1f1c;color:#f0a39b}
+:root[data-theme=dark] .sdl-r5h31__ringkas,:root[data-theme=dark] .sdl-r5h31__aset.is-dihapus{background:#22324a;color:#9fb0c4}
