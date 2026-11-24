@@ -121,6 +121,7 @@ export const MANIFEST = [
   'sql/070_sumda_diklat_kompetensi.sql',
   'sql/071_sumda_cuti_kesejahteraan.sql',
   'sql/072_sumda_kinerja_aset.sql',
+  'sql/073_sumda_arsip_laporan.sql',
 ]
 
 /**
