@@ -189,6 +189,14 @@ silang antar-modul, bentuk, probe query, pencabutan, kunci evidence kosong. Suit
 5. **Lampiran di layar:** dua bagian (Dokumen, Berita acara pemusnahan) masing-masing menampilkan "/10" karena batas 10
    berlaku gabungan; tombol unggah hilang bila kuota gabungan habis (server tetap menolak 409 `batas_lampiran`).
 
+6. **K50 (pemilik, 2026-11-24, menggantikan K5): sidebar Sumda disamakan dengan referensi.** Grup WORKSPACE SUBBAGSUMDA
+   (Dashboard, Master Personel, Monitoring Pensiun) · ADMINISTRASI SDM (Karier, Diklat, Cuti, Kesejahteraan, Kinerja) ·
+   DUKUNGAN & LAPORAN (Inventaris/BMN, Persuratan & Arsip, Laporan & Analitik). Surat Masuk dan Surat Keluar R5H21 menjadi
+   **tab** di Persuratan & Arsip (Surat Masuk · Surat Keluar · Arsip Dokumen; badge "belum diterima" pindah ke menu itu);
+   rute `/subbagsumda/surat-masuk|surat-keluar` dan tautan dari Inbox tetap berlaku. Inbox Distribusi dan Disposisi
+   dihapus dari sidebar (sama dengan tombol Inbox dan Tasks di header); Berkas, Foto & Disposisi (registry lama) dihapus
+   dari sidebar, tetap terbuka lewat tautan darurat di layar terkait. Hanya frontend (`App.tsx`); unit lain tidak berubah.
+
 Tidak ada endpoint beku yang berubah; `DEVIATIONS.md` tidak perlu entri baru.
 
 ### Sisa uji untuk /verifikasi

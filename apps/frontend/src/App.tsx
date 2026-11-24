@@ -1,6 +1,6 @@
 // R5F24-v5: remove obsolete R5F8 Executive frontend access gate.
 import UIFeedbackHost from './UIFeedback'
-import { useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
+import { Fragment, useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
 import DevelopmentChecklist from './DevelopmentChecklist'
 import PortalV3R5F21 from './PortalV3R5F21'
 import DirectivesR5F23 from './DirectivesR5F23'
@@ -501,8 +501,11 @@ function App() {
   const workMenu=effectiveScreen.view==='inbox'?'__distribution-inbox':effectiveScreen.view==='tasks'?'__tasks':effectiveScreen.menu
   // R5H21: persuratan antar-unit untuk tiga subbag (Urmin memakai menu persuratannya sendiri).
   const suratUnit=unit?({ren:'subbagren',sumda:'subbagsumda',binfung:'subbagbinfung'} as Record<string,'subbagren'|'subbagsumda'|'subbagbinfung'>)[unit.id]??null:null
+  // R5H32: sidebar Sumda mengikuti referensi (Workspace / Administrasi SDM / Dukungan & Laporan). Surat Masuk dan
+  // Surat Keluar R5H21 menjadi tab di "Persuratan & Arsip"; rute __surat-masuk/__surat-keluar tetap berlaku.
+  const sumdaPersuratan=unit?.id==='sumda'&&['__surat-masuk','__surat-keluar','arsip'].includes(workMenu??'')
   const suratBadge=usePersuratanBadge(account&&!account.mustChangePassword&&!isSuperadmin?suratUnit:null)
-  const workTitle=unit?.id==='urmin'&&workMenu==='surat-masuk'&&isKabagrenmin?'Disposisi':unit?.id==='urmin'&&workMenu==='__unitwork'?'Berkas Kerja':unit?.id==='urmin'&&workMenu==='disposisi'?'Disposisi':unit?.id==='urmin'&&workMenu==='arsip'?'Arsip':unit?.id==='urmin'&&workMenu==='__admin'?'Pengguna & Hak Akses':workMenu==='__unitwork'?'Berkas, Foto & Disposisi':workMenu==='__surat-masuk'?'Surat Masuk':workMenu==='__persetujuan-surat'?'Surat Antar-Unit':workMenu==='__surat-keluar'?'Surat Keluar':workMenu==='__tasks'&&suratUnit?'Disposisi':workMenu==='__distribution-inbox'?'Inbox':workMenu==='__tasks'?'Tugas Disposisi':chosenModule?.title??renSubInfo?.name??unit?.name??''
+  const workTitle=sumdaPersuratan?'Persuratan & Arsip':unit?.id==='urmin'&&workMenu==='surat-masuk'&&isKabagrenmin?'Disposisi':unit?.id==='urmin'&&workMenu==='__unitwork'?'Berkas Kerja':unit?.id==='urmin'&&workMenu==='disposisi'?'Disposisi':unit?.id==='urmin'&&workMenu==='arsip'?'Arsip':unit?.id==='urmin'&&workMenu==='__admin'?'Pengguna & Hak Akses':workMenu==='__unitwork'?'Berkas, Foto & Disposisi':workMenu==='__surat-masuk'?'Surat Masuk':workMenu==='__persetujuan-surat'?'Surat Antar-Unit':workMenu==='__surat-keluar'?'Surat Keluar':workMenu==='__tasks'&&suratUnit?'Disposisi':workMenu==='__distribution-inbox'?'Inbox':workMenu==='__tasks'?'Tugas Disposisi':chosenModule?.title??renSubInfo?.name??unit?.name??''
   const workSubtitle=unit?.id==='urmin'&&workMenu==='surat-masuk'&&isKabagrenmin?'Surat masuk yang diajukan kepada Anda untuk didisposisikan.':workMenu==='__unitwork'?'Kelola berkas, lampiran, dan tugas internal.':workMenu==='__surat-masuk'?'Surat dari Urmin dan subbag lain yang ditujukan ke unit ini.':workMenu==='__persetujuan-surat'?'Surat keluar subbag yang menunggu tanda tangan dan persetujuan Anda.':workMenu==='__surat-keluar'?'Surat ke unit internal atau instansi luar, disetujui Kabagrenmin sebelum dikirim.':workMenu==='__tasks'&&suratUnit?'Disposisi Kabagrenmin dan tindak lanjutnya.':workMenu==='disposisi'&&unit?.id==='urmin'?'Tugas, tindak lanjut, dan review disposisi.':workMenu==='__admin'?'Kelola akun dan kewenangan sesuai hak akses.':workMenu==='__distribution-inbox'?'Semua yang menunggu tindakan Anda: disposisi, surat keluar, tugas, dan surat yang diteruskan.':workMenu==='__tasks'?'Pantau tugas dan tindak lanjut.':chosenModule?.description??renSubInfo?.description??unit?.subtitle??''
   const activeTab=workMenu&&unit?.id==='urmin'?(urminTabs[workMenu]?.some(t=>t.id===effectiveScreen.tab)?effectiveScreen.tab:defaultUrminTab[workMenu]):undefined
   // R5H21: tiga menu persuratan subbag (Surat Masuk berpenanda jumlah belum diterima).
@@ -587,6 +590,16 @@ function App() {
                 (tergantikan lampiran dokumen, persuratan, dan tindak lanjut arahan) dihapus dari sidebar Subbagren. */}
             <div className="sidebar-group">PERSURATAN</div>
             {persuratanLinks(renSub)}
+          </> : unit.id==='sumda' ? <>
+            {([['WORKSPACE SUBBAGSUMDA',['personel','pensiun']],['ADMINISTRASI SDM',['karier','diklat','cuti','kesejahteraan','kinerja']],['DUKUNGAN & LAPORAN',['inventaris','arsip','laporan']]] as [string,string[]][]).map(([judul,ids],gi)=><Fragment key={judul}>
+              <div className="sidebar-group">{judul}</div>
+              {gi===0&&<button type="button" title="Dashboard" className={`side-link ${!chosenModule&&!workMenu?'selected':''}`} disabled={restrictedSuperadmin} onClick={()=>navigate({view:'workspace',unit:'sumda'})}><Icon name="grid" size={18}/><span>Dashboard</span></button>}
+              {ids.map(id=>unit.modules.find(m=>m.id===id)).filter((m):m is Module=>Boolean(m)).map(m=>m.id==='arsip'
+                ? <button type="button" key={m.id} title={m.title} className={`side-link ${sumdaPersuratan?'selected':''}`} disabled={restrictedSuperadmin} onClick={()=>navigate({view:'workspace',unit:'sumda',menu:'__surat-masuk'})}><Icon name={m.icon} size={18}/><span>{m.title}</span>{suratBadge>0&&<b className="side-count" aria-label={`${suratBadge} surat belum diterima`}>{suratBadge}</b>}</button>
+                : <button type="button" key={m.id} title={m.title} className={`side-link ${chosenModule?.id===m.id?'selected':''}`} disabled={restrictedSuperadmin} onClick={()=>navigate({view:'workspace',unit:'sumda',menu:m.id})}><Icon name={m.icon} size={18}/><span>{m.title}</span></button>)}
+            </Fragment>)}
+            {/* Inbox Distribusi dan Disposisi ada di header (Inbox, Tasks); Berkas, Foto & Disposisi (registry lama) tetap
+                terbuka lewat tautan darurat di layar masing-masing. */}
           </> : <>
           <div className="sidebar-group">RINGKASAN</div><button title="Dashboard Unit" className={`side-link ${!chosenModule&&!workMenu?'selected':''}`} disabled={restrictedSuperadmin} onClick={()=>navigate({view:'workspace',unit:unit.id,sub:renSub})}><Icon name="grid" size={18}/> Dashboard Unit</button>
           {suratUnit?<><div className="sidebar-group">PERSURATAN</div>{persuratanLinks(renSub)}</>:<div className="sidebar-group">DISTRIBUSI</div>}<button title="Inbox Distribusi" className={`side-link ${workMenu==='__distribution-inbox'?'selected':''}`} disabled={restrictedSuperadmin} onClick={()=>navigate({view:'inbox'})}><Icon name="inbox" size={18}/> Inbox Distribusi</button>{!suratUnit&&<button title="Tugas Disposisi" className={`side-link ${workMenu==='__tasks'?'selected':''}`} onClick={()=>navigate({view:'tasks'})}><Icon name="clipboard" size={18}/><span>Tugas Disposisi</span></button>}<div className="sidebar-group">BERKAS & TUGAS AKTIF</div><button title="Berkas, Foto & Disposisi" className={`side-link ${workMenu==='__unitwork'?'selected':''}`} disabled={restrictedSuperadmin} onClick={()=>navigate({view:'workspace',unit:unit.id,menu:'__unitwork',sub:renSub})}><Icon name="folder" size={18}/> Berkas, Foto & Disposisi</button><div className="sidebar-group">LAYANAN OPERASIONAL</div>{sidebarModules.map(m=><button key={m.id} title={m.title} className={`side-link ${chosenModule?.id===m.id?'selected':''}`} disabled={restrictedSuperadmin} onClick={()=>navigate({view:'workspace',unit:unit.id,menu:m.id})}><Icon name={m.icon} size={18}/><span>{m.title}</span></button>)}
@@ -597,6 +610,9 @@ function App() {
       <main className="work-main"><div className="content-wrap">
         <div className="breadcrumb"><button onClick={()=>navigate({view:'portal'})}>Portal</button><Icon name="chevron" size={13}/><button onClick={()=>navigate({view:'workspace',unit:unit.id})}>{unit.title}</button>{renSubInfo&&<><Icon name="chevron" size={13}/>{(chosenModule||workMenu)?<button onClick={()=>navigate({view:'workspace',unit:'ren',sub:renSubInfo.id})}>{renSubInfo.title}</button>:<strong>{renSubInfo.title}</strong>}</>}{(chosenModule||workMenu)&&<><Icon name="chevron" size={13}/><strong>{workTitle}</strong></>}</div>
         <div className="section-heading sdl-consistent-heading"><div><span className="eyebrow">{unit.title}{renSubInfo?` · ${renSubInfo.title}`:''}</span><h1>{workTitle}</h1><p>{workSubtitle}</p></div></div>
+        {sumdaPersuratan && <nav className="sdl-r5f5-tabs" aria-label="Bagian Persuratan & Arsip">
+          {([['__surat-masuk','Surat Masuk'],['__surat-keluar','Surat Keluar'],['arsip','Arsip Dokumen']] as const).map(([id,label])=><button type="button" key={id} className={`sdl-r5f5-tab ${workMenu===id?'is-active':''}`} aria-current={workMenu===id?'page':undefined} onClick={()=>navigate({view:'workspace',unit:'sumda',menu:id})}>{label}{id==='__surat-masuk'&&suratBadge>0?` (${suratBadge})`:''}</button>)}
+        </nav>}
         {unit.id==='urmin' && workMenu && urminTabs[workMenu] && (workMenu!=='__admin'||isSuperadmin) && <nav className="sdl-r5f5-tabs" aria-label={`Bagian ${workTitle}`}>
           {urminTabs[workMenu].map(tab=><button type="button" key={tab.id} className={`sdl-r5f5-tab ${activeTab===tab.id?'is-active':''}`} aria-current={activeTab===tab.id?'page':undefined} onClick={()=>navigate({view:'workspace',unit:'urmin',menu:workMenu,tab:tab.id})}>{tab.label}</button>)}
         </nav>}
