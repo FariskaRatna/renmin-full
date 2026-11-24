@@ -4,6 +4,7 @@ import { withTransaction } from '../../db.js'
 import { BODY_LIMITS, rawBody } from '../../http/payload.js'
 import { parseGoInt, respond } from '../subbagren/shared.js'
 import { PEMELIHARAAN_14_SQL } from './aset.js'
+import { arsipPersonel, arsipRetensi30Sql } from './arsip.js'
 import { CUTI_HARI_INI_SQL, cutiTahunIni } from './cuti.js'
 import { riwayatDiklatPersonel } from './diklat.js'
 import { LAYANAN_MENUNGGU_SQL, kesejahteraanPersonel } from './kesejahteraan.js'
@@ -224,6 +225,9 @@ export function createSumdaPersonelRouter({ pool }) {
     item.riwayatKesejahteraan = await kesejahteraanPersonel(pool, id)
     // R5H31 K16 (aditif): isi kinerja hanya untuk pencatat/kinerja.read — disamarkan di SQL.
     item.kinerja = await kinerjaPersonel(pool, id, req.actor, await can(req.actor, 'subbagsumda.kinerja.read'))
+    // R5H32 K24/K45 (aditif): arsip yang menautkan personel ini — hanya baris terlihat (Terbatas K29), null tanpa arsip.read.
+    item.arsip = (await can(req.actor, 'subbagsumda.arsip.read'))
+      ? await arsipPersonel(pool, id, req.actor, await can(req.actor, 'subbagsumda.arsip.restricted')) : null
     respond(res, 200, { item })
   }))
 
@@ -409,6 +413,9 @@ export function createSumdaDashboardRouter({ pool }) {
         pembinaanLewatTenggat: (await can(req.actor, 'subbagsumda.kinerja.read')) ? (await pool.query(PEMBINAAN_LEWAT_TENGGAT_SQL)).rows[0].n : null,
         // R5H31 K47: angka aset hanya bagi pemegang inventaris.read (dashboard sendiri memakai personel.read).
         pemeliharaanJatuhTempo14: (await can(req.actor, 'subbagsumda.inventaris.read')) ? (await pool.query(PEMELIHARAAN_14_SQL)).rows[0].n : null,
+        // R5H32 K25/K36: dihitung atas arsip TERLIHAT (Terbatas milik orang lain tidak menggerakkan angka); null tanpa arsip.read.
+        arsipRetensi30: (await can(req.actor, 'subbagsumda.arsip.read'))
+          ? (await pool.query(arsipRetensi30Sql(), [req.actor, await can(req.actor, 'subbagsumda.arsip.restricted')])).rows[0].n : null,
       },
       proyeksi,
       alertTerdekat,
