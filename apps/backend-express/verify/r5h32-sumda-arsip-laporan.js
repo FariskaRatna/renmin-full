@@ -8,7 +8,9 @@
  * filter, hitungan, detail/mutasi/lampiran 404 byte-identik, detail personel, dashboard) · naik/turun kerahasiaan
  * (K13/K34) · Aktif ⇄ Inaktif → Musnah (K32) · tautan surat R5H21 (K30/K31, balapan) · lampiran (K33) · aditif R5H27
  * (K24/K25) · audit tanpa PII (K49).
- * Laporan & ekspor: lihat bagian kedua (irisan B).
+ * Laporan (irisan B): angka cocok dengan SQL/endpoint acuan · blok null tanpa hak (K37) · selisih 0 arsip TERBATAS (K36)
+ *   · unit kerja 15 + Lainnya (K38) · pangkat terurut (K39). Ekspor: matriks hak (K4) · format K20/K44 · formula injection
+ *   · jumlah = total daftar · tanpa UUID · filter K42 · audit {modul,jumlah,filter} (K22/K49).
  * Akun tanpa arsip.read/inventaris.read/kinerja.read (role uji) diuji di skenario keamanan x7 (DB sekali pakai).
  *
  * MENULIS KE DATABASE (arsip/surat/personel berawalan UJI-R5H32-, dihapus di awal dan di akhir beserta turunannya
@@ -20,6 +22,9 @@ import { HttpClient } from '../harness/client.js'
 import { loadConfig } from '../harness/config.js'
 import { HarnessDb } from '../harness/db.js'
 import { tahapRetensiSql } from '../src/modules/subbagsumda/arsip.js'
+import { BOM, sel } from '../src/modules/subbagsumda/csv.js'
+import { MODUL_EKSPOR } from '../src/modules/subbagsumda/ekspor.js'
+import { proyeksiPensiunSql } from '../src/modules/subbagsumda/personel.js'
 import { hariDari } from '../src/modules/subbagsumda/umum.js'
 
 const config = loadConfig()
@@ -31,6 +36,8 @@ const check = (label, ok, detail = '') => { if (!ok) fail++; log(`${ok ? '  OK  
 const AR = '/api/v1/subbagsumda/arsip'
 const PER = '/api/v1/subbagsumda/personel'
 const DASH = '/api/v1/subbagsumda/dashboard'
+const LAP = '/api/v1/subbagsumda/laporan'
+const MULAI = new Date().toISOString()
 const PREFIX = 'UJI-R5H32-'
 const PALSU = '00000000-0000-4000-8000-000000000000'
 const PDF = Buffer.from('%PDF-1.4\n1 0 obj <</Type/Catalog/Pages 2 0 R>> endobj\n2 0 obj <</Type/Pages/Kids[3 0 R]/Count 1>> endobj\n3 0 obj <</Type/Page/Parent 2 0 R/MediaBox[0 0 300 200]>> endobj\ntrailer <</Root 1 0 R>>\n%%EOF\n', 'latin1')
@@ -60,7 +67,7 @@ async function bersihkan() {
   await sql.query('DELETE FROM sdl_sumda_arsip_lampiran WHERE arsip_id = ANY($1::uuid[])', [aids])
   await sql.query('DELETE FROM sdl_sumda_arsip WHERE id = ANY($1::uuid[])', [aids]) // riwayat CASCADE
   await sql.query(`DELETE FROM sdl_audit_events WHERE (subject_type='subbagsumda.arsip' AND subject_id = ANY($1::text[]))
-    OR (subject_type='subbagsumda.personel' AND subject_id = ANY($2::text[])) OR (subject_type='subbagsumda.laporan' AND metadata::text LIKE '%"uji_r5h32"%')`, [aids, pids])
+    OR (subject_type='subbagsumda.personel' AND subject_id = ANY($2::text[])) OR (subject_type='subbagsumda.laporan' AND created_at >= $3::timestamptz)`, [aids, pids, MULAI])
   await sql.query('DELETE FROM sdl_surat_antar WHERE id = ANY($1::uuid[])', [sids]) // tujuan CASCADE
   await sql.query('DELETE FROM sdl_sumda_pensiun_tinjau WHERE personel_id = ANY($1::uuid[])', [pids])
   await sql.query('DELETE FROM sdl_sumda_personel WHERE id = ANY($1::uuid[])', [pids])
@@ -282,6 +289,102 @@ async function main() {
     const pu = await call(ka, 'PATCH', `${PER}/${pC.id}`, { nrp: pC.nrp, nama: pC.nama, jenis: 'Polri', pangkat: '', jabatan: 'Baru', unitKerja: '', tmtDinas: '', tanggalPensiun: '2040-01-01', status: 'Aktif', catatan: '', version: pC.version })
     check('PATCH personel tidak membawa arsip', pu.status === 200 && !Object.hasOwn(pu.body.item, 'arsip'), short(pu))
     check('dashboard: arsipRetensi30 berupa bilangan bagi pemegang arsip.read', typeof (await call(staf, 'GET', DASH)).body.totals.arsipRetensi30 === 'number')
+
+    log('\n9. Laporan & Analitik (K15/K36–K40)')
+    const lap = async (a, qs = '') => call(a, 'GET', `${LAP}/ringkasan${qs}`)
+    const lcap = {}
+    for (const a of [op, staf, ka, kabag]) lcap[a.username] = (await call(a, 'GET', `${LAP}/capabilities`)).body
+    check('capabilities: op/staf baca tanpa ekspor, semua modul false', ['op-subbagsumda', 'staf-subbagsumda'].every((u) => lcap[u].canRead && !lcap[u].canExport && Object.values(lcap[u].modul).every((x) => x === false)), JSON.stringify(lcap['staf-subbagsumda']))
+    check('capabilities: Kasubbag/Kabag ekspor 10 modul', ['kasubbagsumda', 'kabagrenmin'].every((u) => lcap[u].canExport && Object.keys(lcap[u].modul).length === 10 && Object.values(lcap[u].modul).every(Boolean)), JSON.stringify(lcap.kabagrenmin))
+    const rs = await lap(staf)
+    const rk = await lap(ka)
+    check('ringkasan staf → 200, kinerja null (bukan nol), aset & arsip ada', rs.status === 200 && rs.body.kinerja === null && rs.body.aset !== null && rs.body.arsip !== null, short(rs))
+    check('ringkasan Kasubbag: blok kinerja 4 kategori', Array.isArray(rk.body.kinerja?.perKategori) && rk.body.kinerja.perKategori.length === 4)
+    check('register: kinerja hanya bagi Rk', !rs.body.register.some((r) => r.modul === 'kinerja') && rk.body.register.some((r) => r.modul === 'kinerja'))
+    check('arsip.terbatas null bagi staf (tanpa Xa), bilangan bagi Kasubbag', rs.body.arsip.terbatas === null && typeof rk.body.arsip.terbatas === 'number')
+    check('tahun bawaan = tahun WIB', rs.body.tahun === Number(hari.slice(0, 4)) && rs.body.tahunIni === rs.body.tahun && rs.body.hariIni === hari)
+    const acuan = (await sql.query(`SELECT count(*) FILTER (WHERE status='Aktif')::int AS aktif, count(*) FILTER (WHERE status='MPP')::int AS mpp
+      FROM sdl_sumda_personel WHERE deleted_at IS NULL`)).rows[0]
+    check('kartu personel aktif/MPP = SQL acuan', rs.body.personel.aktif === acuan.aktif && rs.body.personel.mpp === acuan.mpp, `${JSON.stringify(acuan)} vs ${rs.body.personel.aktif}/${rs.body.personel.mpp}`)
+    const alert = (await call(staf, 'GET', '/api/v1/subbagsumda/pensiun/alert')).body
+    const n30 = (alert.items ?? []).filter((x) => ['H-30', 'H-14', 'H-7', 'JATUH_TEMPO'].includes(x.tahap)).length
+    check('pensiun ≤ 30 hari = jumlah alert H-30..JATUH_TEMPO', rs.body.pensiun30 === n30, `${rs.body.pensiun30} vs ${n30}`)
+    const lay = (await sql.query(`SELECT (SELECT count(*) FROM sdl_sumda_karier x JOIN sdl_sumda_personel p ON p.id=x.personel_id WHERE p.deleted_at IS NULL AND x.status IN ('Diajukan','Diproses','Disetujui'))::int
+      + (SELECT count(*) FROM sdl_sumda_cuti x JOIN sdl_sumda_personel p ON p.id=x.personel_id WHERE p.deleted_at IS NULL AND x.status IN ('Diajukan','Diproses','Disetujui'))::int
+      + (SELECT count(*) FROM sdl_sumda_kesejahteraan x JOIN sdl_sumda_personel p ON p.id=x.personel_id WHERE p.deleted_at IS NULL AND x.status IN ('Diajukan','Diproses','Disetujui'))::int AS n`)).rows[0].n
+    check('layanan berjalan = SQL acuan', rs.body.layananBerjalan.total === lay, `${rs.body.layananBerjalan.total} vs ${lay}`)
+    const dashP = (await call(staf, 'GET', DASH)).body.proyeksi
+    check('proyeksi 12 bulan; 6 bulan pertama = dashboard', rs.body.personel.proyeksi.length === 12 && JSON.stringify(rs.body.personel.proyeksi.slice(0, 6)) === JSON.stringify(dashP))
+    check('proyeksiPensiunSql(12) dimulai bulan berjalan WIB', (await sql.query(proyeksiPensiunSql(12))).rows[0].bulan === hari.slice(0, 7))
+    const cutiAcuan = (await sql.query(`SELECT count(*)::int AS n, coalesce(sum(jumlah_hari),0)::int AS h FROM sdl_sumda_cuti
+      WHERE status IN ('Disetujui','Selesai') AND extract(year FROM tanggal_mulai)=$1`, [rs.body.tahun])).rows[0]
+    check('cuti per bulan: jumlah & hari = SQL acuan', rs.body.cuti.perBulan.length === 12 && rs.body.cuti.perBulan.reduce((s, b) => s + b.pengajuan, 0) === cutiAcuan.n
+      && rs.body.cuti.perBulan.reduce((s, b) => s + b.hari, 0) === cutiAcuan.h, JSON.stringify(cutiAcuan))
+    for (let i = 1; i <= 16; i++) await personel({ unitKerja: `${PREFIX}Unit ${String(i).padStart(2, '0')}` })
+    const ru = (await lap(staf)).body.personel
+    const jUnit = (await sql.query("SELECT count(DISTINCT unit_kerja)::int AS n FROM sdl_sumda_personel WHERE deleted_at IS NULL AND status IN ('Aktif','MPP')")).rows[0].n
+    check('unit kerja: 15 teratas + "Lainnya (n unit)", jumlah = aktif + MPP', ru.perUnit.length === 16 && ru.perUnit[15].label === `Lainnya (${jUnit - 15} unit)`
+      && ru.perUnit.reduce((s, u) => s + u.jumlah, 0) === ru.aktif + ru.mpp && !ru.perUnit.some((u) => u.label === ''), JSON.stringify(ru.perUnit.slice(-2)))
+    const urut = (await sql.query('SELECT short_name, sort_order FROM sdl_polri_rank_master')).rows
+    const so = (l) => urut.find((r) => r.short_name === l)?.sort_order ?? 1e9
+    check('pangkat Polri terurut sort_order; jumlah Polri+PNS = aktif + MPP', ru.perPangkat.polri.every((x, i, a) => i === 0 || so(a[i - 1].label) <= so(x.label))
+      && [...ru.perPangkat.polri, ...ru.perPangkat.pns].reduce((s, x) => s + x.jumlah, 0) === ru.aktif + ru.mpp)
+    const arsS0 = (await lap(staf)).body.arsip
+    const arsK0 = (await lap(ka)).body.arsip
+    await buat(op, { kerahasiaan: 'TERBATAS', retensiSampai: tambah(hari, 4), tanggal: `${hari.slice(0, 4)}-01-03`, jenis: 'NOTA_DINAS' })
+    const arsS1 = (await lap(staf)).body.arsip
+    const arsK1 = (await lap(ka)).body.arsip
+    check('arsip TERBATAS milik op: blok arsip staf selisih 0', JSON.stringify(arsS0) === JSON.stringify(arsS1), `${JSON.stringify(arsS0)} → ${JSON.stringify(arsS1)}`)
+    check('arsip TERBATAS: blok arsip Kasubbag bertambah (aktif, retensi, terbatas)', arsK1.aktif === arsK0.aktif + 1 && arsK1.retensi30 === arsK0.retensi30 + 1 && arsK1.terbatas === arsK0.terbatas + 1)
+    check('blok arsip retensi30 = dashboard arsipRetensi30', arsS1.retensi30 === (await call(staf, 'GET', DASH)).body.totals.arsipRetensi30)
+    check('?tahun=abc / kunci asing → 400; ?tahun=2027 diterima', (await lap(staf, '?tahun=abc')).status === 400 && (await lap(staf, '?x=1')).status === 400 && (await lap(staf, '?tahun=2027')).body.tahun === 2027)
+
+    log('\n10. Ekspor CSV (K4/K18–K22/K41–K44)')
+    const eks = (a, modul, qs = '') => call(a, 'GET', `${LAP}/ekspor/${modul}${qs}`)
+    const nAudit = async () => (await sql.query("SELECT count(*)::int AS n FROM sdl_audit_events WHERE event_key='subbagsumda.laporan.export'")).rows[0].n
+    const au0 = await nAudit()
+    check('op/staf → 403 (tidak diaudit)', (await eks(op, 'personel')).status === 403 && (await eks(staf, 'arsip')).status === 403 && (await nAudit()) === au0)
+    check('modul tak dikenal → 404 JSON; __proto__ → 404', (await eks(ka, 'gaji')).body?.error === 'not_found' && (await eks(ka, '__proto__')).status === 404)
+    check('param asing / nilai di luar daftar / tahun=abc → 400', (await eks(ka, 'personel', '?tahun=2026')).status === 400
+      && (await eks(ka, 'cuti', '?status=Hilang')).status === 400 && (await eks(ka, 'arsip', '?tahun=abc')).status === 400 && (await eks(ka, 'aset', '?kondisi=Baru')).status === 400)
+    check('404/400 tidak diaudit', (await nAudit()) === au0)
+    const tgl = hari.replaceAll('-', '')
+    const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
+    const hdr = (r, k) => r.headers.get?.(k) ?? r.headers[k] ?? ''
+    for (const modul of Object.keys(MODUL_EKSPOR)) {
+      const r = await eks(kabag, modul)
+      const isi = r.bytes.subarray(3).toString('utf8')
+      const baris = isi.split('\r\n')
+      check(`${modul}: 200 text/csv, BOM, header konstanta, CRLF, nama berkas, no-store, nosniff, tanpa UUID`,
+        r.status === 200 && r.bytes.subarray(0, 3).equals(BOM) && /^text\/csv; charset=utf-8/.test(hdr(r, 'content-type'))
+        && baris[0] === MODUL_EKSPOR[modul].header.map(sel).join(';') && baris.at(-1) === '' && !/[^\r]\n/.test(isi)
+        && hdr(r, 'content-disposition') === `attachment; filename=sumda-${modul}-${tgl}.csv` && hdr(r, 'cache-control') === 'no-store'
+        && hdr(r, 'x-content-type-options') === 'nosniff' && !UUID.test(isi), `${short(r)} ${hdr(r, 'content-disposition')}`)
+    }
+    const fx = await buat(op, { perihal: '=1+1 rumus', nomor: '+62 telepon', asalTujuan: '-x minus', kodeKlasifikasi: '@SUM(A1)', lokasiSimpan: '＝ lebar penuh', tanggal: `${hari.slice(0, 4)}-02-02`, jenis: 'BERITA_ACARA', catatan: `${PREFIX}catatan rahasia` })
+    check('arsip berisi awalan formula tersimpan', fx.status === 201, short(fx))
+    await sql.query('UPDATE sdl_sumda_arsip SET perihal=$2 WHERE id=$1::uuid', [fx.body.item.id, `${PREFIX}=HYPERLINK("http://x")`])
+    const fy = await buat(op, { perihal: '=1+1 rumus', tanggal: `${hari.slice(0, 4)}-02-02`, jenis: 'BERITA_ACARA' })
+    await sql.query("UPDATE sdl_sumda_arsip SET nomor=$2 WHERE id=$1::uuid", [fy.body.item.id, `${PREFIX}FY`])
+    const ex = (await eks(ka, 'arsip', `?jenis=BERITA_ACARA&tahun=${hari.slice(0, 4)}`)).bytes.toString('utf8')
+    check('formula injection: = + - @ ＝ diberi awalan \', " digandakan', ex.includes(`"'=1+1 rumus"`) && ex.includes(`"'+62 telepon"`) && ex.includes(`"'-x minus"`) && ex.includes(`"'@SUM(A1)"`)
+      && ex.includes(`"'＝ lebar penuh"`) && ex.includes(`"${PREFIX}=HYPERLINK(""http://x"")"`), ex.split('\r\n').find((l) => l.includes('telepon')))
+    check('catatan arsip tidak pernah diekspor (K41)', !ex.includes('catatan rahasia'))
+    const qs = `?tahun=${hari.slice(0, 4)}&jenis=NOTA_DINAS`
+    const jml = (await eks(ka, 'arsip', qs)).bytes.toString('utf8').split('\r\n').length - 2
+    check('jumlah baris ekspor arsip = total daftar dengan filter sama', jml === (await call(ka, 'GET', `${AR}${qs}&size=5`)).body.total, `${jml}`)
+    const jmlP = (await eks(ka, 'personel', '?status=Aktif')).bytes.toString('utf8').split('\r\n').length - 2
+    check('jumlah baris ekspor personel Aktif = SQL acuan', jmlP === (await sql.query("SELECT count(*)::int AS n FROM sdl_sumda_personel WHERE deleted_at IS NULL AND status='Aktif'")).rows[0].n)
+    check('arsip TERBATAS ikut bagi pemegang arsip.restricted', (await eks(ka, 'arsip')).bytes.toString('utf8').includes('SK pribadi rahasia'))
+    const kinR = (await eks(kabag, 'kinerja')).bytes.toString('utf8').split('\r\n').length - 2
+    check('kinerja lengkap bagi Kabag (kinerja.read) = SQL acuan', kinR === (await sql.query('SELECT count(*)::int AS n FROM sdl_sumda_kinerja')).rows[0].n)
+    const au1 = await nAudit()
+    const re = await eks(ka, 'cuti', '?tahun=2026&status=Disetujui')
+    const evE = (await sql.query("SELECT actor_id::text, subject_type, subject_id, metadata FROM sdl_audit_events WHERE event_key='subbagsumda.laporan.export' ORDER BY created_at DESC, id DESC LIMIT 1")).rows[0]
+    check('audit ekspor tepat {modul,jumlah,filter}', re.status === 200 && (await nAudit()) === au1 + 1 && evE.actor_id === ka.id && evE.subject_type === 'subbagsumda.laporan' && evE.subject_id === 'cuti'
+      && Object.keys(evE.metadata).sort().join() === 'filter,jumlah,modul' && evE.metadata.modul === 'cuti'
+      && evE.metadata.jumlah === re.bytes.toString('utf8').split('\r\n').length - 2
+      && Object.keys(evE.metadata.filter).sort().join() === 'status,tahun' && evE.metadata.filter.tahun === 2026 && evE.metadata.filter.status === 'Disetujui', JSON.stringify(evE))
 
     log('\n11. Audit tanpa PII (K49)')
     const aids = (await sql.query(`SELECT id::text FROM sdl_sumda_arsip WHERE perihal LIKE '${PREFIX}%'`)).rows.map((r) => r.id)

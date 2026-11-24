@@ -71,6 +71,17 @@ export function tahapSql(alias = 'p', hari = HARI_INI) {
 }
 export const sisaSql = (alias = 'p', hari = HARI_INI) => `(${alias}.tanggal_pensiun - ${hari})`
 
+/**
+ * K19 R5H27 / K37 R5H32: proyeksi pensiun per bulan mulai bulan berjalan (WIB). Dashboard memakai 6 bulan,
+ * Laporan & Analitik 12 bulan. Untuk bulan=6 string-nya identik dengan SQL dashboard sebelum R5H32 (diuji di verify).
+ */
+export const proyeksiPensiunSql = (bulan, hari = HARI_INI) => `
+      SELECT to_char(b.m,'YYYY-MM') AS bulan, count(p.id)::int AS jumlah
+        FROM generate_series(date_trunc('month', ${hari}), date_trunc('month', ${hari}) + interval '${bulan - 1} months', interval '1 month') AS b(m)
+        LEFT JOIN sdl_sumda_personel p ON p.deleted_at IS NULL AND p.status IN ('Aktif','MPP')
+             AND p.tanggal_pensiun >= b.m::date AND p.tanggal_pensiun < (b.m + interval '1 month')::date
+       GROUP BY b.m ORDER BY b.m`
+
 const P = {
   read: 'subbagsumda.personel.read',
   create: 'subbagsumda.personel.create',
@@ -382,12 +393,7 @@ export function createSumdaDashboardRouter({ pool }) {
              (SELECT count(*) FROM sdl_sumda_karier k JOIN sdl_sumda_personel kp ON kp.id=k.personel_id
                WHERE k.status='Diproses' AND kp.deleted_at IS NULL) AS karier_menunggu`)).rows[0]
     // K19: kartu "Pensiun 6 bulan" = jumlah grafik proyeksi (bulan berjalan s.d. +5).
-    const proyeksi = (await pool.query(`
-      SELECT to_char(b.m,'YYYY-MM') AS bulan, count(p.id)::int AS jumlah
-        FROM generate_series(date_trunc('month', ${HARI_INI}), date_trunc('month', ${HARI_INI}) + interval '5 months', interval '1 month') AS b(m)
-        LEFT JOIN sdl_sumda_personel p ON p.deleted_at IS NULL AND p.status IN ('Aktif','MPP')
-             AND p.tanggal_pensiun >= b.m::date AND p.tanggal_pensiun < (b.m + interval '1 month')::date
-       GROUP BY b.m ORDER BY b.m`)).rows
+    const proyeksi = (await pool.query(proyeksiPensiunSql(6))).rows
     const alertTerdekat = (await pool.query(`${ALERT_SQL} ORDER BY sisa_hari, lower(p.nama), p.id LIMIT 5`)).rows.map(mapAlert)
     const terdekat = (await pool.query(
       `SELECT ${KOLOM} ${DARI} WHERE p.deleted_at IS NULL AND p.status IN ('Aktif','MPP') AND ${sisaSql()} >= 0
