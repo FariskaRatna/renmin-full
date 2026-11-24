@@ -45,6 +45,9 @@ dicabut saat sesi sedang hidup.
 - (R5H32, 2026-11-24) menghapus predikat `bolehArsip` dari CTE daftar arsip, menghapusnya dari SQL unduh
   lampiran arsip, menghapus `need(laporan.export)` dari ekspor, menghapus penangkal formula CSV, dan menghapus
   syarat `arsip.restricted` dari `musnahkan` → masing-masing hanya `x7_r5h32_sumda_arsip_laporan_guard` merah.
+- (R5H32 perbaikan review) membuang syarat `arsip.restricted` saat menautkan surat ke arsip TERBATAS, mengirim
+  `suratId` ke pembaca tanpa `persuratan.read`, membuang syarat surat sah di detail, dan membuang normalisasi
+  penangkal formula CSV → masing-masing hanya x7 merah.
 
 Keduanya dipulihkan sesudahnya. Suite yang lulus pada percobaan pertama tanpa
 pernah dibuktikan bisa merah tidak membuktikan apa-apa.

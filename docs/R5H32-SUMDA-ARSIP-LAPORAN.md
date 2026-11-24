@@ -72,7 +72,8 @@ Referensi: modul `letters` dan halaman `reports` di `docs/reference/Subbagsumda.
 ```
 
 1. **Daftar arsip**: nomor, perihal, jenis, tanggal, lokasi simpan, retensi (tanda), kerahasiaan (ikon gembok),
-   status; arsip Terbatas milik orang lain tampil sebagai "Arsip terbatas" tanpa perihal/nomor (K2).
+   status; ~~arsip Terbatas milik orang lain tampil sebagai "Arsip terbatas" tanpa perihal/nomor (K2)~~ — **digantikan K29**:
+   arsip Terbatas milik orang lain tidak tampil sama sekali.
 2. **Catat arsip**: isian K8, unggah PDF, tautan surat R5H21 (pilih dari surat Sumda yang sudah dikirim/diterima).
 3. **Detail**: data, lampiran, riwayat status, tombol sesuai hak.
 
@@ -97,11 +98,11 @@ Guard operasional (**O**), validasi strict, `no-store`. Hak: `Ra`/`Ma`/`Xa` = `a
 
 | Metode | Path | Hak | Isi |
 |---|---|---|---|
-| GET | `/arsip/capabilities` | O | `{canRead,canManage,canRestricted}` |
-| GET | `/arsip` | Ra | `?q=&jenis=&status=&tahun=&kerahasiaan=&retensi=1&page=&size=` → item tersamar untuk Terbatas (K2) |
+| GET | `/arsip/capabilities` | O | `{canRead,canManage,canRestricted,canTautSurat}` (lihat §2) |
+| GET | `/arsip` | Ra | `?q=&jenis=&status=&tahun=&kerahasiaan=&retensi=1&page=&size=` → Terbatas yang tidak berhak **tidak tampil** (K29) |
 | GET | `/arsip/surat-tertaut` | Ma | surat R5H21 Sumda yang sudah dikirim/diterima dan belum diarsipkan (pilihan tautan K11) |
 | POST | `/arsip` | Ma | isian K8 + `suratId?` → 201 |
-| GET | `/arsip/:id` | Ra | `{item,lampiran,riwayat,surat?}` (Terbatas: hanya K2) |
+| GET | `/arsip/:id` | Ra | `{item,lampiran,riwayat,surat?}` (Terbatas yang tidak berhak → 404, K29) |
 | PATCH | `/arsip/:id` | Ma | badan penuh + `version` (K13) |
 | POST | `/arsip/:id/aksi` | Ma/Xa | `{aksi:inaktifkan\|aktifkan\|musnahkan,catatan,version}` (musnahkan: Kasubbag = `restricted` + `manage`, K9) |
 | POST · GET · DELETE | `/arsip/:id/lampiran` · `…/:lid` · `…/:lid` | Ma · Ra(K2) · Ma | PDF tersegel |
@@ -127,7 +128,7 @@ aturan struktural (K27).
 
 Bukan Engine A/B. Sama dengan R5H27–R5H31: guard `AuthorizeOperational`, lalu `PERMIT_SQL` — grant aktif unit
 `subbagsumda` + permission role, diputus di SQL. Tambahan:
-- **Arsip Terbatas (K2) diputus di SQL** dengan fragmen kolom tersamar (`created_by = $actor OR $restricted`) untuk
+- **Arsip Terbatas (K2) diputus di SQL** dengan predikat baris (`created_by = $actor OR $restricted`; K29: baris disembunyikan, bukan kolom disamarkan) untuk
   daftar, filter, hitungan, detail, lampiran, detail personel, dan ekspor (pola R5H31 `kolomKinerja`).
 - **Analitik**: setiap blok agregat dihitung hanya bila pemanggil memegang hak modulnya; blok tanpa hak bernilai `null`.
 - **Ekspor**: `laporan.export` + hak baca modulnya + penyamaran yang sama dengan layar; audit per unduhan (K22).
@@ -196,6 +197,29 @@ silang antar-modul, bentuk, probe query, pencabutan, kunci evidence kosong. Suit
    rute `/subbagsumda/surat-masuk|surat-keluar` dan tautan dari Inbox tetap berlaku. Inbox Distribusi dan Disposisi
    dihapus dari sidebar (sama dengan tombol Inbox dan Tasks di header); Berkas, Foto & Disposisi (registry lama) dihapus
    dari sidebar, tetap terbuka lewat tautan darurat di layar terkait. Hanya frontend (`App.tsx`); unit lain tidak berubah.
+
+### Perbaikan hasil review (2026-11-24)
+
+Disetujui pemilik ("oke kerjakan dulu ya"). Commit `fix(subbagsumda): perbaikan hasil review keamanan R5H32`.
+
+| # | Temuan | Perbaikan |
+|---|---|---|
+| S1 | Surat yang tertaut ke arsip TERBATAS menghilang dari pilihan surat dan ditolak 409; bila tidak ada arsip terlihat yang menautkannya, pemegang Ma+Ps bisa menyimpulkan "perihal surat ini adalah subjek arsip rahasia" (lebih dari yang tertulis di R8/K31) | **K51:** menautkan surat ke arsip TERBATAS — saat mencatat, mengganti tautan, atau menaikkan arsip bersurat ke TERBATAS — hanya oleh pemegang `arsip.restricted` (403). **Sisa yang diterima:** bila Kasubbag sendiri menautkan surat ke arsip TERBATAS, kesimpulan yang sama masih mungkin bagi pemegang Ma+Ps; kini hanya terjadi atas keputusan Kasubbag. Penutupan penuh hanya dengan melarang tautan surat pada arsip TERBATAS sama sekali (belum diambil) |
+| S2 | Detail membaca surat tanpa syarat sah | `SURAT_SAH_SQL` ditambahkan; surat yang tidak lagi sah → `{hilang:true}` |
+| S3 | `suratId` dikirim ke pemegang Ra tanpa Ps | `suratId` null bagi non-Ps, diganti `bertautSurat:boolean`; PATCH tanpa kunci `suratId` mempertahankan tautan (frontend tidak mengirimnya bila tanpa Ps) |
+| S4 | Penangkal formula melewatkan `\n=`, spasi/NBSP di depan, `﹦` | Diperiksa juga setelah NFKC dan membuang spasi di depan; `\n` masuk daftar awalan |
+| S5 | Ekspor tanpa batas waktu | Satu transaksi `REPEATABLE READ, READ ONLY` + `statement_timeout 10s` (timeout → 503) |
+| S6 | Nama/NRP personel terkirim ke pemegang arsip/ekspor tanpa `personel.read` | **Diterima** (keputusan): semua role bawaan memegang `personel.read`; berlaku hanya untuk role kustom. Ringkasan dan ekspor modul personel tetap butuh `personel.read` |
+
+Catatan review yang diterima apa adanya: kolom "Penilai" di ekspor kinerja adalah teks isian (nama pejabat penilai), bukan
+nama petugas/akun — K41 berarti "tanpa nama akun pengguna"; ekspor yang ditolak 413 tidak diaudit (K21/K43); menaikkan arsip
+orang lain ke TERBATAS (K34) tercatat di audit `subbagsumda.arsip.update` (`fields`).
+
+Uji baru di x7: S1 (POST/PATCH tanpa Xa → 403, Xa → 201), S3 (`suratId` null + `bertautSurat` bagi Ra tanpa Ps; PATCH tanpa
+`suratId` mempertahankan tautan; melepas tanpa Ps → 403), S2 (surat tidak lagi sah → `hilang`), S4 (data lama berawalan NBSP/
+`﹦`/baris baru diberi `'`), unggah > 5 MB ke arsip tak terlihat → 404 (bukan 413), GET ringkasan/ekspor/unduh oleh
+`must_change_password` → 403. Uji mutasi 6–9 (membuang syarat S1, mengirim `suratId` ke semua, membuang syarat sah S2,
+membuang normalisasi S4): masing-masing **hanya x7 merah**.
 
 Tidak ada endpoint beku yang berubah; `DEVIATIONS.md` tidak perlu entri baru.
 
