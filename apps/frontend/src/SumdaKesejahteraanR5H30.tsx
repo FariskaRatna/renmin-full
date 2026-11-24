@@ -31,7 +31,7 @@ const ASAL: Record<string, string[]> = { MPP: ['Aktif'], Pensiun: ['Aktif', 'MPP
 
 const ERRORS: Record<string, string> = {
   access_denied: 'Akun ini tidak berwenang melakukan tindakan tersebut.',
-  self_review_forbidden: 'Pencatat atau pengubah terakhir tidak boleh memutus layanan ini. Minta pemutus lain.',
+  self_review_forbidden: 'Pencatat atau orang yang pernah mengubah isian/lampiran layanan ini tidak boleh memutusnya. Minta pemutus lain.',
   invalid_input: 'Isian belum lengkap atau tidak sesuai. Periksa kembali.',
   invalid_body: 'Isian tidak dapat diproses.',
   version_conflict: 'Data sudah diubah orang lain. Data dimuat ulang; periksa lalu ulangi.',

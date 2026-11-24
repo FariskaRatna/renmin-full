@@ -105,6 +105,13 @@ export async function verifyR5H30SumdaLayanan({ env }) {
   const s1 = await aksi(apr, C, c1, 'setujui')
   status(s1, 200, 'setuju-saja memutus pengajuan orang lain'); c1 = item(s1)
   status(await aksi(apr, C, c1, 'selesai'), 403, 'setuju-saja tandai selesai')
+  // Review S2: pernah mengubah isian (PATCH) — walau bukan pengubah terakhir — tidak boleh memutus.
+  let c4 = item(await op.call('POST', C, isiC({ tanggalMulai: '2027-03-22', tanggalSelesai: '2027-03-23' }), true))
+  c4 = item(await ka.call('PATCH', `${C}/${c4.id}`, { tanggalMulai: '2027-03-22', tanggalSelesai: '2027-03-24', catatan: 'diubah', version: c4.version }, true))
+  status(await op.upload(`${C}/${c4.id}/lampiran`, { filename: 'q.pdf', data: PDF }), 201, 'op unggah setelah Kasubbag mengubah')
+  c4 = item(await aksi(op, C, item(await op.call('GET', `${C}/${c4.id}`)), 'proses'))
+  contains(await aksi(ka, C, c4, 'setujui'), 'self_review_forbidden', 'yang pernah mengubah isian tidak boleh memutus cuti')
+  status(await aksi(apr, C, c4, 'setujui'), 200, 'pemutus yang tidak pernah mengubah boleh memutus')
   // Pengubah terakhir (lewat lampiran) tidak boleh memutus, walau bukan pencatat.
   let c3 = item(await op.call('POST', C, isiC({ tanggalMulai: '2027-03-15', tanggalSelesai: '2027-03-16' }), true))
   c3 = item(await aksi(op, C, c3, 'proses'))
@@ -133,6 +140,15 @@ export async function verifyR5H30SumdaLayanan({ env }) {
     status(dl, 200, `${label} unduh lampiran Sakit`); equal(dl.body.equals(PDF), true, `${label}: byte-identik`)
   }
   status(await op2.call('PATCH', `${C}/${sakit.id}`, { jenis: 'TAHUNAN', tanggalMulai: '2027-05-03', tanggalSelesai: '2027-05-04', catatan: '', version: sakit.version + 1 }, true), 400, 'jenis Sakit tidak bisa diubah (K29)')
+  // Review S3: catatan cuti Sakit hanya untuk pencatat dan pemegang setuju.
+  const sakit2 = item(await op.call('POST', C, isiC({ jenis: 'SAKIT', tanggalMulai: '2027-05-10', tanggalSelesai: '2027-05-11', catatan: 'Rahasia medis uji' }), true))
+  for (const [s, label] of [[op2, 'kelola bukan pencatat'], [baca, 'baca saja']]) {
+    const r = await s.call('GET', `${C}/${sakit2.id}`)
+    equal(json(r).item.catatan, null, `${label}: catatan Sakit tidak terkirim`)
+    equal(r.text.includes('Rahasia medis uji'), false, `${label}: teks catatan tidak ada di respons`)
+    equal((await s.call('GET', `${C}?size=100`)).text.includes('Rahasia medis uji'), false, `${label}: daftar tanpa catatan Sakit`)
+  }
+  equal(json(await apr.call('GET', `${C}/${sakit2.id}`)).item.catatan, 'Rahasia medis uji', 'pemegang setuju membaca catatan Sakit')
   const tahunan = item(await op.call('POST', C, isiC({ tanggalMulai: '2027-06-07', tanggalSelesai: '2027-06-08' }), true))
   const upT = await op.upload(`${C}/${tahunan.id}/lampiran`, { filename: 'jadwal.pdf', data: PDF }); status(upT, 201, 'unggah lampiran Tahunan')
   const lidT = json(upT).id

@@ -17,11 +17,11 @@ import './SumdaLayananR5H30.css'
 type Status = 'Diajukan' | 'Diproses' | 'Disetujui' | 'Ditolak' | 'Selesai' | 'Dibatalkan'
 type Cuti = {
   id: string; jenis: string; tanggalMulai: string; tanggalSelesai: string; tanggalKembali: string; jumlahHari: number; hariDisesuaikan: boolean
-  status: Status; catatan: string; version: number; createdBy: string; createdByName: string; updatedBy: string; decidedByName: string | null
+  status: Status; catatan: string | null; catatanDibatasi?: boolean; version: number; createdBy: string; createdByName: string; updatedBy: string; decidedByName: string | null
   personel: { id: string; nrp: string; nama: string; status: string; terarsip: boolean }
 }
 type Jatah = { tahun: number; jatah: number; terpakai: number; dalamProses: number; sisa: number }
-type Detail = { item: Cuti; jatah: Jatah; lampiran: LampiranItem[]; riwayat: { dari: string | null; ke: string; catatan: string; oleh: string; pada: string }[] }
+type Detail = { item: Cuti; jatah: Jatah; lampiran: LampiranItem[]; riwayat: { dari: string | null; ke: string; catatan: string | null; oleh: string; pada: string }[] }
 type Caps = { canRead: boolean; canManage: boolean; canApprove: boolean }
 type Kalender = { bulan: string; hari: { tanggal: string; items: { id: string; nama: string; jenis: string; status: Status }[] }[]; terpotong: boolean }
 
@@ -30,7 +30,7 @@ const STATUS: Status[] = ['Diajukan', 'Diproses', 'Disetujui', 'Ditolak', 'Seles
 
 const ERRORS: Record<string, string> = {
   access_denied: 'Akun ini tidak berwenang melakukan tindakan tersebut.',
-  self_review_forbidden: 'Pencatat atau pengubah terakhir tidak boleh memutus pengajuan ini. Minta pemutus lain.',
+  self_review_forbidden: 'Pencatat atau orang yang pernah mengubah isian/lampiran pengajuan ini tidak boleh memutusnya. Minta pemutus lain.',
   invalid_input: 'Isian belum lengkap atau tidak sesuai. Periksa kembali tanggal dan jumlah hari.',
   invalid_body: 'Isian tidak dapat diproses.',
   version_conflict: 'Data sudah diubah orang lain. Data dimuat ulang; periksa lalu ulangi.',
@@ -61,6 +61,7 @@ export function hariKerja(mulai: string, selesai: string) {
   }
   return n
 }
+const PETUNJUK_SAKIT = 'Jangan menulis diagnosis atau keterangan medis.'
 const rentangTeks = (c: Cuti) => `${tgl(c.tanggalMulai)}${c.tanggalSelesai !== c.tanggalMulai ? ` – ${tgl(c.tanggalKembali || c.tanggalSelesai)}` : ''}`
 
 export default function SumdaCutiR5H30({ tab, onTab, initialID, userId }: { tab?: string; onTab: (t: 'daftar' | 'kalender') => void; initialID?: string; userId: string }) {
@@ -135,6 +136,7 @@ function DaftarView({ caps, onLost, onOpen, refresh }: { caps: Caps | null; onLo
 
 function FormCuti({ item, onClose, onSaved }: { item: Cuti | null; onClose: () => void; onSaved: (c: Cuti) => void }) {
   const [personel, setPersonel] = useState<PersonelCari | null>(item ? { id: item.personel.id, nrp: item.personel.nrp, nama: item.personel.nama, status: item.personel.status } : null)
+  const catatanTersamar = item !== null && item.catatan === null
   const [v, setV] = useState({ jenis: item?.jenis ?? 'TAHUNAN', tanggalMulai: item?.tanggalMulai ?? '', tanggalSelesai: item?.tanggalSelesai ?? '', catatan: item?.catatan ?? '' })
   const [manual, setManual] = useState<string>(item?.hariDisesuaikan ? String(item.jumlahHari) : '')
   const [jatah, setJatah] = useState<Jatah | null>(null)
@@ -159,7 +161,7 @@ function FormCuti({ item, onClose, onSaved }: { item: Cuti | null; onClose: () =
     if (tersedia !== null && jumlah > tersedia && !(await confirmDialog(`Cuti ${jumlah} hari melebihi sisa jatah tahunan (${Math.max(0, tersedia)} hari, termasuk pengajuan yang masih diproses). Tetap simpan?`, { confirmLabel: 'Tetap simpan' }))) return
     setBusy(true); setError('')
     try {
-      const isi = { tanggalMulai: v.tanggalMulai, tanggalSelesai: v.tanggalSelesai, catatan: v.catatan, ...(manual !== '' ? { jumlahHari: Number(manual) } : {}) }
+      const isi = { tanggalMulai: v.tanggalMulai, tanggalSelesai: v.tanggalSelesai, catatan: catatanTersamar ? null : v.catatan, ...(manual !== '' ? { jumlahHari: Number(manual) } : {}) }
       const r = item ? await api<{ item: Cuti; peringatan: string[] }>(`/cuti/${enc(item.id)}`, 'PATCH', { ...isi, version: item.version })
         : await api<{ item: Cuti; peringatan: string[] }>('/cuti', 'POST', { personelId: personel.id, jenis: v.jenis, ...isi })
       showToast(r.peringatan.includes('melebihi_jatah') ? 'Cuti disimpan — melebihi jatah tahunan.' : 'Cuti disimpan.', r.peringatan.length ? 'error' : undefined)
@@ -183,7 +185,7 @@ function FormCuti({ item, onClose, onSaved }: { item: Cuti | null; onClose: () =
           <span><strong>{jumlah || 0}</strong> hari {manual !== '' ? '(disesuaikan)' : 'kerja'}</span>
           {jatah && <span>Jatah {jatah.tahun}: terpakai <strong>{jatah.terpakai}</strong> · dalam proses <strong>{lainProses}</strong> · sisa <strong className={tersedia !== null && jumlah > tersedia ? 'is-lewat' : ''}>{tersedia}</strong> dari {jatah.jatah}</span>}
         </div>
-        <label className="sdl-sumda__wide"><span>Catatan</span><textarea rows={2} maxLength={1000} value={v.catatan} onChange={set('catatan')} />
+        <label className="sdl-sumda__wide"><span>Catatan</span><textarea rows={2} maxLength={1000} value={v.catatan} disabled={catatanTersamar} placeholder={catatanTersamar ? 'Catatan cuti sakit hanya untuk pencatat dan Kasubbag; tidak diubah.' : undefined} onChange={set('catatan')} />
           {v.jenis === 'SAKIT' && <small className="sdl-layanan__peringatan">Jangan menulis diagnosis atau keterangan medis. Surat dokter diunggah sebagai lampiran (hanya Kasubbag dan pengunggah yang bisa membukanya).</small>}</label>
       </div>
       {error && <p className="sdl-progar__error" role="alert">{error}</p>}
@@ -225,6 +227,7 @@ function DetailCuti({ id, caps, userId, onClose, onChanged, onLost }: { id: stri
       {c.jenis === 'TAHUNAN' && <div><dt>Jatah {d.jatah.tahun}</dt><dd>Terpakai {d.jatah.terpakai} · dalam proses {d.jatah.dalamProses} · sisa {d.jatah.sisa} dari {d.jatah.jatah}</dd></div>}
     </dl>
     {c.catatan && <div className="sdl-sumda__catatan"><strong>Catatan</strong><p>{c.catatan}</p></div>}
+    {c.catatanDibatasi && <p className="sdl-sumda__muted">Catatan cuti sakit hanya dapat dibaca pencatat dan Kasubbag.</p>}
     <LampiranPdf judul={c.jenis === 'SAKIT' ? 'Lampiran (dibatasi untuk Kasubbag & pengunggah)' : 'Lampiran'} items={d.lampiran}
       urlUnduh={l => `/api/v1/subbagsumda/cuti/${enc(c.id)}/lampiran/${enc(l.id)}`}
       unggah={async fd => { await api(`/cuti/${enc(c.id)}/lampiran`, 'POST', fd); void muat() }} hapus={async l => { await api(`/cuti/${enc(c.id)}/lampiran/${enc(l.id)}`, 'DELETE'); void muat() }}
@@ -232,7 +235,7 @@ function DetailCuti({ id, caps, userId, onClose, onChanged, onLost }: { id: stri
       bisaHapus={l => Boolean(caps?.canManage) && !c.personel.terarsip && ['Diajukan', 'Diproses'].includes(c.status) && (l.uploadedBy === userId || Boolean(caps?.canApprove))} />
     <section className="sdl-sumda__riwayat" aria-label="Riwayat status">
       <strong>Riwayat status</strong>
-      <ol>{d.riwayat.map((h, i) => <li key={i}><span className="sdl-sumda__mono">{waktu(h.pada)}</span><span>{h.dari ? `${h.dari} → ${h.ke}` : h.ke}{h.catatan && ` — ${h.catatan}`}</span><span className="sdl-sumda__muted">{h.oleh}</span></li>)}</ol>
+      <ol>{d.riwayat.map((h, i) => <li key={i}><span className="sdl-sumda__mono">{waktu(h.pada)}</span><span>{h.dari ? `${h.dari} → ${h.ke}` : h.ke}{h.catatan ? ` — ${h.catatan}` : h.catatan === null ? ' — (alasan dibatasi)' : ''}</span><span className="sdl-sumda__muted">{h.oleh}</span></li>)}</ol>
     </section>
     <footer>
       {bisaBatal && <button type="button" className="btn sdl-progar__danger" disabled={busy} onClick={() => setDialog('batalkan')}>Batalkan</button>}
@@ -245,8 +248,8 @@ function DetailCuti({ id, caps, userId, onClose, onChanged, onLost }: { id: stri
         <button type="button" className="btn primary" disabled={busy} onClick={() => void kirim('setujui', {}, 'Cuti disetujui.')}>Setujui</button></>}
       {caps?.canManage && c.status === 'Disetujui' && !c.personel.terarsip && <button type="button" className="btn primary" disabled={busy || !sudahMulai} title={sudahMulai ? undefined : 'Bisa ditandai selesai mulai hari pertama cuti.'} onClick={() => setDialog('selesai')}>Tandai selesai…</button>}
     </footer>
-    {dialog === 'tolak' && <AlasanDialog judul="Tolak cuti" onClose={() => setDialog(null)} onSubmit={a => kirim('tolak', { catatan: a }, 'Cuti ditolak.')} />}
-    {dialog === 'batalkan' && <AlasanDialog judul="Batalkan cuti" onClose={() => setDialog(null)} onSubmit={a => kirim('batalkan', { catatan: a }, 'Cuti dibatalkan.')} />}
+    {dialog === 'tolak' && <AlasanDialog judul="Tolak cuti" petunjuk={c.jenis === 'SAKIT' ? PETUNJUK_SAKIT : undefined} onClose={() => setDialog(null)} onSubmit={a => kirim('tolak', { catatan: a }, 'Cuti ditolak.')} />}
+    {dialog === 'batalkan' && <AlasanDialog judul="Batalkan cuti" petunjuk={c.jenis === 'SAKIT' ? PETUNJUK_SAKIT : undefined} onClose={() => setDialog(null)} onSubmit={a => kirim('batalkan', { catatan: a }, 'Cuti dibatalkan.')} />}
     {dialog === 'selesai' && <SelesaiCuti c={c} onClose={() => setDialog(null)} onSubmit={extra => kirim('selesai', extra, 'Cuti ditandai selesai.')} />}
     {dialog === 'ubah' && <FormCuti item={c} onClose={() => setDialog(null)} onSaved={() => { setDialog(null); onChanged(); void muat() }} />}
   </Shade>
@@ -263,12 +266,14 @@ function SelesaiCuti({ c, onClose, onSubmit }: { c: Cuti; onClose: () => void; o
     <form className="sdl-sumda__form" onSubmit={e => {
       e.preventDefault()
       if (kembali < c.tanggalMulai || kembali > batas) { setError(`Hari terakhir harus antara ${tgl(c.tanggalMulai)} dan ${tgl(batas)}.`); return }
-      void onSubmit({ ...(lebihAwal ? { tanggalKembali: kembali } : {}), ...(manual !== '' ? { jumlahHari: Number(manual) } : {}) })
+      if (lebihAwal && manual !== '' && (Number(manual) < 1 || Number(manual) > c.jumlahHari)) { setError(`Jumlah hari 1–${c.jumlahHari}.`); return }
+      void onSubmit(lebihAwal ? { tanggalKembali: kembali, ...(manual !== '' ? { jumlahHari: Number(manual) } : {}) } : {})
     }}>
       <header><span className="sdl-progar__eyebrow">CUTI &amp; PERIZINAN</span><h2>Tandai selesai</h2><p>Isi hari terakhir cuti yang benar-benar dijalani bila personel kembali lebih awal.</p></header>
       <div className="sdl-progar__fields sdl-sumda__grid">
         <label><span>Hari terakhir cuti</span><input type="date" min={c.tanggalMulai} max={batas} value={kembali} onChange={e => setKembali(e.target.value)} /></label>
-        <label><span>Jumlah hari (opsional)</span><input type="number" min={1} inputMode="numeric" placeholder={`Otomatis: ${lebihAwal ? hariKerja(c.tanggalMulai, kembali) : c.jumlahHari}`} value={manual} onChange={e => setManual(e.target.value.replace(/\D/g, ''))} /></label>
+        <label><span>Jumlah hari (opsional)</span><input type="number" min={1} max={c.jumlahHari} inputMode="numeric" disabled={!lebihAwal} placeholder={`Otomatis: ${lebihAwal ? Math.min(hariKerja(c.tanggalMulai, kembali), c.jumlahHari) : c.jumlahHari}`} value={lebihAwal ? manual : ''} onChange={e => setManual(e.target.value.replace(/\D/g, ''))} />
+          <small>Hanya bila kembali lebih awal; tidak melebihi {c.jumlahHari} hari yang disetujui.</small></label>
       </div>
       {error && <p className="sdl-progar__error" role="alert">{error}</p>}
       <footer><button type="button" className="btn" onClick={onClose}>Kembali</button><button type="submit" className="btn primary">Tandai selesai</button></footer>

@@ -3,7 +3,7 @@ import { Router } from 'express'
 import { withTransaction } from '../../db.js'
 import { BODY_LIMITS, rawBody } from '../../http/payload.js'
 import { parseGoInt, respond } from '../subbagren/shared.js'
-import { HARI_INI, HttpError, UUID_RE, body, idParam, makeHandle, permit, pilihan, tanggal, teks } from './umum.js'
+import { HARI_INI, HttpError, UUID_RE, body, idParam, makeHandle, permit, pernahMengubahSql, pilihan, tanggal, teks } from './umum.js'
 import { MAKS_LAMPIRAN, bacaPdf, bukaPdf, pasangHeaderUnduh } from './lampiran.js'
 
 /**
@@ -272,8 +272,9 @@ export function createSumdaKesejahteraanRouter({ pool, config }) {
         const ke = aksi === 'setujui' ? 'Disetujui' : 'Ditolak'
         const r = await c.query(
           `UPDATE sdl_sumda_kesejahteraan SET status=$3,decided_by=$2::uuid,decided_at=now(),updated_at=now(),version=version+1
-            WHERE id=$1::uuid AND status='Diproses' AND version=$4 AND created_by<>$2::uuid AND updated_by<>$2::uuid`,
-          [id, req.actor, ke, version])
+            WHERE id=$1::uuid AND status='Diproses' AND version=$4 AND created_by<>$2::uuid AND updated_by<>$2::uuid
+              AND NOT ${pernahMengubahSql('subbagsumda.kesejahteraan', '$5', '$2')}`, // review S2
+          [id, req.actor, ke, version, id.toLowerCase()])
         if (r.rowCount !== 1) throw new HttpError(403, 'self_review_forbidden')
         await riwayat(c, id, dari, ke, catatan, req.actor)
         await auditL(c, req.actor, `subbagsumda.kesejahteraan.${aksi}`, id, { jenis: k.jenis, status: ke })

@@ -184,6 +184,8 @@ async function main() {
     check('tanggalKembali pada aksi selain selesai → 400', (await aksi(ka, C, c6ok, 'batalkan', { catatan: 'alasan panjang', tanggalKembali: lalu })).status === 400)
     check('tanggalKembali lewat tanggal selesai → 400', (await aksi(op, C, c6ok, 'selesai', { tanggalKembali: tambah(lalu, 13) })).status === 400)
     const kembali = tambah(lalu, 9)
+    check('review S1: jumlahHari saat Selesai tanpa tanggalKembali → 400', (await aksi(op, C, c6ok, 'selesai', { jumlahHari: 1 })).status === 400)
+    check('review S1: jumlahHari melebihi yang disetujui → 400', (await aksi(op, C, c6ok, 'selesai', { tanggalKembali: kembali, jumlahHari: c6ok.jumlahHari + 1 })).status === 400)
     const s6 = await aksi(op, C, c6ok, 'selesai', { tanggalKembali: kembali })
     check('Selesai dengan kembali lebih awal → jumlah hari dihitung ulang', s6.status === 200 && s6.body.item.status === 'Selesai' && s6.body.item.tanggalKembali === kembali && s6.body.item.jumlahHari === hariKerja(tambah(lalu, 8), kembali), short(s6))
     const bebas = await cuti(op, pB.id, 'LAINNYA', tambah(lalu, 11), tambah(lalu, 12))
@@ -262,6 +264,40 @@ async function main() {
     void ctOk
     await sql.query("UPDATE sdl_sumda_cuti_lampiran SET body = overlay(body PLACING '\\x00'::bytea FROM 40 FOR 1) WHERE id=$1::uuid", [upT.body.id])
     check('body dirusak → 503 evidence_integrity_failure', (await call(ka, 'GET', `${C}/${ct.id}/lampiran/${upT.body.id}`)).body?.error === 'evidence_integrity_failure')
+
+    log('\n7b. Review: maker-checker "pernah mengubah" (S2), catatan Sakit (S3), PATCH personel tidak aktif (C5)')
+    const pS = await personel()
+    let c8 = (await cuti(op, pS.id, 'LAINNYA', t('11', '02'), t('11', '03'))).body.item
+    const p8 = await call(ka, 'PATCH', `${C}/${c8.id}`, { tanggalMulai: t('11', '02'), tanggalSelesai: t('11', '04'), catatan: 'diubah Kasubbag', version: c8.version })
+    check('Kasubbag mengubah isian cuti orang lain → 200', p8.status === 200, short(p8))
+    await unggah(op, `${C}/${c8.id}/lampiran`) // op kini pengubah TERAKHIR
+    c8 = (await call(op, 'GET', `${C}/${c8.id}`)).body.item
+    c8 = (await aksi(op, C, c8, 'proses')).body.item
+    const s8 = await aksi(ka, C, c8, 'setujui')
+    check('S2: Kasubbag yang PERNAH mengubah isian tidak boleh memutus walau bukan pengubah terakhir → 403', s8.body?.error === 'self_review_forbidden', short(s8))
+    let up8 = (await call(ka, 'GET', `${C}/${c8.id.toUpperCase()}`)).body?.item
+    check('S2: id huruf besar di URL tidak meloloskan cek', up8 && (await call(ka, 'POST', `${C}/${c8.id.toUpperCase()}/aksi`, { aksi: 'setujui', catatan: '', version: up8.version })).body?.error === 'self_review_forbidden')
+    const cs2 = (await cuti(op, pS.id, 'SAKIT', t('11', '09'), t('11', '10'), { catatan: 'Demam tinggi uji' })).body.item
+    const lihat = async (a) => (await call(a, 'GET', `${C}/${cs2.id}`)).body
+    const dSt2 = await lihat(staf)
+    check('S3: staf (bukan pencatat, tanpa approve) — catatan Sakit null + dibatasi', dSt2.item.catatan === null && dSt2.item.catatanDibatasi === true, JSON.stringify({ c: dSt2.item.catatan, d: dSt2.item.catatanDibatasi }))
+    check('S3: kabagrenmin — catatan Sakit null', (await lihat(kabag)).item.catatan === null)
+    check('S3: pencatat dan Kasubbag melihat catatan', (await lihat(op)).item.catatan === 'Demam tinggi uji' && (await lihat(ka)).item.catatan === 'Demam tinggi uji')
+    const lstSt = await call(staf, 'GET', `${C}?personelId=${pS.id}&size=50`)
+    check('S3: daftar juga menyamarkan catatan Sakit', lstSt.status === 200 && lstSt.body.items.find((x) => x.id === cs2.id)?.catatan === null && !lstSt.text.includes('Demam tinggi uji'), short(lstSt))
+    const pt2 = await call(staf, 'PATCH', `${C}/${cs2.id}`, { tanggalMulai: t('11', '09'), tanggalSelesai: t('11', '11'), catatan: null, version: cs2.version })
+    check('S3: PATCH dengan catatan null tidak menimpa catatan', pt2.status === 200 && (await lihat(op)).item.catatan === 'Demam tinggi uji', short(pt2))
+    const cs2p = (await aksi(op, C, (await lihat(op)).item, 'proses')).body.item
+    await aksi(ka, C, cs2p, 'tolak', { catatan: 'Alasan medis rahasia uji' })
+    const rwSt = (await lihat(staf)).riwayat.find((h) => h.ke === 'Ditolak')
+    const rwOp = (await lihat(op)).riwayat.find((h) => h.ke === 'Ditolak')
+    check('S3: alasan tolak cuti Sakit tersamar bagi staf, terbaca pencatat', rwSt?.catatan === null && rwOp?.catatan === 'Alasan medis rahasia uji', JSON.stringify({ st: rwSt?.catatan, op: rwOp?.catatan }))
+    const cs3 = (await cuti(op, pS.id, 'TAHUNAN', t('11', '16'), t('11', '17'), { catatan: 'Liburan keluarga' })).body.item
+    check('S3: catatan cuti selain Sakit tetap terbuka', (await call(staf, 'GET', `${C}/${cs3.id}`)).body.item.catatan === 'Liburan keluarga')
+    await sql.query("UPDATE sdl_sumda_personel SET status='Pensiun' WHERE id=$1::uuid", [pS.id])
+    check('C5: PATCH cuti personel yang sudah Pensiun → 409 personel_tidak_aktif', (await call(op, 'PATCH', `${C}/${cs3.id}`, { tanggalMulai: t('11', '16'), tanggalSelesai: t('11', '18'), catatan: '', version: cs3.version })).body?.error === 'personel_tidak_aktif')
+    await sql.query("UPDATE sdl_sumda_personel SET status='Aktif' WHERE id=$1::uuid", [pS.id])
+    void up8
 
     log('\n8. Audit tanpa PII (K19) & aditif R5H27 (K20/K41)')
     const pids = (await sql.query(`SELECT id::text FROM sdl_sumda_personel WHERE nrp LIKE '${PREFIX}%'`)).rows.map((r) => r.id)

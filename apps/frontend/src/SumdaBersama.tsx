@@ -139,7 +139,7 @@ export function CariPersonel({ onPilih, statusAktif }: { onPilih: (p: PersonelCa
 }
 
 /** Dialog satu isian alasan (tolak/batalkan, min. 8 karakter). */
-export function AlasanDialog({ judul, onClose, onSubmit }: { judul: string; onClose: () => void; onSubmit: (alasan: string) => Promise<void> }) {
+export function AlasanDialog({ judul, petunjuk, onClose, onSubmit }: { judul: string; petunjuk?: string; onClose: () => void; onSubmit: (alasan: string) => Promise<void> }) {
   const [alasan, setAlasan] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -151,7 +151,8 @@ export function AlasanDialog({ judul, onClose, onSubmit }: { judul: string; onCl
     }}>
       <header><h2>{judul}</h2></header>
       <div className="sdl-progar__fields"><label><span>Alasan<b aria-hidden="true"> *</b></span>
-        <textarea rows={3} maxLength={1000} value={alasan} autoFocus onChange={e => setAlasan(e.target.value)} /></label></div>
+        <textarea rows={3} maxLength={1000} value={alasan} autoFocus onChange={e => setAlasan(e.target.value)} />
+        {petunjuk && <small className="sdl-layanan__peringatan">{petunjuk}</small>}</label></div>
       {error && <p className="sdl-progar__error" role="alert">{error}</p>}
       <footer><button type="button" className="btn" disabled={busy} onClick={onClose}>Kembali</button><button type="submit" className="btn primary" disabled={busy}>Simpan</button></footer>
     </form>

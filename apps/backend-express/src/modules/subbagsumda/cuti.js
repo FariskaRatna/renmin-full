@@ -3,7 +3,7 @@ import { Router } from 'express'
 import { withTransaction } from '../../db.js'
 import { BODY_LIMITS, rawBody } from '../../http/payload.js'
 import { parseGoInt, respond } from '../subbagren/shared.js'
-import { HARI_INI, HttpError, UUID_RE, body, idParam, makeHandle, permit, pilihan, tanggal, teks } from './umum.js'
+import { HARI_INI, HttpError, UUID_RE, body, idParam, makeHandle, permit, pernahMengubahSql, pilihan, tanggal, teks } from './umum.js'
 import { MAKS_LAMPIRAN, bacaPdf, bukaPdf, pasangHeaderUnduh } from './lampiran.js'
 
 /**
@@ -103,7 +103,7 @@ async function riwayat(c, id, dari, ke, catatan, oleh) {
 }
 
 const KOLOM = `c.id::text,c.personel_id::text,c.jenis,c.tanggal_mulai::text AS tanggal_mulai,c.tanggal_selesai::text AS tanggal_selesai,
-  c.tanggal_kembali::text AS tanggal_kembali,c.jumlah_hari,c.hari_disesuaikan,c.status,c.catatan,c.version,c.created_at,c.updated_at,
+  c.tanggal_kembali::text AS tanggal_kembali,c.jumlah_hari,c.hari_disesuaikan,c.status,c.version,c.created_at,c.updated_at,
   c.created_by::text,cu.display_name AS created_name,c.updated_by::text,du.display_name AS decided_name,c.decided_at,c.selesai_at,
   p.nrp,p.nama,p.status AS personel_status,p.deleted_at IS NOT NULL AS personel_terarsip`
 const DARI = `FROM sdl_sumda_cuti c
@@ -111,11 +111,17 @@ const DARI = `FROM sdl_sumda_cuti c
   LEFT JOIN sdl_users cu ON cu.id=c.created_by
   LEFT JOIN sdl_users du ON du.id=c.decided_by`
 
+/**
+ * Review R5H30 S3: catatan cuti SAKIT (bisa memuat keterangan medis) hanya untuk pencatat dan pemegang
+ * approve; selain itu NULL dari SQL. `actor`/`approver` adalah nomor parameter SQL.
+ */
+const kolom = (actor, approver) => `${KOLOM},CASE WHEN c.jenis<>'SAKIT' OR c.created_by=${actor}::uuid OR ${approver}::boolean THEN c.catatan END AS catatan`
+
 function mapCuti(r) {
   return {
     id: r.id, jenis: r.jenis, tanggalMulai: r.tanggal_mulai, tanggalSelesai: r.tanggal_selesai,
     tanggalKembali: r.tanggal_kembali ?? '', jumlahHari: r.jumlah_hari, hariDisesuaikan: r.hari_disesuaikan,
-    status: r.status, catatan: r.catatan, version: r.version,
+    status: r.status, catatan: r.catatan ?? null, catatanDibatasi: r.catatan === null, version: r.version,
     createdBy: r.created_by, createdByName: r.created_name ?? '', updatedBy: r.updated_by,
     decidedByName: r.decided_name ?? null, decidedAt: r.decided_at ?? null, selesaiAt: r.selesai_at ?? null,
     createdAt: r.created_at, updatedAt: r.updated_at,
@@ -123,8 +129,8 @@ function mapCuti(r) {
   }
 }
 
-async function ambil(c, id) {
-  const r = await c.query(`SELECT ${KOLOM} ${DARI} WHERE c.id=$1::uuid`, [id])
+async function ambil(c, id, actor, approver) {
+  const r = await c.query(`SELECT ${kolom('$2', '$3')} ${DARI} WHERE c.id=$1::uuid`, [id, actor, approver])
   if (r.rowCount !== 1) throw new HttpError(404, 'not_found')
   return mapCuti(r.rows[0])
 }
@@ -177,7 +183,7 @@ async function tolakBilaTerarsip(c, personelId) {
 
 async function kunci(c, id) {
   const r = await c.query(
-    `SELECT id::text,personel_id::text,jenis,status,version,tanggal_mulai::text AS tanggal_mulai,tanggal_selesai::text AS tanggal_selesai
+    `SELECT id::text,personel_id::text,jenis,status,version,jumlah_hari,tanggal_mulai::text AS tanggal_mulai,tanggal_selesai::text AS tanggal_selesai
        FROM sdl_sumda_cuti WHERE id=$1::uuid FOR UPDATE`, [id])
   if (r.rowCount !== 1) throw new HttpError(404, 'not_found')
   return r.rows[0]
@@ -277,7 +283,7 @@ export function createSumdaCutiRouter({ pool, config }) {
     const bulan = req.query.bulan === undefined || req.query.bulan === '' ? null : bulanParam(req.query.bulan)
     const { page, size } = halaman(req)
     const where = ['TRUE']
-    const args = []
+    const args = [req.actor, await can(req.actor, P.approve)] // $1/$2: penyamaran catatan Sakit (S3)
     if (q !== '') {
       args.push(`%${q.replace(/[\\%_]/g, (m) => `\\${m}`)}%`)
       where.push(`(p.nama ILIKE $${args.length} OR p.nrp ILIKE $${args.length})`)
@@ -290,9 +296,9 @@ export function createSumdaCutiRouter({ pool, config }) {
       where.push(`c.tanggal_mulai < ($${args.length}::date + interval '1 month') AND coalesce(c.tanggal_kembali,c.tanggal_selesai) >= $${args.length}::date`)
     }
     const w = where.join(' AND ')
-    const total = Number((await pool.query(`SELECT count(*) ${DARI} WHERE ${w}`, args)).rows[0].count)
+    const total = Number((await pool.query(`SELECT count(*) ${DARI} WHERE ${w} AND $1::uuid IS NOT NULL AND $2::boolean IS NOT NULL`, args)).rows[0].count)
     const rows = (await pool.query(
-      `SELECT ${KOLOM} ${DARI} WHERE ${w} ORDER BY c.tanggal_mulai DESC, c.created_at DESC, c.id LIMIT ${size} OFFSET ${(page - 1) * size}`, args)).rows
+      `SELECT ${kolom('$1', '$2')} ${DARI} WHERE ${w} ORDER BY c.tanggal_mulai DESC, c.created_at DESC, c.id LIMIT ${size} OFFSET ${(page - 1) * size}`, args)).rows
     respond(res, 200, { items: rows.map(mapCuti), total, page, size })
   }))
 
@@ -314,7 +320,7 @@ export function createSumdaCutiRouter({ pool, config }) {
         [b.personelId, jenis, r.mulai, r.selesai, r.jumlah, r.disesuaikan, catatan, req.actor])).rows[0].id
       await riwayat(c, id, null, 'Diajukan', '', req.actor)
       await audit(c, req.actor, 'subbagsumda.cuti.create', id, { jenis, status: 'Diajukan' })
-      return { item: await ambil(c, id), peringatan }
+      return { item: await ambil(c, id, req.actor, false), peringatan }
     })
     respond(res, 201, out)
   }))
@@ -322,8 +328,8 @@ export function createSumdaCutiRouter({ pool, config }) {
   router.get('/:id', handle(async (req, res) => {
     await need(req, P.read)
     const id = idParam(req.params.id)
-    const item = await ambil(pool, id)
     const approver = await can(req.actor, P.approve)
+    const item = await ambil(pool, id, req.actor, approver)
     // K4/K38: nama berkas cuti Sakit tidak keluar ke pembaca tanpa hak (bisa memuat diagnosis).
     const lampiran = (await pool.query(
       `SELECT l.id::text,(c.jenis<>'SAKIT' OR l.uploaded_by=$2::uuid OR $3::boolean) AS boleh,l.filename,l.size_bytes,
@@ -331,13 +337,15 @@ export function createSumdaCutiRouter({ pool, config }) {
          FROM sdl_sumda_cuti_lampiran l JOIN sdl_sumda_cuti c ON c.id=l.cuti_id LEFT JOIN sdl_users u ON u.id=l.uploaded_by
         WHERE l.cuti_id=$1::uuid ORDER BY l.uploaded_at, l.id`, [id, req.actor, approver])).rows
     const hist = (await pool.query(
-      `SELECT h.dari,h.ke,h.catatan,u.display_name,h.pada FROM sdl_sumda_cuti_riwayat h
-         LEFT JOIN sdl_users u ON u.id=h.oleh WHERE h.cuti_id=$1::uuid ORDER BY h.id`, [id])).rows
+      `SELECT h.dari,h.ke,u.display_name,h.pada,
+              CASE WHEN c.jenis<>'SAKIT' OR h.oleh=$2::uuid OR c.created_by=$2::uuid OR $3::boolean THEN h.catatan END AS catatan
+         FROM sdl_sumda_cuti_riwayat h JOIN sdl_sumda_cuti c ON c.id=h.cuti_id
+         LEFT JOIN sdl_users u ON u.id=h.oleh WHERE h.cuti_id=$1::uuid ORDER BY h.id`, [id, req.actor, approver])).rows
     respond(res, 200, {
       item,
       jatah: await jatahCuti(pool, item.personel.id, Number(item.tanggalMulai.slice(0, 4))),
       lampiran: lampiran.map((l) => ({ id: l.id, filename: l.boleh ? l.filename : null, dibatasi: !l.boleh, size: l.size_bytes, uploadedBy: l.uploaded_by, uploadedByName: l.display_name ?? '', uploadedAt: l.uploaded_at })),
-      riwayat: hist.map((h) => ({ dari: h.dari, ke: h.ke, catatan: h.catatan, oleh: h.display_name ?? '', pada: h.pada })),
+      riwayat: hist.map((h) => ({ dari: h.dari, ke: h.ke, catatan: h.catatan ?? null, oleh: h.display_name ?? '', pada: h.pada })),
     })
   }))
 
@@ -347,21 +355,24 @@ export function createSumdaCutiRouter({ pool, config }) {
     // K29: personelId dan jenis tidak bisa diubah (juga menjaga K4 lampiran Sakit).
     const b = body(req, ['tanggalMulai', 'tanggalSelesai', 'jumlahHari', 'catatan', 'version'])
     const version = versi(b.version)
-    const catatan = teks(b.catatan, 0, 1000, { multiline: true })
+    // S3: catatan null = tidak diubah (pembaca yang catatan Sakit-nya disamarkan tidak menimpanya tanpa sengaja).
+    const catatan = b.catatan === null ? null : teks(b.catatan, 0, 1000, { multiline: true })
+    const approver = await can(req.actor, P.approve)
     const out = await withTransaction(pool, async (c) => {
       const k = await kunci(c, id)
       if (k.version !== version) throw new HttpError(409, 'version_conflict')
       if (k.status !== 'Diajukan') throw new HttpError(409, 'status_tidak_sesuai')
       const r = rentang(k.jenis, b.tanggalMulai, b.tanggalSelesai, b.jumlahHari)
-      await kunciPersonel(c, k.personel_id)
+      const p = await kunciPersonel(c, k.personel_id)
+      if (!['Aktif', 'MPP'].includes(p.status)) throw new HttpError(409, 'personel_tidak_aktif') // K13 (review C5)
       await tolakBertumpuk(c, k.personel_id, r.mulai, r.selesai, id)
       const peringatan = await peringatanJatah(c, k.personel_id, k.jenis, r.mulai, r.jumlah, id)
       await c.query(
-        `UPDATE sdl_sumda_cuti SET tanggal_mulai=$2,tanggal_selesai=$3,jumlah_hari=$4,hari_disesuaikan=$5,catatan=$6,
+        `UPDATE sdl_sumda_cuti SET tanggal_mulai=$2,tanggal_selesai=$3,jumlah_hari=$4,hari_disesuaikan=$5,catatan=coalesce($6,catatan),
                 updated_by=$7,updated_at=now(),version=version+1 WHERE id=$1::uuid`,
         [id, r.mulai, r.selesai, r.jumlah, r.disesuaikan, catatan, req.actor])
       await audit(c, req.actor, 'subbagsumda.cuti.update', id, { jenis: k.jenis, version: version + 1 })
-      return { item: await ambil(c, id), peringatan }
+      return { item: await ambil(c, id, req.actor, approver), peringatan }
     })
     respond(res, 200, out)
   }))
@@ -377,7 +388,7 @@ export function createSumdaCutiRouter({ pool, config }) {
     const version = versi(b.version)
     const catatan = teks(b.catatan, 0, 1000, { multiline: true })
     if ((aksi === 'tolak' || aksi === 'batalkan') && [...catatan].length < 8) throw new HttpError(400, 'invalid_input') // K17
-    const isApprover = aksi === 'batalkan' ? await can(req.actor, P.approve) : false
+    const isApprover = await can(req.actor, P.approve)
 
     const item = await withTransaction(pool, async (c) => {
       const k = await kunci(c, id)
@@ -396,8 +407,9 @@ export function createSumdaCutiRouter({ pool, config }) {
         // Maker-checker diputus di SQL (K1): pencatat dan pengubah terakhir tidak boleh memutus.
         const r = await c.query(
           `UPDATE sdl_sumda_cuti SET status=$3,decided_by=$2::uuid,decided_at=now(),updated_at=now(),version=version+1
-            WHERE id=$1::uuid AND status='Diproses' AND version=$4 AND created_by<>$2::uuid AND updated_by<>$2::uuid`,
-          [id, req.actor, ke, version])
+            WHERE id=$1::uuid AND status='Diproses' AND version=$4 AND created_by<>$2::uuid AND updated_by<>$2::uuid
+              AND NOT ${pernahMengubahSql('subbagsumda.cuti', '$5', '$2')}`, // review S2
+          [id, req.actor, ke, version, id.toLowerCase()])
         if (r.rowCount !== 1) throw new HttpError(403, 'self_review_forbidden')
         await riwayat(c, id, dari, ke, catatan, req.actor)
         await audit(c, req.actor, `subbagsumda.cuti.${aksi}`, id, { jenis: k.jenis, status: ke })
@@ -420,11 +432,13 @@ export function createSumdaCutiRouter({ pool, config }) {
           if (kembali < k.tanggal_mulai || kembali > batas) throw new HttpError(400, 'invalid_input')
         }
         const akhir = kembali ?? k.tanggal_selesai
-        const manual = jumlahManual(b.jumlahHari, hariKalender(k.tanggal_mulai, akhir))
+        // Review S1: koreksi jumlah hari hanya bersama tanggal kembali, dan tidak boleh melebihi yang disetujui.
+        if (!kembali && b.jumlahHari !== undefined && b.jumlahHari !== null) throw new HttpError(400, 'invalid_input')
+        const manual = jumlahManual(b.jumlahHari, Math.min(hariKalender(k.tanggal_mulai, akhir), k.jumlah_hari))
         const set = []
         const args = [id, req.actor, kembali]
         if (manual !== null) { args.push(manual); set.push(`jumlah_hari=$${args.length}`, 'hari_disesuaikan=TRUE') } else if (kembali) {
-          const n = hariKerja(k.tanggal_mulai, kembali)
+          const n = Math.min(hariKerja(k.tanggal_mulai, kembali), k.jumlah_hari)
           if (n < 1) throw new HttpError(400, 'invalid_input')
           args.push(n); set.push(`jumlah_hari=$${args.length}`, 'hari_disesuaikan=FALSE')
         }
@@ -435,7 +449,7 @@ export function createSumdaCutiRouter({ pool, config }) {
         await riwayat(c, id, dari, 'Selesai', catatan, req.actor)
         await audit(c, req.actor, 'subbagsumda.cuti.selesai', id, { jenis: k.jenis, status: 'Selesai', fields: set.length || kembali ? ['jumlahHari'] : [] })
       }
-      return ambil(c, id)
+      return ambil(c, id, req.actor, isApprover)
     })
     respond(res, 200, { item })
   }))
