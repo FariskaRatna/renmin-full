@@ -17,7 +17,7 @@ sungguhan, bukan sekadar test merah.
 | Direktori | Stack | Peran |
 |---|---|---|
 | `apps/backend/` | Go 1.27 + chi + pgx | **Produksi.** Sumber kebenaran perilaku |
-| `apps/backend-express/` | Node/Express (JavaScript, ESM) | Migrasi. **142/142 endpoint diporting, 382/382 kasus harness cocok** dengan baseline Go (2026-11-01). **Sebagian trafik sudah dialihkan** lewat `SDL_EXPRESS_PATHS` (portal, executive, subbag\*, unit-work, urmin, leadership; per catatan 2026-11-10). Fitur baru R5H11–R5H30 **hanya ada di Express** |
+| `apps/backend-express/` | Node/Express (JavaScript, ESM) | Migrasi. **142/142 endpoint diporting, 382/382 kasus harness cocok** dengan baseline Go (2026-11-01). **Sebagian trafik sudah dialihkan** lewat `SDL_EXPRESS_PATHS` (portal, executive, subbag\*, unit-work, urmin, leadership; per catatan 2026-11-10). Fitur baru R5H11–R5H31 **hanya ada di Express** |
 | `apps/frontend/` | React 19 + Vite 8 + Tailwind 4 | Dipakai keduanya, tidak disentuh |
 
 Migrasi Go → Express sedang berjalan. Aturan yang mengikat selama masa ini ada di
@@ -127,8 +127,8 @@ terisolasi, dan laporannya jatuh ke `0.sekerips/reports/`:
 ```bash
 bash scripts/security-test-r2d5.sh      # backend Go (9 file, tag r2d5integration,
                                         #   TIDAK ikut `go test ./...`)
-bash scripts/security-test-express.sh   # backend Express (26/26 per 2026-11-24:
-                                        #   21 skenario 1:1 + x1–x5 khusus Express)
+bash scripts/security-test-express.sh   # backend Express (27/27 per 2026-11-24:
+                                        #   21 skenario 1:1 + x1–x6 khusus Express)
 ```
 
 Port Express-nya satu-lawan-satu dengan nama skenario yang identik. Skenario
@@ -183,7 +183,7 @@ identik, satu diproses Go dan satu Express, lalu keadaan akhirnya dibandingkan
 baris per baris — seed 171/171 baris cocok, reset 7/7 cocok, dan hash yang
 ditulis Express diterima `auth.VerifyPassword` Go.
 
-71 berkas SQL ikut masuk image lewat `additional_contexts` di
+72 berkas SQL ikut masuk image lewat `additional_contexts` di
 `compose.express.yaml` (padanan `//go:embed`), sehingga `--migrate` berguna di
 dalam container, bukan hanya dari checkout source. Skema tetap satu sumber.
 
@@ -203,8 +203,8 @@ mengubah konfigurasi proxy Vite memengaruhi produksi, bukan cuma dev.
 
 ### Database
 
-115 tabel dari migrasi (+ `sdl_schema_migrations` milik runner), semua berprefiks `sdl_`. Skema dibangun dari
-**71 file SQL ter-embed** di `apps/backend/internal/migrations/sql/` (`001_core.sql` … `071_*.sql`).
+123 tabel dari migrasi (+ `sdl_schema_migrations` milik runner), semua berprefiks `sdl_`. Skema dibangun dari
+**72 file SQL ter-embed** di `apps/backend/internal/migrations/sql/` (`001_core.sql` … `072_*.sql`).
 
 Runner (`migrations/migrate.go`) menerapkan secara transaksional, memegang advisory
 lock, mencatat SHA-256 per file di `sdl_schema_migrations`, dan **menolak kalau

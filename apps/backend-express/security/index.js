@@ -31,6 +31,7 @@ import { verifyR5H27SumdaPersonel } from './scenarios/r5h27.js'
 import { verifyR5H28SumdaKarier } from './scenarios/r5h28.js'
 import { verifyR5H29SumdaDiklat } from './scenarios/r5h29.js'
 import { verifyR5H30SumdaLayanan } from './scenarios/r5h30.js'
+import { verifyR5H31SumdaKinerjaAset } from './scenarios/r5h31.js'
 
 /**
  * URUTAN INI ADALAH BAGIAN DARI UJINYA, sama seperti di Go.
@@ -71,6 +72,7 @@ const SCENARIOS = [
   ['x3_r5h28_sumda_karier_guard', verifyR5H28SumdaKarier],
   ['x4_r5h29_sumda_diklat_guard', verifyR5H29SumdaDiklat],
   ['x5_r5h30_sumda_layanan_guard', verifyR5H30SumdaLayanan],
+  ['x6_r5h31_sumda_kinerja_aset_guard', verifyR5H31SumdaKinerjaAset],
 ]
 
 function line(text = '') {

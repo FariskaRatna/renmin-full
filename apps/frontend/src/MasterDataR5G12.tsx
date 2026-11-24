@@ -127,7 +127,7 @@ const SETS: { key: SetKey; title: string; blurb: string; codeLabel: string; code
     ['arsip-status', 'Status Arsip', 'Pilihan "Status" pada formulir Arsip (Urmin).', 'persuratan'],
     ['agenda-hadir', 'Yang Menghadiri', 'Pilihan "Yang Menghadiri" pada Agenda & Rapat (boleh lebih dari satu). Nama tidak boleh memuat koma.', 'persuratan'],
     ['personel-status', 'Status Personel', 'Pilihan "Status Personel" pada Data Administrasi Personel.', 'sumda'],
-    ['kondisi-barang', 'Kondisi Barang', 'Pilihan "Kondisi Barang" pada Inventaris & BMN.', 'sumda'],
+    ['kondisi-barang', 'Kondisi Barang', 'Pilihan kondisi pada registry Inventaris lama (cadangan saat rollback). Inventaris & BMN baru memakai kondisi baku.', 'sumda'],
     ['sop-jenis', 'Jenis Dokumen SOP', 'Pilihan "Jenis Dokumen" pada SOP, Regulasi & Metode.', 'binfung'],
     ['sop-status', 'Status Dokumen SOP', 'Pilihan "Status" pada SOP, Regulasi & Metode.', 'binfung'],
     ['pid-kategori', 'Kategori Informasi', 'Pilihan "Kategori" pada Informasi & Dokumentasi (PID).', 'binfung'],

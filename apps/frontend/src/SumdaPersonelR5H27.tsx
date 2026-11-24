@@ -4,6 +4,7 @@ import { confirmDialog, showToast } from './UIFeedback'
 import { ApiError, BULAN, Shade, TidakTersedia, UUID_RE, makeApi, tgl, waktu } from './SumdaBersama'
 import { JENIS_CUTI } from './SumdaCutiR5H30'
 import { JENIS_LAYANAN, kesejahteraanCaps, prosesPensiun } from './SumdaKesejahteraanR5H30'
+import { KATEGORI as KATEGORI_KINERJA, PERIODE as PERIODE_KINERJA, RINGKAS as RINGKAS_KINERJA } from './SumdaKinerjaR5H31'
 import './ProgarR5H11.css'
 import './SumdaPersonelR5H27.css'
 
@@ -28,6 +29,7 @@ type RiwayatDiklat = { diklatId: string; pesertaId: string; nama: string; jenis:
 type KompetensiRingkas = { id: string; nama: string; kategori: string; nomor: string; berlakuSampai: string; sisaHari: number | null; tahap: 'H-60' | 'H-30' | 'KEDALUWARSA' | null }
 type CutiTahunIni = { tahun: number; jatah: number; terpakai: number; dalamProses: number; sisa: number; items: { id: string; jenis: string; status: string; tanggalMulai: string; tanggalSelesai: string; tanggalKembali: string; jumlahHari: number }[] }
 type LayananRingkas = { id: string; jenis: string; status: string; targetSelesai: string; nomorReferensi: string; selesaiAt: string | null }
+type KinerjaRingkas = { id: string; tahun: number; periode: string; statusRingkas: 'BELUM_DINILAI' | 'DIAJUKAN' | 'DINILAI'; dibatasi: boolean; status: string | null; kategori: string | null }
 type Personel = {
   id: string; nrp: string; nama: string; jenis: '' | 'Polri' | 'PNS'; pangkat: string; pangkatLabel: string
   jabatan: string; unitKerja: string; tmtDinas: string; tanggalPensiun: string; status: Status; catatan: string
@@ -37,17 +39,18 @@ type Personel = {
   kompetensi?: KompetensiRingkas[]
   cutiTahunIni?: CutiTahunIni
   riwayatKesejahteraan?: LayananRingkas[]
+  kinerja?: KinerjaRingkas[]
 }
 type Alert = { personel: Personel; sisaHari: number; tahap: Tahap; ditinjau: { oleh: string; pada: string } | null }
 type Caps = { canRead: boolean; canCreate: boolean; canUpdate: boolean; canArchive: boolean; canReview: boolean }
 type Aktivitas = { jenis: string; personelId: string | null; personelNama: string | null; oleh: string; pada: string; rincian: Record<string, unknown> }
 type Dashboard = {
-  totals: { personel: number; aktif: number; mpp: number; alert: number; belumDitinjau: number; belumLengkap: number; enamBulan: number; karierMenunggu?: number; kompetensiKedaluwarsa60?: number; cutiHariIni?: number; layananMenunggu?: number }
+  totals: { personel: number; aktif: number; mpp: number; alert: number; belumDitinjau: number; belumLengkap: number; enamBulan: number; karierMenunggu?: number; kompetensiKedaluwarsa60?: number; cutiHariIni?: number; layananMenunggu?: number; pembinaanLewatTenggat?: number | null; pemeliharaanJatuhTempo14?: number | null }
   proyeksi: { bulan: string; jumlah: number }[]; alertTerdekat: Alert[]; terdekat: Personel[]; aktivitas: Aktivitas[]
 }
 type Rank = { code: string; shortName: string; fullName: string; group: string }
 type Mode = 'dashboard' | 'master' | 'pensiun'
-export type SumdaNav = (menu: 'personel' | 'pensiun' | 'karier' | 'diklat' | 'cuti' | 'kesejahteraan', opts?: { recordID?: string; tab?: string }) => void
+export type SumdaNav = (menu: 'personel' | 'pensiun' | 'karier' | 'diklat' | 'cuti' | 'kesejahteraan' | 'kinerja' | 'inventaris', opts?: { recordID?: string; tab?: string }) => void
 
 const STATUS: Status[] = ['Aktif', 'MPP', 'Pensiun', 'Nonaktif']
 const TAHAP: { key: Tahap; label: string; rentang: string }[] = [
@@ -116,6 +119,9 @@ export default function SumdaPersonelR5H27({ mode, initialID, onNavigate, legacy
 
 function DashboardView({ onNavigate, onLost }: { onNavigate: SumdaNav; onLost: () => void }) {
   const [data, setData] = useState<Dashboard | null>(null)
+  // R5H31 K33: kartu pembinaan hanya bisa diklik pemegang kinerja.read.
+  const [isiKinerja, setIsiKinerja] = useState(false)
+  useEffect(() => { fetch('/api/v1/subbagsumda/kinerja/capabilities', { credentials: 'same-origin', cache: 'no-store' }).then(r => r.ok ? r.json() : null).then((c: { canReadDetail?: boolean } | null) => setIsiKinerja(Boolean(c?.canReadDetail))).catch(() => setIsiKinerja(false)) }, [])
   const [error, setError] = useState('')
   useEffect(() => {
     api<Dashboard>('/dashboard').then(setData).catch(e => { if (e instanceof TidakTersedia) onLost(); else setError(e.message) })
@@ -138,6 +144,10 @@ function DashboardView({ onNavigate, onLost }: { onNavigate: SumdaNav; onLost: (
         <small><button type="button" className="sdl-sumda__link" onClick={() => onNavigate('cuti', { tab: 'kalender' })}>Kalender cuti</button></small></div>}
       {t.layananMenunggu !== undefined && <div className={t.layananMenunggu ? 'is-attention' : ''}><dt>Cuti &amp; layanan menunggu keputusan</dt><dd>{t.layananMenunggu}</dd>
         <small><button type="button" className="sdl-sumda__link" onClick={() => onNavigate('cuti')}>Cuti</button> · <button type="button" className="sdl-sumda__link" onClick={() => onNavigate('kesejahteraan')}>Kesejahteraan</button></small></div>}
+      {typeof t.pembinaanLewatTenggat === 'number' && <div className={t.pembinaanLewatTenggat ? 'is-attention' : ''}><dt>Pembinaan lewat tenggat</dt><dd>{t.pembinaanLewatTenggat}</dd>
+        <small>{isiKinerja && <button type="button" className="sdl-sumda__link" onClick={() => onNavigate('kinerja')}>Kinerja &amp; Pembinaan</button>}</small></div>}
+      {typeof t.pemeliharaanJatuhTempo14 === 'number' && <div className={t.pemeliharaanJatuhTempo14 ? 'is-attention' : ''}><dt>Pemeliharaan jatuh tempo ≤ 14 hari</dt><dd>{t.pemeliharaanJatuhTempo14}</dd>
+        <small><button type="button" className="sdl-sumda__link" onClick={() => onNavigate('inventaris', { tab: 'jadwal' })}>Jadwal pemeliharaan</button></small></div>}
     </dl>
 
     <div className="sdl-sumda__split">
@@ -317,11 +327,12 @@ function DetailDialog({ p, caps, onClose, onEdit, onArchive, onProsesPensiun }: 
   const [kompetensi, setKompetensi] = useState<KompetensiRingkas[]>([])
   const [cuti, setCuti] = useState<CutiTahunIni | null>(null)
   const [layanan, setLayanan] = useState<LayananRingkas[]>([])
+  const [kinerja, setKinerja] = useState<KinerjaRingkas[]>([])
   useEffect(() => {
     if (!UUID_RE.test(p.id)) return
     api<{ item: Personel }>(`/personel/${encodeURIComponent(p.id)}`).then(r => {
       setRiwayat(r.item.riwayatKarier ?? []); setDiklat(r.item.riwayatDiklat ?? []); setKompetensi(r.item.kompetensi ?? [])
-      setCuti(r.item.cutiTahunIni ?? null); setLayanan(r.item.riwayatKesejahteraan ?? [])
+      setCuti(r.item.cutiTahunIni ?? null); setLayanan(r.item.riwayatKesejahteraan ?? []); setKinerja(r.item.kinerja ?? [])
     }).catch(() => setRiwayat([]))
   }, [p.id])
   const rows: [string, ReactNode][] = [
@@ -367,6 +378,12 @@ function DetailDialog({ p, caps, onClose, onEdit, onArchive, onProsesPensiun }: 
       {layanan.length === 0 ? <p className="sdl-sumda__muted">Belum ada layanan.</p>
         : <ol>{layanan.map(l => <li key={l.id}><span className="sdl-sumda__mono">{l.targetSelesai ? tgl(l.targetSelesai) : '—'}</span>
           <span>{JENIS_LAYANAN[l.jenis] ?? l.jenis}{l.nomorReferensi ? ` · ${l.nomorReferensi}` : ''}</span><span className="sdl-sumda__muted">{l.status}</span></li>)}</ol>}
+    </section>}
+    {riwayat !== null && <section className="sdl-sumda__riwayat" aria-label="Kinerja">
+      <strong>Kinerja</strong>
+      {kinerja.length === 0 ? <p className="sdl-sumda__muted">Belum ada penilaian yang dapat ditampilkan.</p>
+        : <ol>{kinerja.map(k => <li key={k.id}><span className="sdl-sumda__mono">{k.tahun} · {PERIODE_KINERJA[k.periode] ?? k.periode}</span>
+          <span>{k.dibatasi ? RINGKAS_KINERJA[k.statusRingkas] : (k.kategori ? KATEGORI_KINERJA[k.kategori] ?? k.kategori : '—')}</span><span className="sdl-sumda__muted">{k.dibatasi ? 'isi dibatasi' : k.status}</span></li>)}</ol>}
     </section>}
     <footer>
       {caps?.canArchive && <button type="button" className="btn sdl-progar__danger" onClick={onArchive}>Arsipkan</button>}

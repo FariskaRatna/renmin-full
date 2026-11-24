@@ -13,7 +13,7 @@
 > R5H11 Program/Pagu, R5H12 Realisasi, R5H13 Dokumen & Kinerja, R5H14 Pagu←DIPA,
 > R5H16 Tahap Pekerjaan, R5H17–R5H18 anggaran & DALGAR, R5H19–R5H20 laporan/revisi
 > tersambung & impor myinterest, lampiran dokumen, R5H21 persuratan antar-unit, R5H22 sumber surat tahap, R5H23 tindak lanjut arahan,
-> R5H24 dashboard LRA, R5H25 Master Data tahap pekerjaan, R5H27 Subbagsumda Master Personel & Monitoring Pensiun, R5H28 Karier & Mutasi, R5H29 Diklat & Kompetensi, R5H30 Cuti & Perizinan + Kesejahteraan; migrasi 049–071). Harness golden-file tidak
+> R5H24 dashboard LRA, R5H25 Master Data tahap pekerjaan, R5H27 Subbagsumda Master Personel & Monitoring Pensiun, R5H28 Karier & Mutasi, R5H29 Diklat & Kompetensi, R5H30 Cuti & Perizinan + Kesejahteraan, R5H31 Kinerja & Inventaris/BMN; migrasi 049–072). Harness golden-file tidak
 > mencakupnya; yang menjaganya `verify/r5h1*-flow.js`. Posisi terbaru ada di
 > `docs/CATATAN-SESI-*.md` paling akhir, bukan di sini.
 

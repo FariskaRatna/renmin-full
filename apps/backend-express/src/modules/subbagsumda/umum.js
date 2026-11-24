@@ -54,9 +54,12 @@ const EXTRA_GALAT = ['id']
  * yang sama dengan perubahannya. `subject`/`actor` adalah nomor parameter SQL; subject dibandingkan lowercase
  * karena id di URL boleh berhuruf besar.
  */
-export const pernahMengubahSql = (type, subject, actor) => `EXISTS(SELECT 1 FROM sdl_audit_events a
+export const pernahMengubahSql = (type, subject, actor, { tambahan = [], sejak = null } = {}) => `EXISTS(SELECT 1 FROM sdl_audit_events a
   WHERE a.actor_id=${actor}::uuid AND a.subject_type='${type}' AND lower(a.subject_id)=${subject}::text
-    AND a.event_key IN ('${type}.update','${type}.lampiran.add','${type}.lampiran.delete'))`
+    AND a.event_key IN ('${type}.update','${type}.lampiran.add','${type}.lampiran.delete'${tambahan.map((t) => `,'${type}.${t}'`).join('')})${sejak ? `
+    AND a.created_at >= ${sejak}::timestamptz` : ''})`
+// R5H31: `tambahan` = akhiran event lain (konstanta di kode, tidak pernah dari request), `sejak` = nomor parameter
+// timestamptz (maker-checker aset per usulan, K39). Tanpa opsi, SQL identik dengan R5H30.
 
 export class HttpError extends Error {
   /** `extra` (R5H30 K35) ikut ke badan galat di samping `error`, mis. `{id}` pada 409 pengajuan_ganda. */

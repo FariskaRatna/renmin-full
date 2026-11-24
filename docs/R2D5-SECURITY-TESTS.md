@@ -5,7 +5,7 @@
 | Suite | Menguji | Perintah | Status |
 |---|---|---|---|
 | Go | `apps/backend` (melayani produksi hari ini) | `bash ./scripts/security-test-r2d5.sh` | 21 subtest |
-| Express | `apps/backend-express` (akan menggantikannya) | `bash ./scripts/security-test-express.sh` | **26/26 LULUS, 2026-11-24** (21 skenario 1:1 + `x1_r5h25` + `x2_r5h27` + `x3_r5h28` + `x4_r5h29` + `x5_r5h30`) |
+| Express | `apps/backend-express` (akan menggantikannya) | `bash ./scripts/security-test-express.sh` | **27/27 LULUS, 2026-11-24** (21 skenario 1:1 + `x1_r5h25` … `x5_r5h30` + `x6_r5h31`) |
 
 Suite Express adalah port satu-lawan-satu dari yang Go, dengan nama skenario
 yang identik supaya kedua laporan bisa ditaruh berdampingan. Skenario berawalan
@@ -37,7 +37,11 @@ dicabut saat sesi sedang hidup.
   "bukan pengubah terakhir" di keputusan cuti, dan menghapus syarat `personel.update` saat menerapkan
   status dari Kesejahteraan → masing-masing hanya `x5_r5h30_sumda_layanan_guard` merah;
 - (R5H30 perbaikan review) menghapus syarat "pernah mengubah" di keputusan cuti, lalu terpisah membuka
-  penyamaran catatan cuti Sakit → masing-masing hanya x5 merah.
+  penyamaran catatan cuti Sakit → masing-masing hanya x5 merah;
+- (R5H31, 2026-11-24) membuka penyamaran kolom kinerja, membuka syarat unduh lampiran kinerja, menghapus
+  syarat "pernah mengubah" di keputusan kinerja, dan menghapus `usulan_by<>actor` di penghapusan BMN →
+  masing-masing hanya `x6_r5h31_sumda_kinerja_aset_guard` merah;
+- (R5H31 perbaikan review) mengirim angka pembinaan ke semua pembaca → hanya x6 merah.
 
 Keduanya dipulihkan sesudahnya. Suite yang lulus pada percobaan pertama tanpa
 pernah dibuktikan bisa merah tidak membuktikan apa-apa.
