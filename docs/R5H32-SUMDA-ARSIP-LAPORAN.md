@@ -193,7 +193,8 @@ silang antar-modul, bentuk, probe query, pencabutan, kunci evidence kosong. Suit
 6. **K50 (pemilik, 2026-11-24, menggantikan K5): sidebar Sumda disamakan dengan referensi.** Grup WORKSPACE SUBBAGSUMDA
    (Dashboard, Master Personel, Monitoring Pensiun) · ADMINISTRASI SDM (Karier, Diklat, Cuti, Kesejahteraan, Kinerja) ·
    DUKUNGAN & LAPORAN (Inventaris/BMN, Persuratan & Arsip, Laporan & Analitik). Surat Masuk dan Surat Keluar R5H21 menjadi
-   **tab** di Persuratan & Arsip (Surat Masuk · Surat Keluar · Arsip Dokumen; badge "belum diterima" pindah ke menu itu);
+   **tab** di Persuratan & Arsip (Arsip Dokumen · Surat Masuk · Surat Keluar — menu membuka Arsip Dokumen lebih dulu seperti
+   referensi, pemilik 2026-11-25; badge "belum diterima" pindah ke menu itu dan ke tab Surat Masuk);
    rute `/subbagsumda/surat-masuk|surat-keluar` dan tautan dari Inbox tetap berlaku. Inbox Distribusi dan Disposisi
    dihapus dari sidebar (sama dengan tombol Inbox dan Tasks di header); Berkas, Foto & Disposisi (registry lama) dihapus
    dari sidebar, tetap terbuka lewat tautan darurat di layar terkait. Hanya frontend (`App.tsx`); unit lain tidak berubah.
