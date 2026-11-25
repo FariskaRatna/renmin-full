@@ -1,6 +1,6 @@
 # R5H31 — Subbagsumda: Kinerja & Pembinaan + Inventaris/BMN
 
-Status: **DIIMPLEMENTASI (2026-11-24), branch `feat/r5h31-sumda-kinerja-aset`, belum di-push / belum deploy**. K1–K4 dijawab pemilik 2026-11-24; K5–K30 (usulan) disetujui pemilik 2026-11-24. Rencana Implementasi + K31–K49 disetujui pemilik 2026-11-24. Perbaikan hasil review di bagian akhir.
+Status: **DI `main` (merge PR #7), belum di `origin/staging`; belum dipastikan terdeploy di produksi (cek 2026-11-24)**. K1–K4 dijawab pemilik 2026-11-24; K5–K30 (usulan) disetujui pemilik 2026-11-24. Rencana Implementasi + K31–K49 disetujui pemilik 2026-11-24. Perbaikan hasil review di bagian akhir.
 Khusus Express. Migrasi **072** (R5H15 digeser lagi ke **073**, lihat K30). Commit: f31cc3d migrasi · aa52dce
 `pernahMengubahSql` · 7ad96b3 API Kinerja · d7806c7 API Aset · 4522311 skenario x6 · 59fe53d frontend.
 Lanjutan R5H27–R5H30: penilaian merujuk `sdl_sumda_personel`; alur persetujuan, maker-checker ("bukan pencatat dan

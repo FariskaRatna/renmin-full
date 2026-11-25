@@ -1,6 +1,6 @@
 # R5H32 — Subbagsumda: Persuratan & Arsip + Laporan & Analitik
 
-Status: **terimplementasi di branch `feat/r5h32-sumda-arsip-laporan` (2026-11-24), belum di-push; menunggu /verifikasi + /review**. K1–K4 dijawab pemilik 2026-11-24; K5–K28 (usulan) disetujui pemilik 2026-11-24; K29–K49 (rencana, §9 Rencana Implementasi) disetujui **sementara** lewat "oke lanjut ke /implementasi" (aturan bisnis di kode Express, dapat diubah setelah paparan ke pengguna).
+Status: **DI `main` (merge PR #8), belum di `origin/staging`; belum dipastikan terdeploy di produksi (cek 2026-11-24)**. K1–K4 dijawab pemilik 2026-11-24; K5–K28 (usulan) disetujui pemilik 2026-11-24; K29–K49 (rencana, §9 Rencana Implementasi) disetujui **sementara** lewat "oke lanjut ke /implementasi" (aturan bisnis di kode Express, dapat diubah setelah paparan ke pengguna).
 Khusus Express. Migrasi **073** (R5H15 digeser lagi ke **074**, lihat K28).
 Lanjutan R5H27–R5H31. Pola dipakai ulang: `PERMIT_SQL` (`umum.js`), lampiran tersegel (`lampiran.js`), penyamaran di SQL
 (R5H30 S3, R5H31 K1), prinsip K43 R5H30 (migrasi hanya struktural), maker-checker tidak diperlukan (pencatatan).

@@ -1,6 +1,6 @@
 # R5H30 — Subbagsumda: Cuti & Perizinan + Kesejahteraan
 
-Status: **DIIMPLEMENTASI (2026-11-24), branch `feat/r5h30-sumda-cuti-kesejahteraan`, belum di-push / belum deploy**. K1–K4 dijawab pemilik 2026-11-24; K5–K24 (usulan) disetujui pemilik 2026-11-24. Rencana Implementasi + K25–K42 disetujui pemilik 2026-11-24 **sebagai versi sementara untuk dipaparkan ke pengguna** (alur bisnis belum pasti), ditambah K43.
+Status: **DI `main` (merge PR #6), belum di `origin/staging`; belum dipastikan terdeploy di produksi (cek 2026-11-24)**. K1–K4 dijawab pemilik 2026-11-24; K5–K24 (usulan) disetujui pemilik 2026-11-24. Rencana Implementasi + K25–K42 disetujui pemilik 2026-11-24 **sebagai versi sementara untuk dipaparkan ke pengguna** (alur bisnis belum pasti), ditambah K43.
 Khusus Express. Migrasi **071** (R5H15 digeser lagi ke **072**, lihat K24). Commit: b9b7d14 migrasi · 4426687 `HttpError`
 · 7eb19fe API Cuti · 1823d81 API Kesejahteraan · d6b208e skenario x5 · e0cdfcf frontend.
 Lanjutan R5H27 (Master Personel), R5H28 (Karier & Mutasi) dan R5H29 (Diklat & Kompetensi): setiap pengajuan merujuk

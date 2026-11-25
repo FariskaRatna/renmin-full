@@ -1,6 +1,6 @@
 # R5H29 — Subbagsumda: Diklat & Kompetensi
 
-Status: **DIIMPLEMENTASI (2026-11-23), belum di-push / belum deploy**. K1–K20 disetujui pemilik 2026-11-23 (K5–K20 sebagai usulan yang diterima). K21–K36 (dari Rencana Implementasi) disetujui pemilik 2026-11-23.
+Status: **DI `main` (merge PR #5), belum di `origin/staging`; belum dipastikan terdeploy di produksi (cek 2026-11-24)**. K1–K20 disetujui pemilik 2026-11-23 (K5–K20 sebagai usulan yang diterima). K21–K36 (dari Rencana Implementasi) disetujui pemilik 2026-11-23.
 Khusus Express. Migrasi **070** (R5H15 digeser lagi ke **071**, lihat K20). Branch `feat/r5h29-sumda-diklat`
 (76cc317 migrasi · 58d48aa refaktor · 0155ea9 API · 386e30b skenario x4 · 1e9f986 frontend).
 Lanjutan R5H27 (Master Personel) dan R5H28 (Karier & Mutasi): peserta dan pemegang kompetensi merujuk

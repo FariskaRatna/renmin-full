@@ -1,6 +1,6 @@
 # R5H27 — Subbagsumda: Dashboard, Master Personel, Monitoring Pensiun
 
-Status: **DIIMPLEMENTASI (2026-11-23), branch `feat/r5h27-sumda-personel`, belum di-push.** K1–K21 disetujui
+Status: **DI `main` (merge PR #1), sudah di `origin/staging`; belum dipastikan terdeploy di produksi (cek 2026-11-24)**. K1–K21 disetujui
 pemilik 2026-11-23. Khusus Express. Migrasi **068** (R5H15 digeser ke **069**). Arah UI "Buku register" dipilih
 pemilik. Lulus: `go test` (migrasi + seed), verify R5H27, suite keamanan Express 23/23 (+ uji mutasi x2),
 `npm run build`, gladi salinan K3, simulasi rollback di browser. Belum: lihat "Sisa uji" di bawah.
